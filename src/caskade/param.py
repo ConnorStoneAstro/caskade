@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Optional, Union, Callable
 
 import torch
 from torch import Tensor
@@ -27,13 +27,13 @@ class Param(Node):
         shape: Optional[tuple[int, ...]] = (),
     ):
         super().__init__(name=name)
-        if value is None:
+        if value is None or isinstance(value, LiveParam):
             if shape is None:
                 raise ValueError("Either value or shape must be provided")
             if not isinstance(shape, tuple):
                 raise ValueError("Shape must be a tuple")
             self.shape = shape
-        else:
+        elif not isinstance(value, (Param, Callable)):
             value = torch.as_tensor(value)
             self.shape = value.shape
             assert shape == () or shape == self.shape, "Shape does not match value shape"

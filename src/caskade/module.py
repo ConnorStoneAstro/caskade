@@ -81,11 +81,14 @@ class Module(Node):
         return {key: getattr(self, key).value for key in keys}
 
     def __setattr__(self, key, value):
-        if key in self.children and isinstance(self.children[key], Param):
-            self.children[key].value = value
-            return
-        if isinstance(value, Node):
-            self.link(key, value)
-            self.update_dynamic_params()
+        try:
+            if key in self.children and isinstance(self.children[key], Param):
+                self.children[key].value = value
+                return
+            if isinstance(value, Node):
+                self.link(key, value)
+                self.update_dynamic_params()
 
-        super().__setattr__(key, value)
+            super().__setattr__(key, value)
+        except AttributeError:
+            super().__setattr__(key, value)

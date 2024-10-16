@@ -19,6 +19,7 @@ from caskade import Module, Param, forward
 
 class MySim(Module):
     def __init__(self, a, b=None):
+        super().__init__()
         self.a = a
         self.b = Param("b", b)
 
