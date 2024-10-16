@@ -33,11 +33,11 @@ We may now create instances of the simulator and pass the dynamic parameters.
 ``` python
 import torch
 
-sim = MySim(torch.tensor(1.0))
+sim = MySim(1.0)
 
 params = [torch.tensor(2.0)]
 
-print(sim.myfun(torch.tensor(3.0), params=params))
+print(sim.myfun(3.0, params=params))
 ```
 
 Which will print `6` by automatically filling `b` with the value from `params`.
