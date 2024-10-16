@@ -16,9 +16,13 @@ class Param(Node):
                 raise ValueError("Shape must be a tuple")
             self.shape = shape
         else:
-            self.value = torch.as_tensor(value)
-            self.shape = self.value.shape
+            value = torch.as_tensor(value)
+            self.shape = value.shape
         self.value = value
+
+    @property
+    def dynamic(self):
+        return self._type == "dynamic"
 
     @property
     def value(self):
@@ -44,6 +48,10 @@ class Param(Node):
                     f"Input shape {value.shape} does not match {self.name} shape {self.shape}"
                 )
         self._value = value
+        self.update_dynamic_params()
+
+    def silent_update_value(self, value):
+        self._value = value
 
     def to(self, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None):
         """
@@ -64,6 +72,3 @@ class Param(Node):
                 child.to(device=device, dtype=dtype)
         else:
             self._value = self._value.to(device=device, dtype=dtype)
-
-    def __eq__(self, other):
-        return self is other
