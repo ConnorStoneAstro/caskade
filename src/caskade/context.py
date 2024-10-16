@@ -13,8 +13,8 @@ class ActiveContext:
         self.params = params
 
     def __enter__(self):
-        self.module.fill_params(self.params)
         self.module.active = True
+        self.module.fill_params(self.params)
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.module.clear_params()

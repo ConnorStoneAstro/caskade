@@ -1,0 +1,65 @@
+[build-system]
+requires = ["hatchling", "hatch-requirements-txt", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "caskade"
+dynamic = [
+        "dependencies",
+        "version"
+]
+authors = [
+  { name="Connor Stone", email="connorstone628@gmail.com" },
+  { name="Alexandre Adam", email="alexandre.adam@mila.quebec" },
+]
+description = "Package for building scientific simulators, with dynamic arguments arranged in a directed acyclic graph."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+keywords = [
+        "caskade",
+        "DAG",
+        "scientific python",
+        "differentiable programming",
+        "pytorch"
+]
+classifiers=[
+        "Development Status :: 1 - Planning",
+        "Intended Audience :: Science/Research",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3"
+]
+
+[project.urls]
+Homepage = "https://github.com/ConnorStoneAstro/caskade"
+Documentation = "https://github.com/ConnorStoneAstro/caskade"
+Repository = "https://github.com/ConnorStoneAstro/caskade"
+Issues = "https://github.com/ConnorStoneAstro/caskade/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9",
+    "pytest-cov>=4.1,<5",
+    "pytest-mock>=3.12,<4",
+    "pre-commit>=3.6,<4",
+]
+
+[tool.hatch.metadata.hooks.requirements_txt]
+files = ["requirements.txt"]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/caskade/_version.py"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
+[tool.ruff]
+# Same as Black.
+line-length = 100
+
+[tool.pytest.ini_options]
+norecursedirs = "tests/utils"

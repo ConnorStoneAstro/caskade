@@ -19,8 +19,11 @@ def forward(method):
         The decorated forward method.
     """
 
-    method_all_args = inspect.signature(method).parameters.values()
-    method_kwargs = [arg.name for arg in method_all_args if arg.default is not arg.empty]
+    # Get kwargs from function signature
+    method_kwargs = []
+    for arg in inspect.signature(method).parameters.values():
+        if arg.default is not arg.empty:
+            method_kwargs.append(arg.name)
 
     @functools.wraps(method)
     def wrapped(self, *args, **kwargs):
@@ -29,18 +32,16 @@ def forward(method):
             return method(self, *args, **kwargs)
 
         # Extract params from the arguments
-        if "params" in kwargs:
+        if len(self.dynamic_params) == 0:
+            params = {}
+        elif "params" in kwargs:
             params = kwargs.pop("params")
         elif args:
-            params = args[0]
-            args = args[1:]
+            params = args.pop(0)
         else:
-            if len(self.dynamic_params) == 0:
-                params = {}
-            else:
-                raise ValueError(
-                    f"Params must be provided for dynamic modules. Expected {len(self.dynamic_params)} params."
-                )
+            raise ValueError(
+                f"Params must be provided for dynamic modules. Expected {len(self.dynamic_params)} params."
+            )
 
         with ActiveContext(self, params):
             kwargs.update(self.fill_kwargs(method_kwargs))

@@ -5,6 +5,18 @@ import torch
 from .base import Node
 
 
+class LiveParam:
+    """Placeholder to identify a parameter as live updating. Like `None` there
+    exists only one instance of this class."""
+
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(LiveParam, cls).__new__(cls)
+        return cls._instance
+
+
 class Param(Node):
 
     def __init__(self, name, value=None, shape=()):
@@ -25,6 +37,10 @@ class Param(Node):
         return self._type == "dynamic"
 
     @property
+    def live(self):
+        return self._type == "live"
+
+    @property
     def value(self):
         if self._type == "pointer":
             return self._value.value
@@ -34,10 +50,22 @@ class Param(Node):
 
     @value.setter
     def value(self, value):
+        # While active, update silently
+        if self.active and (self.dynamic or self.live):
+            self._value = value
+            return
+
+        # unlink if pointer to avoid floating references
+        if self._type == "pointer":
+            self.unlink(self._value)
+
         if value is None:
             self._type = "dynamic"
+        elif isinstance(value, LiveParam):
+            self._type = "live"
         elif isinstance(value, Param):
             self._type = "pointer"
+            self.link(value)
         elif callable(value):
             self._type = "function"
         else:
@@ -47,11 +75,9 @@ class Param(Node):
                 raise ValueError(
                     f"Input shape {value.shape} does not match {self.name} shape {self.shape}"
                 )
+
         self._value = value
         self.update_dynamic_params()
-
-    def silent_update_value(self, value):
-        self._value = value
 
     def to(self, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None):
         """
@@ -64,11 +90,6 @@ class Param(Node):
         dtype: (Optional[torch.dtype], optional)
             The desired data type. Defaults to None.
         """
-
-        if self._type == "pointer":
-            self._value.to(device=device, dtype=dtype)
-        elif self._type == "function":
-            for child in self.children.values():
-                child.to(device=device, dtype=dtype)
-        else:
+        super().to(device=device, dtype=dtype)
+        if self._type == "value":
             self._value = self._value.to(device=device, dtype=dtype)
