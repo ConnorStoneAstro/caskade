@@ -1,6 +1,7 @@
 # caskade
 
-Build scientific simulators, treating them as a directed acyclic graph
+Build scientific simulators, treating them as a directed acyclic graph. Handles
+argument passing for complex nested simulators.
 
 ## Install
 
