@@ -1,6 +1,7 @@
-from typing import Optional
+from typing import Optional, Union
 
 import torch
+from torch import Tensor
 
 from .base import Node
 
@@ -19,7 +20,12 @@ class LiveParam:
 
 class Param(Node):
 
-    def __init__(self, name, value=None, shape=()):
+    def __init__(
+        self,
+        name,
+        value: Optional[Union[Tensor, float, int]] = None,
+        shape: Optional[tuple[int, ...]] = (),
+    ):
         super().__init__(name=name)
         if value is None:
             if shape is None:
@@ -30,6 +36,7 @@ class Param(Node):
         else:
             value = torch.as_tensor(value)
             self.shape = value.shape
+            assert shape == () or shape == self.shape, "Shape does not match value shape"
         self.value = value
 
     @property
@@ -39,6 +46,16 @@ class Param(Node):
     @property
     def live(self):
         return self._type == "live"
+
+    @property
+    def shape(self):
+        if self._type in ["pointer", "function"]:
+            return None
+        return self._shape
+
+    @shape.setter
+    def shape(self, shape):
+        self._shape = shape
 
     @property
     def value(self):
@@ -61,13 +78,17 @@ class Param(Node):
 
         if value is None:
             self._type = "dynamic"
+            assert self.shape is not None, "Shape must be provided for dynamic parameters"
         elif isinstance(value, LiveParam):
             self._type = "live"
+            assert self.shape is not None, "Shape must be provided for live parameters"
         elif isinstance(value, Param):
             self._type = "pointer"
-            self.link(value)
+            self.link(value.name, value)
+            self.shape = None
         elif callable(value):
             self._type = "function"
+            self.shape = None
         else:
             self._type = "value"
             value = torch.as_tensor(value)

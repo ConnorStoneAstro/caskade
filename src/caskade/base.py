@@ -13,6 +13,10 @@ class Node:
         self._type = "node"
 
     @property
+    def name(self):
+        return self._name
+
+    @property
     def children(self):
         return self._children
 
@@ -42,7 +46,7 @@ class Node:
                 if subnode not in ordering:
                     ordering.append(subnode)
         if with_type is None:
-            return ordering
+            return tuple(ordering)
         return tuple(filter(lambda n: n._type == with_type, ordering))
 
     def update_dynamic_params(self):
@@ -81,17 +85,16 @@ class Node:
         for child in self.children.values():
             child.to(device=device, dtype=dtype)
 
-    def graph_dict(self, with_type=True, with_object=True):
-        value = []
-        if with_type:
-            value.append(self._type)
-        if with_object:
-            value.append(self)
-        graph = {self.name: value + [{child.graph_dict() for child in self.children.values()}]}
+    def graph_dict(self):
+        graph = {
+            f"{self.name}|{self._type}": {},
+        }
+        for node in self.children.values():
+            graph[f"{self.name}|{self._type}"].update(node.graph_dict())
         return graph
 
     def __str__(self):
-        return str(((node.name, node._type) for node in self.topological_ordering()))
+        return str(self.graph_dict())
 
     def __repr__(self):
-        return str(self.graph_dict(True, False))
+        return f"{self.__class__.__name__}({self.name})"

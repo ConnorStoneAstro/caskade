@@ -1,5 +1,4 @@
-from typing import Boolean
-from collections.abs import Sequence, Mapping
+from typing import Sequence, Mapping
 
 from torch import Tensor
 
@@ -22,7 +21,7 @@ class Module(Node):
 
     @batch.setter
     def batch(self, value):
-        assert isinstance(value, Boolean)
+        assert isinstance(value, bool)
         self._batch = value
 
     def update_dynamic_params(self):

@@ -44,21 +44,21 @@ def test_topological_ordering():
     node3.link("subnode5", node6)
 
     ordering = node1.topological_ordering()
-    assert ordering == [node1, node2, node4, node5, node3, node6]
+    assert ordering == (node1, node2, node4, node5, node3, node6)
 
     ordering = node1.topological_ordering(with_type="node")
-    assert ordering == (node1, node2, node3, node4, node5, node6)
+    assert ordering == (node1, node2, node4, node5, node3, node6)
 
     ordering = node1.topological_ordering(with_type="dynamic")
     assert ordering == ()
 
     node1.unlink("subnode1")
     ordering = node1.topological_ordering()
-    assert ordering == [node1, node3, node6]
+    assert ordering == (node1, node3, node6)
 
     node1.unlink("subnode2")
     ordering = node1.topological_ordering()
-    assert ordering == [node1]
+    assert ordering == (node1,)
 
 
 def test_active():
@@ -75,7 +75,7 @@ def test_active():
     node2.link("subnode4", node5)
     node3.link("subnode5", node6)
 
-    node1._active = True
+    node1.active = True
     assert node1.active == True
     assert node2.active == True
     assert node3.active == True
@@ -83,7 +83,7 @@ def test_active():
     assert node5.active == True
     assert node6.active == True
 
-    node2._active = False
+    node2.active = False
     assert node1.active == True
     assert node2.active == False
     assert node3.active == True
