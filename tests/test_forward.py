@@ -45,14 +45,14 @@ def test_forward():
     params = [torch.ones((2, 2)), torch.tensor(3.0), torch.tensor(4.0), torch.tensor(1.0)]
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
-    result = main1.testfun(params, 1.0)
+    result = main1.testfun(1.0, params)
     assert result.shape == (2, 2)
 
     # Tensor as params
     params = torch.cat(tuple(p.flatten() for p in params))
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
-    result = main1.testfun(params, 1.0)
+    result = main1.testfun(1.0, params)
     assert result.shape == (2, 2)
 
     # Batched tesnor as params
@@ -60,7 +60,7 @@ def test_forward():
     main1.batch = True
     result = main1.testfun(torch.tensor((1.0, 1.0)), params=params)
     assert result.shape == (3, 1, 2, 2)
-    result = main1.testfun(params, torch.tensor((1.0, 1.0)))
+    result = main1.testfun(torch.tensor((1.0, 1.0)), params)
     assert result.shape == (3, 1, 2, 2)
     main1.batch = False
 
@@ -68,7 +68,7 @@ def test_forward():
     params = {"b": torch.ones((2, 2)), "m1": torch.tensor((3.0, 4.0, 1.0))}
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
-    result = main1.testfun(params, 1.0)
+    result = main1.testfun(1.0, params)
     assert result.shape == (2, 2)
 
     # Dict as params, sub element is list
@@ -78,7 +78,7 @@ def test_forward():
     }
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
-    result = main1.testfun(params, 1.0)
+    result = main1.testfun(1.0, params)
     assert result.shape == (2, 2)
 
     # Dict as params, sub element is dict
@@ -88,7 +88,7 @@ def test_forward():
     }
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
-    result = main1.testfun(params, 1.0)
+    result = main1.testfun(1.0, params)
     assert result.shape == (2, 2)
 
     # All params static

@@ -11,4 +11,4 @@ from .tests import test
 __version__ = VERSION
 __author__ = "Connor and Alexandre"
 
-__all__ = ("Node", "Module", "Param", "LiveParam", "ActiveContext", "forward")
+__all__ = ("Node", "Module", "Param", "LiveParam", "ActiveContext", "forward", "test")

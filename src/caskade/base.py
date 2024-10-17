@@ -1,7 +1,5 @@
 from typing import Optional, Union
 
-import torch
-
 
 class Node(object):
     """
@@ -110,7 +108,7 @@ class Node(object):
         for child in self._children.values():
             child.active = value
 
-    def to(self, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None):
+    def to(self, device=None, dtype=None):
         """
         Moves and/or casts the PyTorch values of the Node.
 

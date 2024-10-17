@@ -52,9 +52,9 @@ def test_value_setter():
     p = Param("test")
     assert p._type == "dynamic"
 
-    # value
+    # static
     p.value = 1.0
-    assert p._type == "value"
+    assert p._type == "static"
     assert p.value.item() == 1.0
 
     p = Param("testshape", shape=(2,))

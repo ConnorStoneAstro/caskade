@@ -24,7 +24,7 @@ class Param(Node):
 
     The `Param` object is used to represent a parameter in the graph. During
     runtime this will represent a tensor value which can be used in various
-    calculations. The `Param` object can be set to a constant value (`value`);
+    calculations. The `Param` object can be set to a constant value (`static`);
     `None` meaning the value is to be provided at runtime (`dynamic`);
     `LiveParam` meaning the value will be computed internally in the simulator
     during runtime (`live`); another `Param` object meaning it will take on that
@@ -124,14 +124,14 @@ class Param(Node):
             self._type = "function"
             self._shape = None
         else:
-            self._type = "value"
+            self._type = "static"
             value = torch.as_tensor(value)
             self.shape = value.shape
 
         self._value = value
         self.update_dynamic_params()
 
-    def to(self, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None):
+    def to(self, device=None, dtype=None):
         """
         Moves and/or casts the values of the parameter.
 
@@ -143,5 +143,5 @@ class Param(Node):
             The desired data type. Defaults to None.
         """
         super().to(device=device, dtype=dtype)
-        if self._type == "value":
+        if self._type == "static":
             self._value = self._value.to(device=device, dtype=dtype)

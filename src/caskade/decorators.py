@@ -38,8 +38,8 @@ def forward(method):
         elif "params" in kwargs:
             params = kwargs.pop("params")
         elif args:
-            params = args[0]
-            args = args[1:]
+            params = args[-1]
+            args = args[:-1]
         else:
             raise ValueError(
                 f"Params must be provided for dynamic modules. Expected {len(self.dynamic_params)} params."
