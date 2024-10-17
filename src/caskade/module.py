@@ -83,12 +83,11 @@ class Module(Node):
                 *B, _ = params.shape
             pos = 0
             for param in self.dynamic_params:
-                try:
-                    size = max(1, prod(param.shape))
-                except TypeError:
+                if not isinstance(param.shape, tuple):
                     raise ValueError(
                         f"Param {param.name} has no shape. dynamic parameters must have a shape to use Tensor input."
                     )
+                size = max(1, prod(param.shape))
                 if self.batch:
                     param.value = params[..., pos : pos + size].view(
                         tuple(B) + ((1,) if param.shape == () else param.shape)

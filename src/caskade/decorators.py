@@ -44,7 +44,8 @@ def forward(method):
                 f"Params must be provided for dynamic modules. Expected {len(self.dynamic_params)} params."
             )
 
-        with ActiveContext(self, params):
+        with ActiveContext(self):
+            self.fill_params(params)
             kwargs.update(self.fill_kwargs(method_kwargs))
             return method(self, *args, **kwargs)
 

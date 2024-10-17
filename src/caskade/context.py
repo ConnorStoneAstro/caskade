@@ -6,15 +6,11 @@ from .module import Module
 
 
 class ActiveContext:
-    def __init__(
-        self, module: Module, params: Union[Sequence[Tensor], Mapping[str, Tensor], Tensor]
-    ):
+    def __init__(self, module: Module):
         self.module = module
-        self.params = params
 
     def __enter__(self):
         self.module.active = True
-        self.module.fill_params(self.params)
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.module.clear_params()

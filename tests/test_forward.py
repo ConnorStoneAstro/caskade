@@ -36,8 +36,10 @@ def test_forward():
     main1 = TestSim(2.0, (2, 2), LiveParam, (2,), sub1)
 
     # Dont provide params
+    print(main1.active)
     with pytest.raises(ValueError):
         main1.testfun()
+    print(main1.active)
 
     # List as params
     params = [torch.ones((2, 2)), torch.tensor(3.0), torch.tensor(4.0), torch.tensor(1.0)]
@@ -100,8 +102,10 @@ def test_forward():
     # dynamic with no shape
     main1.b = None
     main1.b.shape = None
+    print(main1.active)
     with pytest.raises(ValueError):
         main1.testfun(1.0, params=torch.ones(4))
+    print(main1.active)
     result = main1.testfun(1.0, params=[torch.ones((2, 2))])
     assert result.shape == (2, 2)
 
