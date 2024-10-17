@@ -24,6 +24,7 @@ def forward(method):
     for arg in inspect.signature(method).parameters.values():
         if arg.default is not arg.empty:
             method_kwargs.append(arg.name)
+    method_kwargs = tuple(method_kwargs)
 
     @functools.wraps(method)
     def wrapped(self, *args, **kwargs):

@@ -1,11 +1,12 @@
-from typing import Union, Mapping, Sequence
-
-from torch import Tensor
-
 from .module import Module
 
 
 class ActiveContext:
+    """
+    Context manager to activate a module for a simulation. Only inside an
+    ActiveContext is it possible to fill/clear the dynamic and live parameters.
+    """
+
     def __init__(self, module: Module):
         self.module = module
 

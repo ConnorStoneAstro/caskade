@@ -1,4 +1,4 @@
-from typing import Sequence, Mapping, Optional
+from typing import Sequence, Mapping, Optional, Union, Any
 from math import prod
 
 from torch import Tensor
@@ -71,11 +71,33 @@ class Module(Node):
         self._batch = value
 
     def update_dynamic_params(self):
+        """Maintain a tuple of dynamic and live parameters at all points lower
+        in the DAG."""
         super().update_dynamic_params()
         self.dynamic_params = tuple(self.topological_ordering("dynamic"))
         self.live_params = tuple(self.topological_ordering("live"))
 
-    def fill_params(self, params):
+    def fill_params(self, params: Union[Tensor, Sequence, Mapping]):
+        """
+        Fill the dynamic parameters of the module with the input values from
+        params.
+
+        Parameters
+        ----------
+        params: (Union[Tensor, Sequence, Mapping])
+            The input values to fill the dynamic parameters with. The input can
+            be a Tensor, a Sequence, or a Mapping. If the input is a Tensor, the
+            values are filled in order of the dynamic parameters. `params`
+            should be a flattened tensor with all parameters concatenated in the
+            order of the dynamic parameters. If `self.batch` is `True` then all
+            dimensions but the last one are considered batch dimensions. If the
+            input is a Sequence, the values are filled in order of the dynamic
+            parameters. If the input is a Mapping, the values are filled by
+            matching the keys of the Mapping to the names of the dynamic
+            parameters. Note that the system does not check for missing keys in
+            the dictionary, but you will get an error eventually if a value is
+            missing.
+        """
         assert self.active, "Module must be active to fill params"
 
         if isinstance(params, Tensor):
@@ -119,6 +141,9 @@ class Module(Node):
             )
 
     def clear_params(self):
+        """Set all dynamic parameters to None and live parameters to LiveParam.
+        This is to be used on exiting an `ActiveContext` and so should not be
+        used by a user."""
         assert self.active, "Module must be active to clear params"
 
         for param in self.dynamic_params:
@@ -127,10 +152,15 @@ class Module(Node):
         for param in self.live_params:
             param.value = LiveParam
 
-    def fill_kwargs(self, keys) -> dict[str, Tensor]:
+    def fill_kwargs(self, keys: tuple[str]) -> dict[str, Tensor]:
+        """
+        Fill the kwargs for an `@forward` method with the values of the dynamic
+        parameters. The requested keys are matched to names of `Param` objects
+        owned by the `Module`.
+        """
         return {key: getattr(self, key).value for key in keys}
 
-    def __setattr__(self, key, value):
+    def __setattr__(self, key: str, value: Any):
         try:
             if key in self.children and isinstance(self.children[key], Param):
                 self.children[key].value = value

@@ -1,9 +1,9 @@
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 
 
-class Node:
+class Node(object):
     """
     Base graph node class for caskade objects.
 
@@ -51,7 +51,8 @@ class Node:
     def parents(self) -> set:
         return self._parents
 
-    def link(self, key, child):
+    def link(self, key: str, child: "Node"):
+        """Link the current `Node` object to another `Node` object as a child."""
         # Avoid double linking to the same object
         if key in self.children:
             raise ValueError(f"Child key {key} already linked to parent {self.name}")
@@ -63,7 +64,8 @@ class Node:
         child._parents.add(self)
         self.update_dynamic_params()
 
-    def unlink(self, key):
+    def unlink(self, key: Union[str, "Node"]):
+        """Unlink the current `Node` object from another `Node` object which is a child."""
         if isinstance(key, Node):
             for node in self.children:
                 if self.children[node] == key:
@@ -74,7 +76,8 @@ class Node:
         del self._children[key]
         self.update_dynamic_params()
 
-    def topological_ordering(self, with_type=None) -> tuple:
+    def topological_ordering(self, with_type: Optional[str] = None) -> tuple:
+        """Return a topological ordering of the graph below the current node."""
         ordering = [self]
         for node in self.children.values():
             for subnode in node.topological_ordering():
@@ -85,6 +88,8 @@ class Node:
         return tuple(filter(lambda n: n._type == with_type, ordering))
 
     def update_dynamic_params(self):
+        """Update the dynamic parameters of the current node and all children.
+        This is intended to be overridden."""
         for parent in self.parents:
             parent.update_dynamic_params()
 
@@ -121,6 +126,8 @@ class Node:
             child.to(device=device, dtype=dtype)
 
     def graph_dict(self) -> dict:
+        """Return a dictionary representation of the graph below the current
+        node."""
         graph = {
             f"{self.name}|{self._type}": {},
         }
