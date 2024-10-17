@@ -5,6 +5,7 @@ from .context import ActiveContext
 from .decorators import forward
 from .module import Module
 from .param import Param, LiveParam
+from .tests import test
 
 
 __version__ = VERSION

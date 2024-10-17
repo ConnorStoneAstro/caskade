@@ -93,10 +93,6 @@ class Module(Node):
             if isinstance(value, Node):
                 self.link(key, value)
                 self.update_dynamic_params()
-            if isinstance(value, (list, tuple)) and all(isinstance(v, Node) for v in value):
-                for i, v in enumerate(value):
-                    self.link(f"{key}_{i}", v)
-                self.update_dynamic_params()
 
             super().__setattr__(key, value)
         except AttributeError:
