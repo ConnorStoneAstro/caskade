@@ -1,4 +1,4 @@
-from typing import Sequence, Mapping
+from typing import Sequence, Mapping, Optional
 
 from torch import Tensor
 
@@ -7,13 +7,58 @@ from .param import Param, LiveParam
 
 
 class Module(Node):
+    """
+    Node to represent a simulation module in the graph.
 
-    def __init__(self, name):
+    The `Module` object is used to represent a simulation module in the graph.
+    These are python objects that contain the calculations for a simulation,
+    they also hold the `Param` objects that are used in the calculations. The
+    `Module` object has additional functionality to manage the `Param` objects
+    below it in the graph, it keeps track of all `dynamic` `Param` objects so
+    that at runtime their values may be filled. The `Module` object has a
+    `batch` attribute that can be set to `True` to indicate that the module
+    should be run in batch mode. This means that the module will be run with a
+    batch of inputs and the `Param` objects will be filled with the
+    corresponding batched values. The `Module` object manages its links to other
+    nodes through attributes of the class.
+
+    Examples
+    --------
+    ``` python
+    class MySim(Module):
+        def __init__(self, a, b=None):
+            super().__init__()
+            self.a = a
+            self.b = Param("b", b)
+
+        @forward
+        def myfunc(self, x, b=None):
+            return x * self.a.otherfun(x) + b
+
+    class OtherSim(Module):
+        def __init__(self, c=None):
+            super().__init__()
+            self.c = Param("c", c)
+
+        @forward
+        def otherfun(self, x, c = None):
+            return x + c
+
+    othersim = OtherSim()
+    mysim = MySim(a=othersim)
+    #                       b                         c
+    params = [torch.tensor([1.0, 2.0]), torch.tensor([3.0, 4.0])]
+    result = mysim.myfunc(3.0, params=params)
+    # result is tensor([19.0, 23.0])
+    ```
+    """
+
+    def __init__(self, name: Optional[str] = None):
         super().__init__(name=name)
         self.dynamic_params = ()
         self.live_params = ()
         self._type = "module"
-        self._batch = False
+        self.batch = False
 
     @property
     def batch(self) -> bool:

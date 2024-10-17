@@ -21,13 +21,16 @@ class Node:
     Examples
     --------
     ``` python
-    n1 = Node("node1")
-    n2 = Node("node2")
+    n1 = Node()
+    n2 = Node()
     n1.link("subnode", n2) # link n2 as a child of n1, may use any str as the key
     n1.unlink("subnode") # alternately n1.unlink(n2) to unlink by object
+    ```
     """
 
-    def __init__(self, name):
+    def __init__(self, name: Optional[str] = None):
+        if name is None:
+            name = self.__class__.__name__
         assert isinstance(name, str), f"{self.__class__.__name__} name must be a string"
         assert "|" not in name, f"{self.__class__.__name__} cannot contain '|'"
         self._name = name

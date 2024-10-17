@@ -36,10 +36,10 @@ class Param(Node):
     --------
     ``` python
     p1 = Param("test", (1.0, 2.0)) # constant value, length 2 vector
-    p2 = Param("test", None, (2,2)) # dynamic 2x2 matrix value
-    p3 = Param("test", LiveParam) # live updating value
-    p4 = Param("test", p1) # pointer to another parameter
-    p5 = Param("test", lambda p: p.children["other"].value * 2) # function of another parameter
+    p2 = Param("p2", None, (2,2)) # dynamic 2x2 matrix value
+    p3 = Param("fun name", LiveParam) # live updating value
+    p4 = Param("p4", p1) # pointer to another parameter
+    p5 = Param("p5", lambda p: p.children["other"].value * 2) # function of another parameter
     p5.link("other", p2) # link the other parameter needed for the function
     ```
 
@@ -55,7 +55,7 @@ class Param(Node):
 
     def __init__(
         self,
-        name,
+        name: str,
         value: Optional[Union[Tensor, float, int]] = None,
         shape: Optional[tuple[int, ...]] = (),
     ):

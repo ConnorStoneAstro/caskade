@@ -1,4 +1,4 @@
-from caskade import Node
+from caskade import Node, test
 
 import pytest
 
@@ -103,3 +103,7 @@ def test_active():
     assert node4.active == False
     assert node5.active == False
     assert node6.active == False
+
+
+def test_test():
+    test()
