@@ -4,8 +4,32 @@ import torch
 
 
 class Node:
+    """
+    Base graph node class for caskade objects.
+
+    The `Node` object is the base class for all caskade objects. It is used to
+    construct the directed acyclic graph (DAG). The primary function of the
+    `Node` object is to manage the parent-child relationships between nodes in
+    the graph. There is limited functionality for the `Node` object, though it
+    implements the base versions of the `active` state and `to` /
+    `update_dynamic_params` methods. The `active` state is used to communicate
+    through the graph that the simulator is currently running. The `to` method
+    is used to move and/or cast the values of the parameter. The
+    `update_dynamic_params` method is used by `Module` objects to keep track of
+    all dynamic `Param` objects below them in the graph.
+
+    Examples
+    --------
+    ``` python
+    n1 = Node("node1")
+    n2 = Node("node2")
+    n1.link("subnode", n2) # link n2 as a child of n1, may use any str as the key
+    n1.unlink("subnode") # alternately n1.unlink(n2) to unlink by object
+    """
 
     def __init__(self, name):
+        assert isinstance(name, str), f"{self.__class__.__name__} name must be a string"
+        assert "|" not in name, f"{self.__class__.__name__} cannot contain '|'"
         self._name = name
         self._children = {}
         self._parents = set()
@@ -13,18 +37,25 @@ class Node:
         self._type = "node"
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._name
 
     @property
-    def children(self):
+    def children(self) -> dict:
         return self._children
 
     @property
-    def parents(self):
+    def parents(self) -> set:
         return self._parents
 
     def link(self, key, child):
+        # Avoid double linking to the same object
+        if key in self.children:
+            raise ValueError(f"Child key {key} already linked to parent {self.name}")
+        for ownchild in self.children.values():
+            if ownchild == child:
+                raise ValueError(f"Child {child.name} already linked to parent {self.name}")
+
         self._children[key] = child
         child._parents.add(self)
         self.update_dynamic_params()
@@ -36,10 +67,11 @@ class Node:
                     key = node
                     break
         self._children[key]._parents.remove(self)
+        self._children[key].update_dynamic_params()
         del self._children[key]
         self.update_dynamic_params()
 
-    def topological_ordering(self, with_type=None):
+    def topological_ordering(self, with_type=None) -> tuple:
         ordering = [self]
         for node in self.children.values():
             for subnode in node.topological_ordering():
@@ -54,7 +86,7 @@ class Node:
             parent.update_dynamic_params()
 
     @property
-    def active(self):
+    def active(self) -> bool:
         return self._active
 
     @active.setter
@@ -72,7 +104,7 @@ class Node:
 
     def to(self, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None):
         """
-        Moves and/or casts the values of the parameter.
+        Moves and/or casts the PyTorch values of the Node.
 
         Parameters
         ----------
@@ -85,7 +117,7 @@ class Node:
         for child in self.children.values():
             child.to(device=device, dtype=dtype)
 
-    def graph_dict(self):
+    def graph_dict(self) -> dict:
         graph = {
             f"{self.name}|{self._type}": {},
         }
@@ -93,8 +125,8 @@ class Node:
             graph[f"{self.name}|{self._type}"].update(node.graph_dict())
         return graph
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.graph_dict())
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.name})"

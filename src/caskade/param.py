@@ -5,20 +5,53 @@ from torch import Tensor
 
 from .base import Node
 
+__all__ = ("Param", "LiveParam")
 
-class LiveParam:
+
+class LiveParamBase:
     """Placeholder to identify a parameter as live updating. Like `None` there
     exists only one instance of this class."""
 
-    _instance = None
+    pass
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(LiveParam, cls).__new__(cls)
-        return cls._instance
+
+LiveParam = LiveParamBase()
 
 
 class Param(Node):
+    """
+    Node to represent a parameter in the graph.
+
+    The `Param` object is used to represent a parameter in the graph. During
+    runtime this will represent a tensor value which can be used in various
+    calculations. The `Param` object can be set to a constant value (`value`);
+    `None` meaning the value is to be provided at runtime (`dynamic`);
+    `LiveParam` meaning the value will be computed internally in the simulator
+    during runtime (`live`); another `Param` object meaning it will take on that
+    value at runtime (`pointer`); or a function of other `Param` objects to be
+    computed at runtime (`function`). These options allow users to flexibly set
+    the behavior of the simulator.
+
+    Examples
+    --------
+    ``` python
+    p1 = Param("test", (1.0, 2.0)) # constant value, length 2 vector
+    p2 = Param("test", None, (2,2)) # dynamic 2x2 matrix value
+    p3 = Param("test", LiveParam) # live updating value
+    p4 = Param("test", p1) # pointer to another parameter
+    p5 = Param("test", lambda p: p.children["other"].value * 2) # function of another parameter
+    p5.link("other", p2) # link the other parameter needed for the function
+    ```
+
+    Parameters
+    ----------
+    name: (str)
+        The name of the parameter.
+    value: (Optional[Union[Tensor, float, int]], optional)
+        The value of the parameter. Defaults to None meaning dynamic.
+    shape: (Optional[tuple[int, ...]], optional)
+        The shape of the parameter. Defaults to () meaning scalar.
+    """
 
     def __init__(
         self,
@@ -27,38 +60,39 @@ class Param(Node):
         shape: Optional[tuple[int, ...]] = (),
     ):
         super().__init__(name=name)
-        if value is None or isinstance(value, LiveParam):
+        if value is None:
             if shape is None:
                 raise ValueError("Either value or shape must be provided")
             if not isinstance(shape, tuple):
                 raise ValueError("Shape must be a tuple")
             self.shape = shape
-        elif not isinstance(value, (Param, Callable)):
+        elif not isinstance(value, (Param, Callable, LiveParamBase)):
             value = torch.as_tensor(value)
-            self.shape = value.shape
-            assert shape == () or shape == self.shape, "Shape does not match value shape"
+            assert (
+                shape == () or shape == value.shape
+            ), f"Shape {shape} does not match value shape {value.shape}"
         self.value = value
 
     @property
-    def dynamic(self):
+    def dynamic(self) -> bool:
         return self._type == "dynamic"
 
     @property
-    def live(self):
+    def live(self) -> bool:
         return self._type == "live"
 
     @property
-    def shape(self):
-        if self._type in ["pointer", "function"]:
-            return None
+    def shape(self) -> tuple:
         return self._shape
 
     @shape.setter
     def shape(self, shape):
+        if self._type in ["pointer", "function"]:
+            raise RuntimeError("Cannot set shape of parameter with type 'pointer' or 'function'")
         self._shape = shape
 
     @property
-    def value(self):
+    def value(self) -> Union[Tensor, None]:
         if self._type == "pointer":
             return self._value.value
         if self._type == "function":
@@ -68,9 +102,11 @@ class Param(Node):
     @value.setter
     def value(self, value):
         # While active, update silently
-        if self.active and (self.dynamic or self.live):
-            self._value = value
-            return
+        if self.active:
+            if self.dynamic or self.live:
+                self._value = value
+                return
+            raise RuntimeError(f"Cannot set value of non-live parameter {self.name} while active")
 
         # unlink if pointer to avoid floating references
         if self._type == "pointer":
@@ -78,24 +114,19 @@ class Param(Node):
 
         if value is None:
             self._type = "dynamic"
-            assert self.shape is not None, "Shape must be provided for dynamic parameters"
-        elif isinstance(value, LiveParam):
+        elif isinstance(value, LiveParamBase):
             self._type = "live"
-            assert self.shape is not None, "Shape must be provided for live parameters"
         elif isinstance(value, Param):
             self._type = "pointer"
             self.link(value.name, value)
-            self.shape = None
+            self._shape = None
         elif callable(value):
             self._type = "function"
-            self.shape = None
+            self._shape = None
         else:
             self._type = "value"
             value = torch.as_tensor(value)
-            if value.shape != self.shape:
-                raise ValueError(
-                    f"Input shape {value.shape} does not match {self.name} shape {self.shape}"
-                )
+            self.shape = value.shape
 
         self._value = value
         self.update_dynamic_params()

@@ -16,7 +16,7 @@ class Module(Node):
         self._batch = False
 
     @property
-    def batch(self):
+    def batch(self) -> bool:
         return self._batch
 
     @batch.setter
@@ -37,7 +37,12 @@ class Module(Node):
                 B = params.shape[0]
             pos = 0
             for param in self.dynamic_params:
-                size = param.shape.numel()
+                try:
+                    size = param.shape.numel()
+                except AttributeError:
+                    raise ValueError(
+                        f"Param {param.name} has no shape. dynamic parameters must have a shape to use Tensor input."
+                    )
                 if self.batch:
                     param.value = params[:, pos : pos + size].view((B,) + param.shape)
                     pos += size * B
@@ -75,9 +80,9 @@ class Module(Node):
             param.value = None
 
         for param in self.live_params:
-            param.value = LiveParam()
+            param.value = LiveParam
 
-    def fill_kwargs(self, keys):
+    def fill_kwargs(self, keys) -> dict[str, Tensor]:
         return {key: getattr(self, key).value for key in keys}
 
     def __setattr__(self, key, value):
@@ -87,6 +92,10 @@ class Module(Node):
                 return
             if isinstance(value, Node):
                 self.link(key, value)
+                self.update_dynamic_params()
+            if isinstance(value, (list, tuple)) and all(isinstance(v, Node) for v in value):
+                for i, v in enumerate(value):
+                    self.link(f"{key}_{i}", v)
                 self.update_dynamic_params()
 
             super().__setattr__(key, value)

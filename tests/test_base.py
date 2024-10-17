@@ -1,5 +1,7 @@
 from caskade import Node
 
+import pytest
+
 
 def test_creation():
     node = Node("test")
@@ -8,6 +10,9 @@ def test_creation():
     assert node._parents == set()
     assert node._active == False
     assert node._type == "node"
+
+    with pytest.raises(AttributeError):
+        node.name = "newname"
 
 
 def test_link():

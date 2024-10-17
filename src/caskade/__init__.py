@@ -6,6 +6,7 @@ from .decorators import forward
 from .module import Module
 from .param import Param, LiveParam
 
+
 __version__ = VERSION
 __author__ = "Connor and Alexandre"
 

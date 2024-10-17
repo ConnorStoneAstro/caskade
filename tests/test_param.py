@@ -5,8 +5,8 @@ from caskade import Param, LiveParam
 
 
 def test_live_param():
-    lp1 = LiveParam()
-    lp2 = LiveParam()
+    lp1 = LiveParam
+    lp2 = LiveParam
 
     assert lp1 is lp2, "LiveParam is not a singleton"
 
@@ -22,12 +22,22 @@ def test_param_creation():
     p2 = Param("test", 1.0)
     assert p2.name == "test"
     assert p2.value.item() == 1.0
-    p3 = Param("test", shape=(1, 2, 3))
-    with pytest.raises(ValueError):
+    p3 = Param("test", torch.ones((1, 2, 3)))
+    with pytest.raises(RuntimeError):
+        p3.active = True
         p3.value = 1.0
 
     with pytest.raises(AssertionError):
         p4 = Param("test", 1.0, shape=(1, 2, 3))
+
+    p5 = Param("test", p3)
+    with pytest.raises(RuntimeError):
+        p5.shape = (1, 2, 3)
+
+    p6 = Param("test", lambda p: p.children["other"].value * 2)
+    p6.link("other", p2)
+    with pytest.raises(RuntimeError):
+        p6.shape = (1, 2, 3)
 
 
 def test_value_setter():
@@ -57,6 +67,5 @@ def test_value_setter():
     assert p.value.item() == 4.0
 
     # live
-    p.shape = (2,)
-    p.value = LiveParam()
+    p.value = LiveParam
     assert p._type == "live"
