@@ -39,6 +39,12 @@ def test_param_creation():
     with pytest.raises(RuntimeError):
         p6.shape = (1, 2, 3)
 
+    with pytest.raises(ValueError):
+        p7 = Param("test", None, None)
+
+    with pytest.raises(ValueError):
+        p8 = Param("test", None, 7)
+
 
 def test_value_setter():
 

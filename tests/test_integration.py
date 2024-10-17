@@ -35,6 +35,8 @@ def test_full_integration():
     main1 = TestSim(a=2.0, b=None, c=LiveParam, c_shape=(), m1=sub1)
     sub1.f = main1.c
 
+    main1.to(dtype=torch.float32)
+
     b_value = torch.tensor(3.0)
     res = main1.testfun(1.0, params=[b_value])
     assert res.item() == 15.0

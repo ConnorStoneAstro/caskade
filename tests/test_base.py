@@ -20,6 +20,14 @@ def test_link():
     node2 = Node("node2")
     node1.link("subnode", node2)
 
+    # Already linked
+    with pytest.raises(ValueError):
+        node1.link("subnode", node2)
+
+    # Double link
+    with pytest.raises(ValueError):
+        node1.link("subnode2", node2)
+
     assert "subnode" in node1._children
     assert node1._children["subnode"] == node2
     assert node1._parents == set()

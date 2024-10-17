@@ -110,10 +110,8 @@ class Module(Node):
                 if key in self.children:
                     if isinstance(self.children[key], Param):
                         self.children[key].value = params[key]
-                    elif isinstance(self.children[key], Module):
+                    else:  # assumed Module
                         self.children[key].fill_params(params[key])
-                    else:
-                        raise ValueError(f"Key {key} type {type(self.children[key])} not supported")
                 else:
                     raise ValueError(f"Key {key} not found in {self.name} children")
         else:

@@ -2,6 +2,8 @@ import torch
 
 from caskade import Module, Param, forward, LiveParam
 
+import pytest
+
 
 def test_forward():
 
@@ -32,6 +34,10 @@ def test_forward():
 
     sub1 = TestSubSim()
     main1 = TestSim(2.0, (2, 2), LiveParam, (2,), sub1)
+
+    # Dont provide params
+    with pytest.raises(ValueError):
+        main1.testfun()
 
     # List as params
     params = [torch.ones((2, 2)), torch.tensor(3.0), torch.tensor(4.0), torch.tensor(1.0)]
@@ -82,3 +88,31 @@ def test_forward():
     assert result.shape == (2, 2)
     result = main1.testfun(params, 1.0)
     assert result.shape == (2, 2)
+
+    # All params static
+    main1.b = torch.ones((2, 2))
+    sub1.d = torch.tensor(3.0)
+    sub1.e = torch.tensor(4.0)
+    sub1.f = torch.tensor(1.0)
+    result = main1.testfun(1.0)
+    assert result.shape == (2, 2)
+
+    # dynamic with no shape
+    main1.b = None
+    main1.b.shape = None
+    with pytest.raises(ValueError):
+        main1.testfun(1.0, params=torch.ones(4))
+    result = main1.testfun(1.0, params=[torch.ones((2, 2))])
+    assert result.shape == (2, 2)
+
+    # wrong number of params
+    with pytest.raises(ValueError):
+        main1.testfun(1.0, params=[torch.ones((2, 2)), torch.tensor(3.0)])
+
+    # wrong parameter type
+    with pytest.raises(ValueError):
+        main1.testfun(1.0, params=None)
+
+    # param key doesn't exist
+    with pytest.raises(ValueError):
+        main1.testfun(1.0, params={"q": torch.ones((2, 2))})
