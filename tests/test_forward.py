@@ -17,7 +17,7 @@ def test_forward():
         def testfun(self, x, a=None, b=None):
             self.c.value = b + x
             y = self.m1()
-            return x + a + b + y
+            return x + a + b + y.unsqueeze(-1)
 
     class TestSubSim(Module):
         def __init__(self, d=None, e=None, f=None):
@@ -34,44 +34,50 @@ def test_forward():
     main1 = TestSim(2.0, (2, 2), LiveParam, (2,), sub1)
 
     # List as params
-    params = [torch.ones((2, 2)), torch.tensor(3.0), torch.tensor(4.0)]
+    params = [torch.ones((2, 2)), torch.tensor(3.0), torch.tensor(4.0), torch.tensor(1.0)]
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
     result = main1.testfun(params, 1.0)
     assert result.shape == (2, 2)
 
     # Tensor as params
-    params = torch.cat((p.flatten() for p in params))
+    params = torch.cat(tuple(p.flatten() for p in params))
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
     result = main1.testfun(params, 1.0)
     assert result.shape == (2, 2)
 
     # Batched tesnor as params
-    params = params.repeat(3, 1)
+    params = params.repeat(3, 1).unsqueeze(1)
     main1.batch = True
-    result = main1.testfun(1.0, params=params)
-    assert result.shape == (3, 2, 2)
-    result = main1.testfun(params, 1.0)
-    assert result.shape == (3, 2, 2)
+    result = main1.testfun(torch.tensor((1.0, 1.0)), params=params)
+    assert result.shape == (3, 1, 2, 2)
+    result = main1.testfun(params, torch.tensor((1.0, 1.0)))
+    assert result.shape == (3, 1, 2, 2)
     main1.batch = False
 
     # Dict as params, sub element is tensor
-    params = {"b": torch.ones((2, 2)), "m1": torch.tensor((3.0, 4.0))}
+    params = {"b": torch.ones((2, 2)), "m1": torch.tensor((3.0, 4.0, 1.0))}
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
     result = main1.testfun(params, 1.0)
     assert result.shape == (2, 2)
 
     # Dict as params, sub element is list
-    params = {"b": torch.ones((2, 2)), "m1": [torch.tensor(3.0), torch.tensor(4.0)]}
+    params = {
+        "b": torch.ones((2, 2)),
+        "m1": [torch.tensor(3.0), torch.tensor(4.0), torch.tensor(1.0)],
+    }
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
     result = main1.testfun(params, 1.0)
     assert result.shape == (2, 2)
 
     # Dict as params, sub element is dict
-    params = {"b": torch.ones((2, 2)), "m1": {"d": torch.tensor(3.0), "e": torch.tensor(4.0)}}
+    params = {
+        "b": torch.ones((2, 2)),
+        "m1": {"d": torch.tensor(3.0), "e": torch.tensor(4.0), "f": torch.tensor(1.0)},
+    }
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
     result = main1.testfun(params, 1.0)

@@ -1,4 +1,5 @@
 from typing import Sequence, Mapping, Optional
+from math import prod
 
 from torch import Tensor
 
@@ -79,18 +80,20 @@ class Module(Node):
 
         if isinstance(params, Tensor):
             if self.batch:
-                B = params.shape[0]
+                *B, _ = params.shape
             pos = 0
             for param in self.dynamic_params:
                 try:
-                    size = param.shape.numel()
-                except AttributeError:
+                    size = max(1, prod(param.shape))
+                except TypeError:
                     raise ValueError(
                         f"Param {param.name} has no shape. dynamic parameters must have a shape to use Tensor input."
                     )
                 if self.batch:
-                    param.value = params[:, pos : pos + size].view((B,) + param.shape)
-                    pos += size * B
+                    param.value = params[..., pos : pos + size].view(
+                        tuple(B) + ((1,) if param.shape == () else param.shape)
+                    )
+                    pos += size
                 else:
                     param.value = params[pos : pos + size].view(param.shape)
                     pos += size
