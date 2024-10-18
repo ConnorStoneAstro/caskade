@@ -1,5 +1,10 @@
 # caskade
 
+[![CI](https://github.com/ConnorStoneAstro/caskade/actions/workflows/ci.yml/badge.svg)](https://github.com/ConnorStoneAstro/caskade/actions/workflows/ci.yml)
+[![CD](https://github.com/ConnorStoneAstro/caskade/actions/workflows/cd.yml/badge.svg)](https://github.com/ConnorStoneAstro/caskade/actions/workflows/cd.yml)
+[![codecov](https://codecov.io/gh/ConnorStoneAstro/caskade/graph/badge.svg?token=7YAEJJZ4GM)](https://codecov.io/gh/ConnorStoneAstro/caskade)
+[![PyPI - Version](https://img.shields.io/pypi/v/caskade)](https://pypi.org/project/caskade/)
+
 Build scientific simulators, treating them as a directed acyclic graph. Handles
 argument passing for complex nested simulators.
 
