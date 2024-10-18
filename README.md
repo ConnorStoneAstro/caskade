@@ -51,3 +51,8 @@ relationships. All of the complexity of the nested structure and argument
 passing is abstracted away so that at the top one need only pass a list of
 tensors for each parameter, a single large 1d tensor, or a dictionary with the
 same structure as the graph.
+
+## Tutorial
+
+The `caskade` interface has lots of flexability, check out the [Jupyter notebook
+tutorial](docs/notebooks/BeginnersGuide.ipynb) to learn how to use it!
