@@ -12,4 +12,3 @@ def test_module_creation():
     assert m1.mod.p == p1
     assert m1.dynamic_params == (p1,)
     assert m2.dynamic_params == (p1,)
-    assert not m1.batch

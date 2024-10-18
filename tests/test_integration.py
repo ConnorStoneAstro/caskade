@@ -14,8 +14,8 @@ def test_full_integration():
             self.m1 = m1
 
         @forward
-        def testfun(self, x, b=None):
-            self.c.value = b + x
+        def testfun(self, x, b=None, c=None):
+            c.value = b + x
             y = self.m1()
             return x + self.a + b + y
 

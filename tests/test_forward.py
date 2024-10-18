@@ -16,9 +16,9 @@ def test_forward():
             self.m1 = m1
 
         @forward
-        def testfun(self, x, a=None, b=None):
-            self.c.value = b + x
-            y = self.m1()
+        def testfun(self, x, a=None, b=None, c=None):
+            c.value = b + x
+            y = self.m1(live_c=c.value)
             return x + a + b + y.unsqueeze(-1)
 
     class TestSubSim(Module):
@@ -29,17 +29,15 @@ def test_forward():
             self.f = Param("f", f)
 
         @forward
-        def __call__(self, d=None, e=None):
-            return d + e
+        def __call__(self, d=None, e=None, live_c=None):
+            return d + e + live_c.sum()
 
     sub1 = TestSubSim()
-    main1 = TestSim(2.0, (2, 2), LiveParam, (2,), sub1)
+    main1 = TestSim(2.0, (2, 2), LiveParam, None, sub1)
 
     # Dont provide params
-    print(main1.active)
     with pytest.raises(ValueError):
         main1.testfun()
-    print(main1.active)
 
     # List as params
     params = [torch.ones((2, 2)), torch.tensor(3.0), torch.tensor(4.0), torch.tensor(1.0)]
@@ -55,13 +53,13 @@ def test_forward():
     result = main1.testfun(1.0, params)
     assert result.shape == (2, 2)
 
-    # Batched tesnor as params
+    # Batched tensor as params
     params = params.repeat(3, 1).unsqueeze(1)
     main1.batch = True
     result = main1.testfun(torch.tensor((1.0, 1.0)), params=params)
-    assert result.shape == (3, 1, 2, 2)
+    assert result.shape == (3, 3, 2, 2)
     result = main1.testfun(torch.tensor((1.0, 1.0)), params)
-    assert result.shape == (3, 1, 2, 2)
+    assert result.shape == (3, 3, 2, 2)
     main1.batch = False
 
     # Dict as params, sub element is tensor
@@ -102,10 +100,8 @@ def test_forward():
     # dynamic with no shape
     main1.b = None
     main1.b.shape = None
-    print(main1.active)
     with pytest.raises(ValueError):
         main1.testfun(1.0, params=torch.ones(4))
-    print(main1.active)
     result = main1.testfun(1.0, params=[torch.ones((2, 2))])
     assert result.shape == (2, 2)
 

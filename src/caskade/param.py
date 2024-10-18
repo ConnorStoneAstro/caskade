@@ -111,6 +111,9 @@ class Param(Node):
         # unlink if pointer to avoid floating references
         if self._type == "pointer":
             self.unlink(self._value)
+        if self._type == "function":
+            for child in tuple(self.children.values()):
+                self.unlink(child)
 
         if value is None:
             self._type = "dynamic"

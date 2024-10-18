@@ -16,12 +16,8 @@ class Module(Node):
     they also hold the `Param` objects that are used in the calculations. The
     `Module` object has additional functionality to manage the `Param` objects
     below it in the graph, it keeps track of all `dynamic` `Param` objects so
-    that at runtime their values may be filled. The `Module` object has a
-    `batch` attribute that can be set to `True` to indicate that the module
-    should be run in batch mode. This means that the module will be run with a
-    batch of inputs and the `Param` objects will be filled with the
-    corresponding batched values. The `Module` object manages its links to other
-    nodes through attributes of the class.
+    that at runtime their values may be filled. The `Module` object manages its
+    links to other nodes through attributes of the class.
 
     Examples
     --------
@@ -54,21 +50,13 @@ class Module(Node):
     ```
     """
 
+    _module_names = set()
+
     def __init__(self, name: Optional[str] = None):
         super().__init__(name=name)
         self.dynamic_params = ()
         self.live_params = ()
         self._type = "module"
-        self.batch = False
-
-    @property
-    def batch(self) -> bool:
-        return self._batch
-
-    @batch.setter
-    def batch(self, value):
-        assert isinstance(value, bool)
-        self._batch = value
 
     def update_dynamic_params(self):
         """Maintain a tuple of dynamic and live parameters at all points lower
@@ -89,7 +77,7 @@ class Module(Node):
             be a Tensor, a Sequence, or a Mapping. If the input is a Tensor, the
             values are filled in order of the dynamic parameters. `params`
             should be a flattened tensor with all parameters concatenated in the
-            order of the dynamic parameters. If `self.batch` is `True` then all
+            order of the dynamic parameters. If `len(params.shape)>1` then all
             dimensions but the last one are considered batch dimensions. If the
             input is a Sequence, the values are filled in order of the dynamic
             parameters. If the input is a Mapping, the values are filled by
@@ -101,7 +89,9 @@ class Module(Node):
         assert self.active, "Module must be active to fill params"
 
         if isinstance(params, Tensor):
-            if self.batch:
+            # check for batch dimension
+            batch = len(params.shape) > 1
+            if batch:
                 *B, _ = params.shape
             pos = 0
             for param in self.dynamic_params:
@@ -109,15 +99,22 @@ class Module(Node):
                     raise ValueError(
                         f"Param {param.name} has no shape. dynamic parameters must have a shape to use Tensor input."
                     )
+                # Handle scalar parameters
                 size = max(1, prod(param.shape))
-                if self.batch:
-                    param.value = params[..., pos : pos + size].view(
-                        tuple(B) + ((1,) if param.shape == () else param.shape)
-                    )
+                if batch:
+                    try:
+                        param.value = params[..., pos : pos + size].view(tuple(B) + param.shape)
+                    except IndexError:
+                        raise AssertionError(
+                            f"Batched input params shape {params.shape} does not match dynamic params shape. Make sure the last dimension has size equal to the sum of all dynamic params sizes."
+                        )
                     pos += size
                 else:
                     param.value = params[pos : pos + size].view(param.shape)
                     pos += size
+            assert (
+                pos == params.shape[-1]
+            ), f"Input params length {params.shape} does not match dynamic params length. Not all dynamic params were filled."
         elif isinstance(params, Sequence):
             if len(params) == len(self.dynamic_params):
                 for param, value in zip(self.dynamic_params, params):
@@ -158,7 +155,29 @@ class Module(Node):
         parameters. The requested keys are matched to names of `Param` objects
         owned by the `Module`.
         """
-        return {key: getattr(self, key).value for key in keys}
+        kwargs = {}
+        for key in keys:
+            if key in self.children:
+                attr = getattr(self, key)
+                if attr.live:
+                    kwargs[key] = attr
+                else:
+                    kwargs[key] = attr.value
+        return kwargs
+
+    @property
+    def _name(self) -> str:
+        return self.__name
+
+    @_name.setter
+    def _name(self, name: str):
+        i = 0
+        newname = name
+        while newname in Module._module_names:
+            newname = f"{name}_{i}"
+            i += 1
+        self._module_names.add(newname)
+        self.__name = newname
 
     def __setattr__(self, key: str, value: Any):
         try:
