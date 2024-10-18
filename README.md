@@ -59,5 +59,5 @@ same structure as the graph.
 
 ## Tutorial
 
-The `caskade` interface has lots of flexability, check out the [Jupyter notebook
+The `caskade` interface has lots of flexibility, check out the [Jupyter notebook
 tutorial](docs/notebooks/BeginnersGuide.ipynb) to learn how to use it!
