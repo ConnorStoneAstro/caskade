@@ -101,20 +101,20 @@ class Module(Node):
                     )
                 # Handle scalar parameters
                 size = max(1, prod(param.shape))
+                get_shape = tuple(B) + param.shape if batch else param.shape
                 try:
-                    if batch:
-                        param.value = params[..., pos : pos + size].view(tuple(B) + param.shape)
-                    else:
-                        param.value = params[pos : pos + size].view(param.shape)
+                    param.value = params[..., pos : pos + size].view(get_shape)
                 except (RuntimeError, IndexError):
                     fullnumel = sum(max(1, prod(p.shape)) for p in self.dynamic_params)
                     raise AssertionError(
                         f"Input params shape {params.shape} does not match dynamic params shape. Make sure the last dimension has size equal to the sum of all dynamic params sizes ({fullnumel})."
                     )
                 pos += size
-            assert (
-                pos == params.shape[-1]
-            ), f"Input params length {params.shape} does not match dynamic params length. Not all dynamic params were filled."
+            if pos != params.shape[-1]:
+                fullnumel = sum(max(1, prod(p.shape)) for p in self.dynamic_params)
+                raise AssertionError(
+                    f"Input params length {params.shape} does not match dynamic params length ({fullnumel}). Not all dynamic params were filled."
+                )
         elif isinstance(params, Sequence):
             if len(params) == len(self.dynamic_params):
                 for param, value in zip(self.dynamic_params, params):
@@ -158,11 +158,8 @@ class Module(Node):
         kwargs = {}
         for key in keys:
             if key in self.children:
-                attr = getattr(self, key)
-                if attr.live:
-                    kwargs[key] = attr
-                else:
-                    kwargs[key] = attr.value
+                attr = self.children[key]
+                kwargs[key] = attr if attr.live else attr.value
         return kwargs
 
     @property
@@ -179,7 +176,12 @@ class Module(Node):
         self._module_names.add(newname)
         self.__name = newname
 
+    def __del__(self):
+        """Remove the name from the set of module names when the object is deleted."""
+        self._module_names.remove(self._name)
+
     def __setattr__(self, key: str, value: Any):
+        """Intercept attribute setting to update parameters and graph links."""
         try:
             if key in self.children and isinstance(self.children[key], Param):
                 self.children[key].value = value
@@ -187,7 +189,6 @@ class Module(Node):
             if isinstance(value, Node):
                 self.link(key, value)
                 self.update_dynamic_params()
-
-            super().__setattr__(key, value)
         except AttributeError:
-            super().__setattr__(key, value)
+            pass
+        super().__setattr__(key, value)

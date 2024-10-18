@@ -74,7 +74,7 @@ class Node(object):
         del self._children[key]
         self.update_dynamic_params()
 
-    def topological_ordering(self, with_type: Optional[str] = None) -> tuple:
+    def topological_ordering(self, with_type: Optional[str] = None) -> tuple["Node"]:
         """Return a topological ordering of the graph below the current node."""
         ordering = [self]
         for node in self.children.values():
@@ -96,7 +96,7 @@ class Node(object):
         return self._active
 
     @active.setter
-    def active(self, value):
+    def active(self, value: bool):
         # Avoid unnecessary updates
         if self._active == value:
             return
@@ -123,7 +123,7 @@ class Node(object):
         for child in self.children.values():
             child.to(device=device, dtype=dtype)
 
-    def graph_dict(self) -> dict:
+    def graph_dict(self) -> dict[str, dict]:
         """Return a dictionary representation of the graph below the current
         node."""
         graph = {
@@ -133,8 +133,18 @@ class Node(object):
             graph[f"{self.name}|{self._type}"].update(node.graph_dict())
         return graph
 
+    @staticmethod
+    def graph_print(dag: dict, depth: int = 0, indent: int = 4, result: str = "") -> str:
+        """Print the graph dictionary in a human-readable format."""
+        for key in dag:
+            result = f"{result}{' ' * indent * depth}{key}\n"
+            result = Node.graph_print(dag[key], depth + 1, indent, result) + "\n"
+        if result:  # remove trailing newline
+            result = result[:-1]
+        return result
+
     def __str__(self) -> str:
-        return str(self.graph_dict())
+        return self.graph_print(self.graph_dict())
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.name})"
