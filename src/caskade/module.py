@@ -101,17 +101,17 @@ class Module(Node):
                     )
                 # Handle scalar parameters
                 size = max(1, prod(param.shape))
-                if batch:
-                    try:
+                try:
+                    if batch:
                         param.value = params[..., pos : pos + size].view(tuple(B) + param.shape)
-                    except IndexError:
-                        raise AssertionError(
-                            f"Batched input params shape {params.shape} does not match dynamic params shape. Make sure the last dimension has size equal to the sum of all dynamic params sizes."
-                        )
-                    pos += size
-                else:
-                    param.value = params[pos : pos + size].view(param.shape)
-                    pos += size
+                    else:
+                        param.value = params[pos : pos + size].view(param.shape)
+                except (RuntimeError, IndexError):
+                    fullnumel = sum(max(1, prod(p.shape)) for p in self.dynamic_params)
+                    raise AssertionError(
+                        f"Input params shape {params.shape} does not match dynamic params shape. Make sure the last dimension has size equal to the sum of all dynamic params sizes ({fullnumel})."
+                    )
+                pos += size
             assert (
                 pos == params.shape[-1]
             ), f"Input params length {params.shape} does not match dynamic params length. Not all dynamic params were filled."

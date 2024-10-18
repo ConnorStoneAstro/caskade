@@ -52,6 +52,12 @@ def test_forward():
     assert result.shape == (2, 2)
     result = main1.testfun(1.0, params)
     assert result.shape == (2, 2)
+    # Wrong number of params, too few
+    with pytest.raises(AssertionError):
+        result = main1.testfun(1.0, params[:-3])
+    # Wrong number of params, too many
+    with pytest.raises(AssertionError):
+        result = main1.testfun(1.0, torch.cat((params, params)))
 
     # Batched tensor as params
     params = params.repeat(3, 1).unsqueeze(1)
