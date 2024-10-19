@@ -51,8 +51,11 @@ class Node(object):
     def parents(self) -> set:
         return self._parents
 
-    def link(self, key: str, child: "Node"):
+    def link(self, key: Union[str, "Node"], child: Optional["Node"] = None):
         """Link the current `Node` object to another `Node` object as a child."""
+        if child is None:
+            child = key
+            key = child.name
         # Avoid double linking to the same object
         if key in self.children:
             raise ValueError(f"Child key {key} already linked to parent {self.name}")

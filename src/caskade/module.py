@@ -126,15 +126,12 @@ class Module(Node):
                 try:
                     for param in params:
                         while True:  # find next dynamic param, or Module
-                            if (
-                                isinstance(self.children[keys[i]], Param)
-                                and self.children[keys[i]].dynamic
-                            ):
-                                self.children[keys[i]]._value = param
+                            if isinstance(self[keys[i]], Param) and self[keys[i]].dynamic:
+                                self[keys[i]]._value = param
                                 i += 1
                                 break
-                            elif isinstance(self.children[keys[i]], Module):
-                                self.children[keys[i]].fill_params(param)
+                            elif isinstance(self[keys[i]], Module):
+                                self[keys[i]].fill_params(param)
                                 i += 1
                                 break
                             i += 1
@@ -149,10 +146,10 @@ class Module(Node):
         elif isinstance(params, Mapping):
             for key in params:
                 if key in self.children:
-                    if isinstance(self.children[key], Param):
-                        self.children[key]._value = params[key]
+                    if isinstance(self[key], Param):
+                        self[key]._value = params[key]
                     else:  # assumed Module
-                        self.children[key].fill_params(params[key])
+                        self[key].fill_params(params[key])
                 else:
                     raise ValueError(f"Key {key} not found in {self.name} children")
         else:
@@ -177,8 +174,8 @@ class Module(Node):
         """
         kwargs = {}
         for key in keys:
-            if key in self.children and isinstance(self.children[key], Param):
-                kwargs[key] = self.children[key].value
+            if key in self.children and isinstance(self[key], Param):
+                kwargs[key] = self[key].value
         return kwargs
 
     @property
@@ -202,8 +199,8 @@ class Module(Node):
     def __setattr__(self, key: str, value: Any):
         """Intercept attribute setting to update parameters and graph links."""
         try:
-            if key in self.children and isinstance(self.children[key], Param):
-                self.children[key].value = value
+            if key in self.children and isinstance(self[key], Param):
+                self[key].value = value
                 return
             if isinstance(value, Node):
                 self.link(key, value)
