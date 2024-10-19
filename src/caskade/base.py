@@ -26,6 +26,8 @@ class Node(object):
     ```
     """
 
+    graphviz_types = {"node": {"style": "solid", "color": "black", "shape": "circle"}}
+
     def __init__(self, name: Optional[str] = None):
         if name is None:
             name = self.__class__.__name__
@@ -123,6 +125,26 @@ class Node(object):
         for child in self.children.values():
             child.to(device=device, dtype=dtype)
 
+    def graphviz(self) -> "graphviz.Digraph":
+        import graphviz
+
+        components = set()
+
+        def add_node(node, dot):
+            if node in components:
+                return
+            dot.attr("node", **node.graphviz_types[node._type])
+            dot.node(str(id(node)), f"{node.__class__.__name__}('{node.name}')")
+            components.add(node)
+
+            for child in node.children.values():
+                add_node(child, dot)
+                dot.edge(str(id(node)), str(id(child)))
+
+        dot = graphviz.Digraph(strict=True)
+        add_node(self, dot)
+        return dot
+
     def graph_dict(self) -> dict[str, dict]:
         """Return a dictionary representation of the graph below the current
         node."""
@@ -133,12 +155,11 @@ class Node(object):
             graph[f"{self.name}|{self._type}"].update(node.graph_dict())
         return graph
 
-    @staticmethod
-    def graph_print(dag: dict, depth: int = 0, indent: int = 4, result: str = "") -> str:
+    def graph_print(self, dag: dict, depth: int = 0, indent: int = 4, result: str = "") -> str:
         """Print the graph dictionary in a human-readable format."""
         for key in dag:
             result = f"{result}{' ' * indent * depth}{key}\n"
-            result = Node.graph_print(dag[key], depth + 1, indent, result) + "\n"
+            result = self.graph_print(dag[key], depth + 1, indent, result) + "\n"
         if result:  # remove trailing newline
             result = result[:-1]
         return result
@@ -148,3 +169,6 @@ class Node(object):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.name})"
+
+    def __getitem__(self, key: str) -> "Node":
+        return self.children[key]

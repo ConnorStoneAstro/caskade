@@ -65,6 +65,9 @@ def test_topological_ordering():
     ordering = node1.topological_ordering(with_type="dynamic")
     assert ordering == ()
 
+    graph = node1.graphviz()
+    assert graph is not None, "should return a graphviz object"
+
     node1.unlink("subnode1")
     ordering = node1.topological_ordering()
     assert ordering == (node1, node3, node6)

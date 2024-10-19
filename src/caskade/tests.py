@@ -1,6 +1,6 @@
 import torch
 
-from caskade import Module, Param, forward, LiveParam
+from caskade import Module, Param, forward
 
 __all__ = ("test",)
 
@@ -17,7 +17,6 @@ def _test_full_integration():
 
         @forward
         def testfun(self, x, b=None):
-            self.c.value = b + x
             y = self.m1()
             return x + self.a + b + y
 
@@ -34,12 +33,13 @@ def _test_full_integration():
 
     sub1 = TestSubSim(d=1.0, e=lambda s: s.children["flink"].value, f=None)
     sub1.e.link("flink", sub1.f)
-    main1 = TestSim(a=2.0, b=None, c=LiveParam, c_shape=(), m1=sub1)
+    main1 = TestSim(a=2.0, b=None, c=None, c_shape=(), m1=sub1)
+    main1.c = main1.b
     sub1.f = main1.c
 
     b_value = torch.tensor(3.0)
     res = main1.testfun(1.0, params=[b_value])
-    assert res.item() == 15.0
+    assert res.item() == 13.0
 
 
 def test():

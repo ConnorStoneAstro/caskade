@@ -1,14 +1,7 @@
 import pytest
 import torch
 
-from caskade import Param, LiveParam
-
-
-def test_live_param():
-    lp1 = LiveParam
-    lp2 = LiveParam
-
-    assert lp1 is lp2, "LiveParam is not a singleton"
+from caskade import Param
 
 
 def test_param_creation():
@@ -17,7 +10,6 @@ def test_param_creation():
     p1 = Param("test")
     assert p1.name == "test"
     assert p1.dynamic
-    assert not p1.live
     assert p1.value is None
 
     # Name and value
@@ -41,7 +33,7 @@ def test_param_creation():
         p5.shape = (1, 2, 3)
 
     # Function parameter
-    p6 = Param("test", lambda p: p.children["other"].value * 2)
+    p6 = Param("test", lambda p: p["other"].value * 2)
     p6.link("other", p2)
     with pytest.raises(RuntimeError):
         p6.shape = (1, 2, 3)
@@ -76,11 +68,7 @@ def test_value_setter():
     assert p.shape is None
 
     # function
-    p.value = lambda p: p.children["other"].value * 2
+    p.value = lambda p: p["other"].value * 2
     p.link("other", other)
-    assert p._type == "function"
-    assert p.value.item() == 4.0
-
-    # live
-    p.value = LiveParam
-    assert p._type == "live"
+    assert p._type == "pointer"
+    assert p.value is None

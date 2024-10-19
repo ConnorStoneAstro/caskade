@@ -4,7 +4,7 @@ from math import prod
 from torch import Tensor
 
 from .base import Node
-from .param import Param, LiveParam
+from .param import Param
 
 
 class Module(Node):
@@ -51,11 +51,12 @@ class Module(Node):
     """
 
     _module_names = set()
+    graphviz_types = {"module": {"style": "solid", "color": "black", "shape": "ellipse"}}
 
     def __init__(self, name: Optional[str] = None):
         super().__init__(name=name)
         self.dynamic_params = ()
-        self.live_params = ()
+        self.pointer_params = ()
         self._type = "module"
 
     def update_dynamic_params(self):
@@ -63,7 +64,7 @@ class Module(Node):
         in the DAG."""
         super().update_dynamic_params()
         self.dynamic_params = tuple(self.topological_ordering("dynamic"))
-        self.live_params = tuple(self.topological_ordering("live"))
+        self.pointer_params = tuple(self.topological_ordering("pointer"))
 
     def fill_params(self, params: Union[Tensor, Sequence, Mapping]):
         """
@@ -103,7 +104,7 @@ class Module(Node):
                 size = max(1, prod(param.shape))
                 get_shape = tuple(B) + param.shape if batch else param.shape
                 try:
-                    param.value = params[..., pos : pos + size].view(get_shape)
+                    param._value = params[..., pos : pos + size].view(get_shape)
                 except (RuntimeError, IndexError):
                     fullnumel = sum(max(1, prod(p.shape)) for p in self.dynamic_params)
                     raise AssertionError(
@@ -118,7 +119,29 @@ class Module(Node):
         elif isinstance(params, Sequence):
             if len(params) == len(self.dynamic_params):
                 for param, value in zip(self.dynamic_params, params):
-                    param.value = value
+                    param._value = value
+            elif len(params) <= len(self.children):
+                i = 0
+                keys = list(self.children.keys())
+                try:
+                    for param in params:
+                        while True:  # find next dynamic param, or Module
+                            if (
+                                isinstance(self.children[keys[i]], Param)
+                                and self.children[keys[i]].dynamic
+                            ):
+                                self.children[keys[i]]._value = param
+                                i += 1
+                                break
+                            elif isinstance(self.children[keys[i]], Module):
+                                self.children[keys[i]].fill_params(param)
+                                i += 1
+                                break
+                            i += 1
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Error filling params: {e}. Filling params with a list-by-children, rather than one element per dynamic parameter is tricky, consider using alternate format."
+                    )
             else:
                 raise ValueError(
                     f"Input params length ({len(params)}) does not match dynamic params length ({len(self.dynamic_params)})"
@@ -127,7 +150,7 @@ class Module(Node):
             for key in params:
                 if key in self.children:
                     if isinstance(self.children[key], Param):
-                        self.children[key].value = params[key]
+                        self.children[key]._value = params[key]
                     else:  # assumed Module
                         self.children[key].fill_params(params[key])
                 else:
@@ -143,11 +166,8 @@ class Module(Node):
         used by a user."""
         assert self.active, "Module must be active to clear params"
 
-        for param in self.dynamic_params:
-            param.value = None
-
-        for param in self.live_params:
-            param.value = LiveParam
+        for param in self.dynamic_params + self.pointer_params:
+            param._value = None
 
     def fill_kwargs(self, keys: tuple[str]) -> dict[str, Tensor]:
         """
@@ -157,9 +177,8 @@ class Module(Node):
         """
         kwargs = {}
         for key in keys:
-            if key in self.children:
-                attr = self.children[key]
-                kwargs[key] = attr if attr.live else attr.value
+            if key in self.children and isinstance(self.children[key], Param):
+                kwargs[key] = self.children[key].value
         return kwargs
 
     @property

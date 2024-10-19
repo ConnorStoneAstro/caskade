@@ -1,6 +1,6 @@
 import torch
 
-from caskade import Module, Param, forward, LiveParam
+from caskade import Module, Param, forward
 
 import pytest
 
@@ -8,17 +8,16 @@ import pytest
 def test_forward():
 
     class TestSim(Module):
-        def __init__(self, a, b_shape, c, c_shape, m1):
+        def __init__(self, a, b_shape, c, m1):
             super().__init__("test_sim")
             self.a = Param("a", a)
             self.b = Param("b", None, b_shape)
-            self.c = Param("c", c, c_shape)
+            self.c = Param("c", c)
             self.m1 = m1
 
         @forward
         def testfun(self, x, a=None, b=None, c=None):
-            c.value = b + x
-            y = self.m1(live_c=c.value)
+            y = self.m1(live_c=c + x)
             return x + a + b + y.unsqueeze(-1)
 
     class TestSubSim(Module):
@@ -33,7 +32,12 @@ def test_forward():
             return d + e + live_c.sum()
 
     sub1 = TestSubSim()
-    main1 = TestSim(2.0, (2, 2), LiveParam, None, sub1)
+    main1 = TestSim(2.0, (2, 2), None, sub1)
+    main1.c = main1.b
+
+    # check graph generation
+    graph = main1.graphviz()
+    assert graph is not None, "should return a graphviz object"
 
     # Dont provide params
     with pytest.raises(ValueError):
@@ -41,6 +45,13 @@ def test_forward():
 
     # List as params
     params = [torch.ones((2, 2)), torch.tensor(3.0), torch.tensor(4.0), torch.tensor(1.0)]
+    result = main1.testfun(1.0, params=params)
+    assert result.shape == (2, 2)
+    result = main1.testfun(1.0, params)
+    assert result.shape == (2, 2)
+
+    # List grouped by child
+    params = [torch.ones((2, 2)), torch.tensor((3.0, 4.0, 1.0))]
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
     result = main1.testfun(1.0, params)
@@ -112,7 +123,7 @@ def test_forward():
     assert result.shape == (2, 2)
 
     # wrong number of params
-    with pytest.raises(ValueError):
+    with pytest.raises(RuntimeError):
         main1.testfun(1.0, params=[torch.ones((2, 2)), torch.tensor(3.0)])
 
     # wrong parameter type
