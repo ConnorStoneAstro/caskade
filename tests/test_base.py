@@ -86,7 +86,9 @@ def test_topological_ordering():
     ordering = node1.topological_ordering()
     assert ordering == (node1,)
 
-@pytest.mark.parametrize("linkbyname": [True, False], "graphviz_order": [True, False])
+
+@pytest.mark.parametrize("linkbyname", [True, False])
+@pytest.mark.parametrize("graphviz_order", [True, False])
 def test_active(linkbyname, graphviz_order):
     node1 = Node("node1")
     node2 = Node("node2")
@@ -101,7 +103,7 @@ def test_active(linkbyname, graphviz_order):
         node2.link("subnode3", node4)
         node2.link("subnode4", node5)
         node3.link("subnode5", node6)
-    else:    
+    else:
         node1.link(node2)
         node1.link(node3)
         node2.link(node4)
@@ -134,6 +136,7 @@ def test_active(linkbyname, graphviz_order):
 
     graph = node1.graphviz(graphviz_order)
     assert graph is not None, "should return a graphviz object"
+
 
 def test_test():
     test()

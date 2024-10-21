@@ -57,9 +57,9 @@ def test_forward():
     result = main1.testfun(1.0, params)
     assert result.shape == (2, 2)
     # Wrong number of params, too many
-    params = params + params + params
+    badparams = params + params + params
     with pytest.raises(AssertionError):
-        result = main1.testfun(1.0, params=params)
+        result = main1.testfun(1.0, params=badparams)
 
     # Tensor as params
     params = torch.cat(tuple(p.flatten() for p in params))
