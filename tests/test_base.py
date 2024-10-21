@@ -68,6 +68,16 @@ def test_topological_ordering():
     graph = node1.graphviz()
     assert graph is not None, "should return a graphviz object"
 
+    a = node1.descendants()
+    assert len(a) == 5, "should return 5 descendants"
+    a = node1.descendants(with_type="node")
+    assert len(a) == 5, "should return 5 descendants"
+
+    d = node1.ancestors()
+    assert len(d) == 0, "should return 0 ancestors"
+    d = node6.ancestors(with_type="node")
+    assert len(d) == 2, "should return 2 ancestors"
+
     node1.unlink("subnode1")
     ordering = node1.topological_ordering()
     assert ordering == (node1, node3, node6)

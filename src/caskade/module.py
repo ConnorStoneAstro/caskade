@@ -59,10 +59,10 @@ class Module(Node):
         self.pointer_params = ()
         self._type = "module"
 
-    def update_dynamic_params(self):
+    def update_graph(self):
         """Maintain a tuple of dynamic and live parameters at all points lower
         in the DAG."""
-        super().update_dynamic_params()
+        super().update_graph()
         self.dynamic_params = tuple(self.topological_ordering("dynamic"))
         self.pointer_params = tuple(self.topological_ordering("pointer"))
 
@@ -204,7 +204,6 @@ class Module(Node):
                 return
             if isinstance(value, Node):
                 self.link(key, value)
-                self.update_dynamic_params()
         except AttributeError:
             pass
         super().__setattr__(key, value)

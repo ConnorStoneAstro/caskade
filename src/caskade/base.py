@@ -10,11 +10,10 @@ class Node(object):
     `Node` object is to manage the parent-child relationships between nodes in
     the graph. There is limited functionality for the `Node` object, though it
     implements the base versions of the `active` state and `to` /
-    `update_dynamic_params` methods. The `active` state is used to communicate
+    `update_graph` methods. The `active` state is used to communicate
     through the graph that the simulator is currently running. The `to` method
-    is used to move and/or cast the values of the parameter. The
-    `update_dynamic_params` method is used by `Module` objects to keep track of
-    all dynamic `Param` objects below them in the graph.
+    is used to move and/or cast the values of the parameter. The `update_graph`
+    method is used signal all parents that the graph below them has changed.
 
     Examples
     --------
@@ -52,20 +51,42 @@ class Node(object):
         return self._parents
 
     def link(self, key: Union[str, "Node"], child: Optional["Node"] = None):
-        """Link the current `Node` object to another `Node` object as a child."""
+        """Link the current `Node` object to another `Node` object as a child.
+
+        Parameters
+        ----------
+        key: (Union[str, Node])
+            The key to link the child node with.
+        child: (Optional[Node], optional)
+            The child `Node` object to link to. Defaults to None in which
+            case the key is used as the child.
+
+        Examples
+        --------
+        ``` python
+        n1 = Node()
+        n2 = Node()
+
+        n1.link("subnode", n2) # may use any str as the key
+        n1.unlink("subnode")
+
+        # Alternately, link by object
+        n1.link(n2)
+        n1.unlink(n2)
+        ```
+        """
         if child is None:
             child = key
             key = child.name
         # Avoid double linking to the same object
         if key in self.children:
             raise ValueError(f"Child key {key} already linked to parent {self.name}")
-        for ownchild in self.children.values():
-            if ownchild == child:
-                raise ValueError(f"Child {child.name} already linked to parent {self.name}")
+        if child in self.children.values():
+            raise ValueError(f"Child {child.name} already linked to parent {self.name}")
 
         self._children[key] = child
         child._parents.add(self)
-        self.update_dynamic_params()
+        self.update_graph()
 
     def unlink(self, key: Union[str, "Node"]):
         """Unlink the current `Node` object from another `Node` object which is a child."""
@@ -75,9 +96,9 @@ class Node(object):
                     key = node
                     break
         self._children[key]._parents.remove(self)
-        self._children[key].update_dynamic_params()
+        self._children[key].update_graph()
         del self._children[key]
-        self.update_dynamic_params()
+        self.update_graph()
 
     def topological_ordering(self, with_type: Optional[str] = None) -> tuple["Node"]:
         """Return a topological ordering of the graph below the current node."""
@@ -90,11 +111,34 @@ class Node(object):
             return tuple(ordering)
         return tuple(filter(lambda n: n._type == with_type, ordering))
 
-    def update_dynamic_params(self):
-        """Update the dynamic parameters of the current node and all children.
-        This is intended to be overridden."""
+    def ancestors(self, with_type: Optional[str] = None) -> set["Node"]:
+        """Return all ancestors of the current node."""
+        ancestors = set()
+        for node in self.ancestors:
+            ancestors.add(node)
+            for subnode in node.ancestors(with_type):
+                ancestors.add(subnode)
+        if with_type is None:
+            return ancestors
+        return set(filter(lambda n: n._type == with_type, ancestors))
+
+    def descendants(self, with_type: Optional[str] = None) -> set["Node"]:
+        """Return all descendants of the current node."""
+        descendants = set()
+        for node in self.children.values():
+            descendants.add(node)
+            for subnode in node.descendants(with_type):
+                descendants.add(subnode)
+        if with_type is None:
+            return descendants
+        return set(filter(lambda n: n._type == with_type, descendants))
+
+    def update_graph(self):
+        """Triggers a call to all parents that the graph below them has been
+        updated. The base `Node` object does nothing with this information, but
+        other node types may use this to update internal state."""
         for parent in self.parents:
-            parent.update_dynamic_params()
+            parent.update_graph()
 
     @property
     def active(self) -> bool:
@@ -128,7 +172,18 @@ class Node(object):
         for child in self.children.values():
             child.to(device=device, dtype=dtype)
 
-    def graphviz(self) -> "graphviz.Digraph":
+        return self
+
+    def graphviz(self, top_down=True) -> "graphviz.Digraph":
+        """Return a graphviz object representing the graph below the current
+        node in the DAG.
+
+        Parameters
+        ----------
+        top_down: (bool, optional)
+            Whether to draw the graph top-down (current node at top) or
+            bottom-up (current node at bottom). Defaults to True.
+        """
         import graphviz
 
         components = set()
@@ -142,7 +197,10 @@ class Node(object):
 
             for child in node.children.values():
                 add_node(child, dot)
-                dot.edge(str(id(node)), str(id(child)))
+                if top_down:
+                    dot.edge(str(id(node)), str(id(child)))
+                else:
+                    dot.edge(str(id(child)), str(id(node)))
 
         dot = graphviz.Digraph(strict=True)
         add_node(self, dot)

@@ -128,7 +128,7 @@ class Param(Node):
             self.shape = value.shape
             self._value = value
 
-        self.update_dynamic_params()
+        self.update_graph()
 
     def to(self, device=None, dtype=None):
         """
@@ -144,3 +144,5 @@ class Param(Node):
         super().to(device=device, dtype=dtype)
         if self.static:
             self._value = self._value.to(device=device, dtype=dtype)
+
+        return self
