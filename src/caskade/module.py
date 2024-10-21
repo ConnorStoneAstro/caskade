@@ -21,7 +21,7 @@ class Module(Node):
 
     Examples
     --------
-    ``` python
+    ```{python}
     class MySim(Module):
         def __init__(self, a, b=None):
             super().__init__()

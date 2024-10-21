@@ -22,7 +22,7 @@ class Param(Node):
 
     Examples
     --------
-    ``` python
+    ```{python}
     p1 = Param("test", (1.0, 2.0)) # constant value, length 2 vector
     p2 = Param("p2", None, (2,2)) # dynamic 2x2 matrix value
     p3 = Param("p3", p1) # pointer to another parameter

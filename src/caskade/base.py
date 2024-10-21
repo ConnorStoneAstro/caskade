@@ -17,7 +17,7 @@ class Node(object):
 
     Examples
     --------
-    ``` python
+    ```{python}
     n1 = Node()
     n2 = Node()
     n1.link("subnode", n2) # link n2 as a child of n1, may use any str as the key
@@ -63,7 +63,7 @@ class Node(object):
 
         Examples
         --------
-        ``` python
+        ```{python}
         n1 = Node()
         n2 = Node()
 
