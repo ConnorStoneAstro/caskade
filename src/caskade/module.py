@@ -140,7 +140,7 @@ class Module(Node):
                         f"Error filling params: {e}. Filling params with a list-by-children, rather than one element per dynamic parameter is tricky, consider using alternate format."
                     )
             else:
-                raise ValueError(
+                raise AssertionError(
                     f"Input params length ({len(params)}) does not match dynamic params length ({len(self.dynamic_params)})"
                 )
         elif isinstance(params, Mapping):
