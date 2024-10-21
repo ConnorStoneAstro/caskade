@@ -114,7 +114,7 @@ class Node(object):
     def ancestors(self, with_type: Optional[str] = None) -> set["Node"]:
         """Return all ancestors of the current node."""
         ancestors = set()
-        for node in self.ancestors:
+        for node in self.parents:
             ancestors.add(node)
             for subnode in node.ancestors(with_type):
                 ancestors.add(subnode)
