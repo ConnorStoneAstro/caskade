@@ -58,7 +58,8 @@ passing is abstracted away so that at the top one need only pass a list of
 tensors for each parameter, a single large 1d tensor, or a dictionary with the
 same structure as the graph.
 
-## Tutorial
+## Documentation
 
-The `caskade` interface has lots of flexibility, check out the [Jupyter notebook
-tutorial](docs/notebooks/BeginnersGuide.ipynb) to learn how to use it!
+The `caskade` interface has lots of flexibility, check out the
+[docs](https://caskade.readthedocs.io) to learn more. For a quick start, jump
+right to the [Jupyter notebook tutorial](notebooks/BeginnersGuide.ipynb)!
