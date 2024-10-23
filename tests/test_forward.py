@@ -72,7 +72,7 @@ def test_forward():
         main1.from_valid(badparams)
 
     # List by children
-    params = [torch.ones((2, 2)), torch.tensor([3.0, 4.0, 1.0])]
+    params = [torch.ones((2, 2)).flatten(), torch.tensor([3.0, 4.0, 1.0])]
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
     result = main1.testfun(1.0, params)
@@ -118,7 +118,7 @@ def test_forward():
         assert torch.all(valid_result == result).item()
 
     # Dict as params, sub element is tensor
-    params = {"b": torch.ones((2, 2)), "m1": torch.tensor((3.0, 4.0, 1.0))}
+    params = {"b": torch.ones((2, 2)), "TestSubSim": torch.tensor((3.0, 4.0, 1.0))}
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
     result = main1.testfun(1.0, params)
@@ -132,7 +132,7 @@ def test_forward():
         assert valid_result.shape == (2, 2)
         assert torch.all(valid_result == result).item()
     # Wrong name for params
-    params = {"q": torch.ones((2, 2)), "m1": torch.tensor((3.0, 4.0, 1.0))}
+    params = {"q": torch.ones((2, 2)), "TestSubSim": torch.tensor((3.0, 4.0, 1.0))}
     with pytest.raises(ValueError):
         result = main1.testfun(1.0, params=params)
     with pytest.raises(ValueError):
@@ -143,7 +143,7 @@ def test_forward():
     # Dict as params, sub element is list
     params = {
         "b": torch.ones((2, 2)),
-        "m1": [torch.tensor(3.0), torch.tensor(4.0), torch.tensor(1.0)],
+        "TestSubSim": [torch.tensor(3.0), torch.tensor(4.0), torch.tensor(1.0)],
     }
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
@@ -158,7 +158,7 @@ def test_forward():
     # Dict as params, sub element is dict
     params = {
         "b": torch.ones((2, 2)),
-        "m1": {"d": torch.tensor(3.0), "e": torch.tensor(4.0), "f": torch.tensor(1.0)},
+        "TestSubSim": {"d": torch.tensor(3.0), "e": torch.tensor(4.0), "f": torch.tensor(1.0)},
     }
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
