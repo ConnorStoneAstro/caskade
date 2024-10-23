@@ -39,6 +39,12 @@ class Param(Node):
         The value of the parameter. Defaults to None meaning dynamic.
     shape: (Optional[tuple[int, ...]], optional)
         The shape of the parameter. Defaults to () meaning scalar.
+    cyclic: (bool, optional)
+        Whether the parameter is cyclic, such as a rotation from 0 to 2pi. Defaults to False.
+    valid: (Optional[tuple[Union[Tensor, float, int, None]]], optional)
+        The valid range of the parameter. Defaults to None meaning all of -inf to inf is valid.
+    units: (Optional[str], optional)
+        The units of the parameter. Defaults to None.
     """
 
     graphviz_types = {

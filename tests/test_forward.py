@@ -57,11 +57,25 @@ def test_forward():
         assert torch.all(valid_result == result).item()
     # Wrong number of params, too few
     with pytest.raises(AssertionError):
-        result = main1.testfun(1.0, params=params[:2])
+        result = main1.testfun(1.0, params=params[:3])
     # Wrong number of params, too many
     badparams = params + params + params
     with pytest.raises(AssertionError):
         result = main1.testfun(1.0, params=badparams)
+
+    # List by children
+    params = [torch.ones((2, 2)), torch.tensor([3.0, 4.0, 1.0])]
+    result = main1.testfun(1.0, params=params)
+    assert result.shape == (2, 2)
+    result = main1.testfun(1.0, params)
+    assert result.shape == (2, 2)
+    # valid context
+    for param1, param2 in zip(main1.from_valid(main1.to_valid(params)), params):
+        assert torch.all(param1 == param2).item()
+    with ValidContext(main1):
+        valid_result = main1.testfun(1.0, params=main1.to_valid(params))
+        assert valid_result.shape == (2, 2)
+        assert torch.all(valid_result == result).item()
 
     # Tensor as params
     params = torch.cat(tuple(p.flatten() for p in params))
