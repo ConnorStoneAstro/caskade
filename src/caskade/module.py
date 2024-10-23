@@ -92,7 +92,7 @@ class Module(Node):
         assert self.active, "Module must be active to fill params"
 
         if self.valid_context:
-            params = self.to_valid(params)
+            params = self.from_valid(params)
 
         if isinstance(params, Tensor):
             # check for batch dimension

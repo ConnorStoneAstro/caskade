@@ -2,7 +2,7 @@ from typing import Optional, Union, Callable
 
 import torch
 from torch import Tensor
-from numpy import pi
+from torch import pi
 
 from .base import Node
 
