@@ -47,6 +47,11 @@ def test_param_creation():
         p8 = Param("test", None, 7)
 
 
+def test_param_to():
+    p = Param("test", 1.0, valid=(0, 2))
+    p = p.to(dtype=torch.float64, device="cpu")
+
+
 def test_value_setter():
 
     # dynamic
@@ -72,3 +77,49 @@ def test_value_setter():
     p.link("other", other)
     assert p._type == "pointer"
     assert p.value is None
+
+
+def test_units():
+    p = Param("test", units="m")
+    assert p.units == "m"
+
+
+def test_valid():
+    p = Param("test", valid=None)
+    v = torch.tensor(0.5)
+    assert p.to_valid(v) == v, "valid value should not change"
+    assert p.from_valid(v) == v, "valid value should not change"
+
+    p.valid = (0, None)
+    assert p.to_valid(v) != v, "valid value should change"
+    assert p.from_valid(v) != v, "valid value should change"
+    assert torch.all(
+        p.from_valid(torch.linspace(-1e4, 1e4, 101)) >= 0
+    ), "from_valid should map to valid range"
+
+    p.valid = (None, 0)
+    assert p.to_valid(v) != v, "valid value should change"
+    assert p.from_valid(v) != v, "valid value should change"
+    assert torch.all(
+        p.from_valid(torch.linspace(-1e4, 1e4, 101)) <= 0
+    ), "from_valid should map to valid range"
+
+    p.valid = (0, 1)
+    assert p.to_valid(v) != v, "valid value should change"
+    assert p.from_valid(v) != v, "valid value should change"
+    assert torch.all(
+        p.from_valid(torch.linspace(-1e4, 1e4, 101)) >= 0
+    ), "from_valid should map to valid range"
+    assert torch.all(
+        p.from_valid(torch.linspace(-1e4, 1e4, 101)) <= 1
+    ), "from_valid should map to valid range"
+
+    p.cyclic = True
+    assert p.to_valid(v) == v, "valid cyclic value should not change"
+    assert p.from_valid(v) == v, "valid cyclic value should not change"
+    assert torch.all(
+        p.from_valid(torch.linspace(-1e4, 1e4, 101)) >= 0
+    ), "from_valid should map to valid range"
+    assert torch.all(
+        p.from_valid(torch.linspace(-1e4, 1e4, 101)) <= 1
+    ), "from_valid should map to valid range"
