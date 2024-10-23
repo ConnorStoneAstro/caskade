@@ -62,4 +62,5 @@ same structure as the graph.
 
 The `caskade` interface has lots of flexibility, check out the
 [docs](https://caskade.readthedocs.io) to learn more. For a quick start, jump
-right to the [Jupyter notebook tutorial](notebooks/BeginnersGuide.ipynb)!
+right to the [Jupyter notebook
+tutorial](https://caskade.readthedocs.io/en/latest/notebooks/BeginnersGuide.html)!
