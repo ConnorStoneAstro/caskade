@@ -2,6 +2,7 @@ from typing import Optional, Union, Callable
 
 import torch
 from torch import Tensor
+from torch import pi
 
 from .base import Node
 
@@ -38,6 +39,12 @@ class Param(Node):
         The value of the parameter. Defaults to None meaning dynamic.
     shape: (Optional[tuple[int, ...]], optional)
         The shape of the parameter. Defaults to () meaning scalar.
+    cyclic: (bool, optional)
+        Whether the parameter is cyclic, such as a rotation from 0 to 2pi. Defaults to False.
+    valid: (Optional[tuple[Union[Tensor, float, int, None]]], optional)
+        The valid range of the parameter. Defaults to None meaning all of -inf to inf is valid.
+    units: (Optional[str], optional)
+        The units of the parameter. Defaults to None.
     """
 
     graphviz_types = {
@@ -51,6 +58,9 @@ class Param(Node):
         name: str,
         value: Optional[Union[Tensor, float, int]] = None,
         shape: Optional[tuple[int, ...]] = (),
+        cyclic: bool = False,
+        valid: Optional[tuple[Union[Tensor, float, int, None]]] = None,
+        units: Optional[str] = None,
     ):
         super().__init__(name=name)
         if value is None:
@@ -65,6 +75,9 @@ class Param(Node):
                 shape == () or shape is None or shape == value.shape
             ), f"Shape {shape} does not match value shape {value.shape}"
         self.value = value
+        self.cyclic = cyclic
+        self.valid = valid
+        self.units = units
 
     @property
     def dynamic(self) -> bool:
@@ -144,5 +157,103 @@ class Param(Node):
         super().to(device=device, dtype=dtype)
         if self.static:
             self._value = self._value.to(device=device, dtype=dtype)
+        if self.valid[0] is not None:
+            self.valid = (self.valid[0].to(device=device, dtype=dtype), self.valid[1])
+        if self.valid[1] is not None:
+            self.valid = (self.valid[0], self.valid[1].to(device=device, dtype=dtype))
 
         return self
+
+    @property
+    def cyclic(self):
+        return self._cyclic
+
+    @cyclic.setter
+    def cyclic(self, cyclic: bool):
+        self._cyclic = cyclic
+        try:
+            self.valid = self._valid
+        except AttributeError:
+            pass
+
+    @property
+    def valid(self):
+        return self._valid
+
+    @valid.setter
+    def valid(self, valid: tuple[Union[Tensor, float, int, None]]):
+        if valid is None:
+            valid = (None, None)
+
+        assert isinstance(valid, tuple) and len(valid) == 2, "Valid must be a tuple of length 2"
+
+        if valid == (None, None):
+            assert not self.cyclic, "Cannot set valid to None for cyclic parameter"
+            self.to_valid = self._to_valid_base
+            self.from_valid = self._from_valid_base
+        elif valid[0] is None:
+            assert not self.cyclic, "Cannot set left valid to None for cyclic parameter"
+            self.to_valid = self._to_valid_rightvalid
+            self.from_valid = self._from_valid_rightvalid
+            valid = (None, torch.as_tensor(valid[1]))
+        elif valid[1] is None:
+            assert not self.cyclic, "Cannot set right valid to None for cyclic parameter"
+            self.to_valid = self._to_valid_leftvalid
+            self.from_valid = self._from_valid_leftvalid
+            valid = (torch.as_tensor(valid[0]), None)
+        else:
+            if self.cyclic:
+                self.to_valid = self._to_valid_cyclic
+                self.from_valid = self._from_valid_cyclic
+            else:
+                self.to_valid = self._to_valid_fullvalid
+                self.from_valid = self._from_valid_fullvalid
+            valid = (torch.as_tensor(valid[0]), torch.as_tensor(valid[1]))
+
+        self._valid = valid
+
+    def _to_valid_base(self, value):
+        if self.pointer:
+            raise ValueError("Cannot apply valid transformation to pointer parameter")
+        return value
+
+    def _to_valid_fullvalid(self, value):
+        value = self._to_valid_base(value)
+        return torch.tan((value - self.valid[0]) * pi / (self.valid[1] - self.valid[0]) - pi / 2)
+
+    def _to_valid_cyclic(self, value):
+        value = self._to_valid_base(value)
+        return (value - self.valid[0]) % (self.valid[1] - self.valid[0]) + self.valid[0]
+
+    def _to_valid_leftvalid(self, value):
+        value = self._to_valid_base(value)
+        return value - 1.0 / (value - self.valid[0])
+
+    def _to_valid_rightvalid(self, value):
+        value = self._to_valid_base(value)
+        return value + 1.0 / (self.valid[1] - value)
+
+    def _from_valid_base(self, value):
+        if self.pointer:
+            raise ValueError("Cannot apply valid transformation to pointer parameter")
+        return value
+
+    def _from_valid_fullvalid(self, value):
+        value = self._from_valid_base(value)
+        value = (torch.atan(value) + pi / 2) * (self.valid[1] - self.valid[0]) / pi + self.valid[0]
+        return value
+
+    def _from_valid_cyclic(self, value):
+        value = self._from_valid_base(value)
+        value = (value - self.valid[0]) % (self.valid[1] - self.valid[0]) + self.valid[0]
+        return value
+
+    def _from_valid_leftvalid(self, value):
+        value = self._from_valid_base(value)
+        value = (value + self.valid[0] + ((value - self.valid[0]) ** 2 + 4).sqrt()) / 2
+        return value
+
+    def _from_valid_rightvalid(self, value):
+        value = self._from_valid_base(value)
+        value = (value + self.valid[1] - ((value - self.valid[1]) ** 2 + 4).sqrt()) / 2
+        return value

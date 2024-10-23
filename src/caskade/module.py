@@ -2,6 +2,7 @@ from typing import Sequence, Mapping, Optional, Union, Any
 from math import prod
 
 from torch import Tensor
+import torch
 
 from .base import Node
 from .param import Param
@@ -58,6 +59,7 @@ class Module(Node):
         self.dynamic_params = ()
         self.pointer_params = ()
         self._type = "module"
+        self.valid_context = False
 
     def update_graph(self):
         """Maintain a tuple of dynamic and live parameters at all points lower
@@ -65,6 +67,16 @@ class Module(Node):
         super().update_graph()
         self.dynamic_params = tuple(self.topological_ordering("dynamic"))
         self.pointer_params = tuple(self.topological_ordering("pointer"))
+        self._n_dynamic_children = sum(1 for child in self.children.values() if child.dynamic)
+
+    @property
+    def dynamic(self):
+        """Return True if the module has dynamic parameters"""
+        return self.dynamic_params != ()
+
+    @property
+    def n_dynamic_children(self):
+        return self._n_dynamic_children
 
     def fill_params(self, params: Union[Tensor, Sequence, Mapping]):
         """
@@ -88,6 +100,9 @@ class Module(Node):
             missing.
         """
         assert self.active, "Module must be active to fill params"
+
+        if self.valid_context:
+            params = self.from_valid(params)
 
         if isinstance(params, Tensor):
             # check for batch dimension
@@ -120,32 +135,27 @@ class Module(Node):
             if len(params) == len(self.dynamic_params):
                 for param, value in zip(self.dynamic_params, params):
                     param._value = value
-            elif len(params) <= len(self.children):
+            elif len(params) == self.n_dynamic_children:
                 i = 0
-                keys = list(self.children.keys())
-                try:
-                    for param in params:
-                        while True:  # find next dynamic param, or Module
-                            if isinstance(self[keys[i]], Param) and self[keys[i]].dynamic:
-                                self[keys[i]]._value = param
-                                i += 1
-                                break
-                            elif isinstance(self[keys[i]], Module):
-                                self[keys[i]].fill_params(param)
-                                i += 1
-                                break
+                keys = tuple(self.children.keys())
+                for value in params:
+                    while i < len(keys):  # find next dynamic param, or Module
+                        if isinstance(self[keys[i]], Param) and self[keys[i]].dynamic:
+                            self[keys[i]]._value = value
                             i += 1
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Error filling params: {e}. Filling params with a list-by-children, rather than one element per dynamic parameter is tricky, consider using alternate format."
-                    )
+                            break
+                        elif isinstance(self[keys[i]], Module) and self[keys[i]].dynamic:
+                            self[keys[i]].fill_params(value)
+                            i += 1
+                            break
+                        i += 1
             else:
                 raise AssertionError(
-                    f"Input params length ({len(params)}) does not match dynamic params length ({len(self.dynamic_params)})"
+                    f"Input params length ({len(params)}) does not match dynamic params length ({len(self.dynamic_params)}) or number of dynamic children ({self.n_dynamic_children})"
                 )
         elif isinstance(params, Mapping):
             for key in params:
-                if key in self.children:
+                if key in self.children and self[key].dynamic:
                     if isinstance(self[key], Param):
                         self[key]._value = params[key]
                     else:  # assumed Module
@@ -177,6 +187,102 @@ class Module(Node):
             if key in self.children and isinstance(self[key], Param):
                 kwargs[key] = self[key].value
         return kwargs
+
+    def to_valid(self, params: Union[Tensor, Sequence, Mapping]):
+        """Convert input params to valid params."""
+        if isinstance(params, Tensor):
+            valid_params = torch.zeros_like(params)
+            batch = len(params.shape) > 1
+            if batch:
+                *B, _ = params.shape
+            pos = 0
+            for param in self.dynamic_params:
+                size = max(1, prod(param.shape))  # Handle scalar parameters
+                get_shape = tuple(B) + param.shape if batch else param.shape
+                return_shape = params[..., pos : pos + size].shape
+                valid_params[..., pos : pos + size] = param.to_valid(
+                    params[..., pos : pos + size].view(get_shape)
+                ).view(return_shape)
+                pos += size
+        elif isinstance(params, Sequence):
+            valid_params = []
+            if len(params) == len(self.dynamic_params):
+                for param, value in zip(self.dynamic_params, params):
+                    valid_params.append(param.to_valid(value))
+            elif len(params) == self.n_dynamic_children:
+                i = 0
+                keys = tuple(self.children.keys())
+                for value in params:
+                    while i < len(keys):  # find next dynamic param, or Module
+                        if self[keys[i]].dynamic:
+                            valid_params.append(self[keys[i]].to_valid(value))
+                            i += 1
+                            break
+                        i += 1
+            else:
+                raise AssertionError(
+                    f"Input params length ({len(valid_params)}) does not match dynamic params length ({len(self.dynamic_params)}) or number of dynamic children ({len(self.children)})"
+                )
+        elif isinstance(params, Mapping):
+            valid_params = {}
+            for key in params:
+                if key in self.children:
+                    valid_params[key] = self[key].to_valid(params[key])
+                else:
+                    raise ValueError(f"Key {key} not found in {self.name} children")
+        else:
+            raise ValueError(
+                f"Input params type {type(params)} not supported. Should be Tensor, Sequence, or Mapping."
+            )
+        return valid_params
+
+    def from_valid(self, valid_params: Union[Tensor, Sequence, Mapping]):
+        """Convert valid params to input params."""
+        if isinstance(valid_params, Tensor):
+            params = torch.zeros_like(valid_params)
+            batch = len(valid_params.shape) > 1
+            if batch:
+                *B, _ = valid_params.shape
+            pos = 0
+            for param in self.dynamic_params:
+                size = max(1, prod(param.shape))
+                get_shape = tuple(B) + param.shape if batch else param.shape
+                return_shape = valid_params[..., pos : pos + size].shape
+                params[..., pos : pos + size] = param.from_valid(
+                    valid_params[..., pos : pos + size].view(get_shape)
+                ).view(return_shape)
+                pos += size
+        elif isinstance(valid_params, Sequence):
+            params = []
+            if len(valid_params) == len(self.dynamic_params):
+                for param, value in zip(self.dynamic_params, valid_params):
+                    params.append(param.from_valid(value))
+            elif len(valid_params) == self.n_dynamic_children:
+                i = 0
+                keys = tuple(self.children.keys())
+                for value in valid_params:
+                    while i < len(keys):  # find next dynamic param, or Module
+                        if self[keys[i]].dynamic:
+                            params.append(self[keys[i]].from_valid(value))
+                            i += 1
+                            break
+                        i += 1
+            else:
+                raise AssertionError(
+                    f"Input params length ({len(valid_params)}) does not match dynamic params length ({len(self.dynamic_params)}) or number of dynamic children ({len(self.children)})"
+                )
+        elif isinstance(valid_params, Mapping):
+            params = {}
+            for key in valid_params:
+                if key in self.children:
+                    params[key] = self[key].from_valid(valid_params[key])
+                else:
+                    raise ValueError(f"Key {key} not found in {self.name} children")
+        else:
+            raise ValueError(
+                f"Input params type {type(valid_params)} not supported. Should be Tensor, Sequence or Mapping."
+            )
+        return params
 
     @property
     def _name(self) -> str:
