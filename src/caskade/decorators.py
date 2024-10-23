@@ -3,6 +3,13 @@ import functools
 
 from .context import ActiveContext
 
+__all__ = ("forward",)
+
+
+def _get_arguments(method):
+    sig = inspect.signature(method)
+    return tuple(sig.parameters.keys())
+
 
 def forward(method):
     """
@@ -19,17 +26,13 @@ def forward(method):
         The decorated forward method.
     """
 
-    # Get kwargs from function signature
-    method_kwargs = []
-    for arg in inspect.signature(method).parameters.values():
-        if arg.default is not arg.empty:
-            method_kwargs.append(arg.name)
-    method_kwargs = tuple(method_kwargs)
+    # Get arguments from function signature
+    method_params = _get_arguments(method)
 
     @functools.wraps(method)
     def wrapped(self, *args, **kwargs):
         if self.active:
-            kwargs.update(self.fill_kwargs(method_kwargs))
+            kwargs = {**self.fill_kwargs(method_params), **kwargs}
             return method(self, *args, **kwargs)
 
         # Extract params from the arguments
@@ -47,7 +50,7 @@ def forward(method):
 
         with ActiveContext(self):
             self.fill_params(params)
-            kwargs.update(self.fill_kwargs(method_kwargs))
+            kwargs = {**self.fill_kwargs(method_params), **kwargs}
             return method(self, *args, **kwargs)
 
     return wrapped
