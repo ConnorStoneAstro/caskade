@@ -239,17 +239,21 @@ class Param(Node):
         return value
 
     def _from_valid_fullvalid(self, value):
+        value = self._from_valid_base(value)
         value = (torch.atan(value) + pi / 2) * (self.valid[1] - self.valid[0]) / pi + self.valid[0]
-        return self._from_valid_base(value)
+        return value
 
     def _from_valid_cyclic(self, value):
+        value = self._from_valid_base(value)
         value = (value - self.valid[0]) % (self.valid[1] - self.valid[0]) + self.valid[0]
-        return self._from_valid_base(value)
+        return value
 
     def _from_valid_leftvalid(self, value):
+        value = self._from_valid_base(value)
         value = (value + self.valid[0] + ((value - self.valid[0]) ** 2 + 4).sqrt()) / 2
-        return self._from_valid_base(value)
+        return value
 
     def _from_valid_rightvalid(self, value):
+        value = self._from_valid_base(value)
         value = (value + self.valid[1] - ((value - self.valid[1]) ** 2 + 4).sqrt()) / 2
-        return self._from_valid_base(value)
+        return value
