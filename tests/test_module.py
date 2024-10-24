@@ -12,3 +12,24 @@ def test_module_creation():
     assert m1.mod.p == p1
     assert m1.dynamic_params == (p1,)
     assert m2.dynamic_params == (p1,)
+
+
+def test_module_del():
+    m1 = Module("deltest1")
+
+    def f():
+        m2 = Module("deltest2")
+        Module._module_names.remove("deltest2")
+        print(m2)
+
+    f()
+
+    def g():
+        m3 = Module("deltest3")
+        print(m3)
+
+    g()
+    assert "deltest3" not in Module._module_names
+    assert "deltest2" not in Module._module_names
+    assert "deltest1" in Module._module_names
+    assert m1.name == "deltest1"

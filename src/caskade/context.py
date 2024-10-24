@@ -7,15 +7,23 @@ class ActiveContext:
     ActiveContext is it possible to fill/clear the dynamic and live parameters.
     """
 
-    def __init__(self, module: Module):
+    def __init__(self, module: Module, active: bool = True):
         self.module = module
+        self.active = active
 
     def __enter__(self):
-        self.module.active = True
+        self.outer_active = self.module.active
+        if self.outer_active and not self.active:
+            self.outer_params = list(p.value for p in self.module.dynamic_params)
+            self.module.clear_params()
+        self.module.active = self.active
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.module.clear_params()
-        self.module.active = False
+        if not self.outer_active and self.active:
+            self.module.clear_params()
+        self.module.active = self.outer_active
+        if self.outer_active and not self.active:
+            self.module.fill_params(self.outer_params)
 
 
 class ValidContext:
