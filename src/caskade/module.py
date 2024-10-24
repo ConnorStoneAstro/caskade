@@ -64,24 +64,20 @@ class Module(Node):
     def update_graph(self):
         """Maintain a tuple of dynamic and live parameters at all points lower
         in the DAG."""
-        super().update_graph()
         self.dynamic_params = tuple(self.topological_ordering("dynamic"))
         self.pointer_params = tuple(self.topological_ordering("pointer"))
         self.local_dynamic_params = tuple(
             p for p in self.children.values() if isinstance(p, Param) and p.dynamic
         )
         self.dynamic_modules = dict(
-            (m.name, m) for m in self.topological_ordering("module") if m.dynamic
+            (m.name, m) for m in self.topological_ordering("module") if m.local_dynamic_params
         )
+        super().update_graph()
 
     @property
     def dynamic(self):
         """Return True if the module has dynamic parameters"""
         return self.dynamic_params != ()
-
-    @property
-    def n_dynamic_children(self):
-        return self._n_dynamic_children
 
     def fill_params(self, params: Union[Tensor, Sequence, Mapping], local=False):
         """
@@ -291,7 +287,10 @@ class Module(Node):
 
     def __del__(self):
         """Remove the name from the set of module names when the object is deleted."""
-        self._module_names.remove(self._name)
+        try:
+            self._module_names.remove(self._name)
+        except:
+            pass
 
     def __setattr__(self, key: str, value: Any):
         """Intercept attribute setting to update parameters and graph links."""
