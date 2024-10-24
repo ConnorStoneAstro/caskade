@@ -2,7 +2,7 @@
 # Learn more at https://jupyterbook.org/customize/config.html
 
 title: caskade
-author: Connor and Alex
+author: Connor Stone and Alexandre Adam
 # logo: ../../media/caustics_logo.png
 
 # Force re-execution of notebooks on each build.

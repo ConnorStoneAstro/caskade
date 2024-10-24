@@ -9,6 +9,6 @@ from .tests import test
 
 
 __version__ = VERSION
-__author__ = "Connor and Alexandre"
+__author__ = "Connor Stone and Alexandre Adam"
 
 __all__ = ("Node", "Module", "Param", "ActiveContext", "ValidContext", "forward", "test")
