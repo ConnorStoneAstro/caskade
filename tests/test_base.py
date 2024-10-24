@@ -28,6 +28,12 @@ def test_link():
     with pytest.raises(ValueError):
         node1.link("subnode2", node2)
 
+    # Make a cycle
+    node3 = Node("node3")
+    node2.link("subnode", node3)
+    with pytest.raises(ValueError):
+        node3.link("subnode", node1)
+
     assert "subnode" in node1._children
     assert node1._children["subnode"] == node2
     assert node1._parents == set()
@@ -67,16 +73,6 @@ def test_topological_ordering():
 
     graph = node1.graphviz()
     assert graph is not None, "should return a graphviz object"
-
-    a = node1.descendants()
-    assert len(a) == 5, "should return 5 descendants"
-    a = node1.descendants(with_type="node")
-    assert len(a) == 5, "should return 5 descendants"
-
-    d = node1.ancestors()
-    assert len(d) == 0, "should return 0 ancestors"
-    d = node6.ancestors(with_type="node")
-    assert len(d) == 2, "should return 2 ancestors"
 
     node1.unlink("subnode1")
     ordering = node1.topological_ordering()

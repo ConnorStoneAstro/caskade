@@ -83,6 +83,11 @@ class Node(object):
             raise ValueError(f"Child key {key} already linked to parent {self.name}")
         if child in self.children.values():
             raise ValueError(f"Child {child.name} already linked to parent {self.name}")
+        # avoid cycles
+        if self in child.topological_ordering():
+            raise ValueError(
+                f"Linking {child.name} to {self.name} would create a cycle in the graph"
+            )
 
         self._children[key] = child
         child._parents.add(self)
@@ -110,28 +115,6 @@ class Node(object):
         if with_type is None:
             return tuple(ordering)
         return tuple(filter(lambda n: n._type == with_type, ordering))
-
-    def ancestors(self, with_type: Optional[str] = None) -> set["Node"]:
-        """Return all ancestors of the current node."""
-        ancestors = set()
-        for node in self.parents:
-            ancestors.add(node)
-            for subnode in node.ancestors(with_type):
-                ancestors.add(subnode)
-        if with_type is None:
-            return ancestors
-        return set(filter(lambda n: n._type == with_type, ancestors))
-
-    def descendants(self, with_type: Optional[str] = None) -> set["Node"]:
-        """Return all descendants of the current node."""
-        descendants = set()
-        for node in self.children.values():
-            descendants.add(node)
-            for subnode in node.descendants(with_type):
-                descendants.add(subnode)
-        if with_type is None:
-            return descendants
-        return set(filter(lambda n: n._type == with_type, descendants))
 
     def update_graph(self):
         """Triggers a call to all parents that the graph below them has been
