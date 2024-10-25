@@ -257,3 +257,6 @@ class Param(Node):
         value = self._from_valid_base(value)
         value = (value + self.valid[1] - ((value - self.valid[1]) ** 2 + 4).sqrt()) / 2
         return value
+
+    def __repr__(self):
+        return self.name

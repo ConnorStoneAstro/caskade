@@ -175,7 +175,7 @@ class Node(object):
             if node in components:
                 return
             dot.attr("node", **node.graphviz_types[node._type])
-            dot.node(str(id(node)), f"{node.__class__.__name__}('{node.name}')")
+            dot.node(str(id(node)), repr(node))
             components.add(node)
 
             for child in node.children.values():
