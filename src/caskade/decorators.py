@@ -45,7 +45,7 @@ def forward(method):
             args = args[:-1]
         else:
             raise ValueError(
-                f"Params must be provided for dynamic modules. Expected {len(self.dynamic_params)} params."
+                f"Params must be provided for a top level @forward method. Either by keyword 'method(params=params)' or as the last positional argument 'method(a, b, c, params)'"
             )
 
         with ActiveContext(self):

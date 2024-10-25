@@ -5,6 +5,7 @@ from torch import Tensor
 from torch import pi
 
 from .base import Node
+from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError
 
 
 class Param(Node):
@@ -65,15 +66,16 @@ class Param(Node):
         super().__init__(name=name)
         if value is None:
             if shape is None:
-                raise ValueError("Either value or shape must be provided")
+                raise ParamConfigurationError("Either value or shape must be provided")
             if not isinstance(shape, tuple):
-                raise ValueError("Shape must be a tuple")
+                raise ParamConfigurationError("Shape must be a tuple")
             self.shape = shape
         elif not isinstance(value, (Param, Callable)):
             value = torch.as_tensor(value)
-            assert (
-                shape == () or shape is None or shape == value.shape
-            ), f"Shape {shape} does not match value shape {value.shape}"
+            if not (shape == () or shape is None or shape == value.shape):
+                raise ParamConfigurationError(
+                    f"Shape {shape} does not match value shape {value.shape}"
+                )
         self.value = value
         self.cyclic = cyclic
         self.valid = valid
@@ -98,7 +100,7 @@ class Param(Node):
     @shape.setter
     def shape(self, shape):
         if self.pointer:
-            raise RuntimeError("Cannot set shape of parameter with type 'pointer'")
+            raise ParamTypeError("Cannot set shape of parameter with type 'pointer'")
         self._shape = shape
 
     @property
@@ -111,9 +113,7 @@ class Param(Node):
     def value(self, value):
         # While active no value can be set
         if self.active:
-            raise RuntimeError(
-                f"Cannot set value of parameter {self.name}|{self._type} while active"
-            )
+            raise ActiveStateError(f"Cannot set value of parameter {self.name} while active")
 
         # unlink if pointer to avoid floating references
         if self.pointer:
@@ -214,7 +214,7 @@ class Param(Node):
 
     def _to_valid_base(self, value):
         if self.pointer:
-            raise ValueError("Cannot apply valid transformation to pointer parameter")
+            raise ParamTypeError("Cannot apply valid transformation to pointer parameter")
         return value
 
     def _to_valid_fullvalid(self, value):
@@ -235,7 +235,7 @@ class Param(Node):
 
     def _from_valid_base(self, value):
         if self.pointer:
-            raise ValueError("Cannot apply valid transformation to pointer parameter")
+            raise ParamTypeError("Cannot apply valid transformation to pointer parameter")
         return value
 
     def _from_valid_fullvalid(self, value):

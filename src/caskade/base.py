@@ -1,5 +1,7 @@
 from typing import Optional, Union
 
+from .errors import GraphError
+
 
 class Node(object):
     """
@@ -80,12 +82,12 @@ class Node(object):
             key = child.name
         # Avoid double linking to the same object
         if key in self.children:
-            raise ValueError(f"Child key {key} already linked to parent {self.name}")
+            raise GraphError(f"Child key {key} already linked to parent {self.name}")
         if child in self.children.values():
-            raise ValueError(f"Child {child.name} already linked to parent {self.name}")
+            raise GraphError(f"Child {child.name} already linked to parent {self.name}")
         # avoid cycles
         if self in child.topological_ordering():
-            raise ValueError(
+            raise GraphError(
                 f"Linking {child.name} to {self.name} would create a cycle in the graph"
             )
 

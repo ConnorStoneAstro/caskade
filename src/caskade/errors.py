@@ -1,0 +1,74 @@
+from math import prod
+from textwrap import dedent
+
+
+class CaskadeException(Exception):
+    """Base class for all exceptions in Caskade."""
+
+
+class GraphError(CaskadeException):
+    """Class for graph exceptions in Caskade."""
+
+
+class ParamConfigurationError(CaskadeException):
+    """Class for parameter configuration exceptions in Caskade."""
+
+
+class ParamTypeError(CaskadeException):
+    """Class for exceptions related to the type of a parameter in Caskade."""
+
+
+class ActiveStateError(CaskadeException):
+    """Class for exceptions related to the active state of a node in Caskade."""
+
+
+class FillDynamicParamsError(CaskadeException):
+    """Class for exceptions related to filling dynamic parameters in Caskade."""
+
+
+class FillDynamicParamsTensorError(FillDynamicParamsError):
+    def __init__(self, name, input_params, dynamic_params):
+        fullnumel = sum(max(1, prod(p.shape)) for p in dynamic_params)
+        message = dedent(
+            f"""\              
+            For flattened Tensor input, the (last) dim of the Tensor should
+            equal the sum of all flattened dynamic params ({fullnumel}).
+            Input params shape {input_params.shape} does not match dynamic
+            params shape of: {name}. 
+            
+            Registered dynamic params (name: shape):
+            {', '.join(f"{repr(p)}: {str(p.shape)}" for p in dynamic_params)}"""
+        )
+        super().__init__(message)
+
+
+class FillDynamicParamsSequenceError(FillDynamicParamsError):
+    def __init__(self, name, input_params, dynamic_params, dynamic_modules):
+        message = dedent(
+            f"""\         
+            Input params length ({len(input_params)}) does not match dynamic
+            params length ({len(dynamic_params)}) or number of dynamic
+            modules ({len(dynamic_modules)}) of: {name}.
+            
+            Registered dynamic modules: 
+            {', '.join(repr(m) for m in dynamic_modules)}
+
+            Registered dynamic params:
+            {', '.join(repr(p) for p in dynamic_params)}"""
+        )
+        super().__init__(message)
+
+
+class FillDynamicParamsMappingError(FillDynamicParamsError):
+    def __init__(self, name, key, children, dynamic_modules):
+        message = dedent(
+            f"""\           
+            Input params key "{key}" not found in dynamic modules or children of: {name}. 
+            
+            Registered dynamic modules: 
+            {', '.join(repr(m) for m in dynamic_modules)}
+
+            Registered dynamic children:
+            {', '.join(repr(c) for c in children.values() if c.dynamic)}"""
+        )
+        super().__init__(message)

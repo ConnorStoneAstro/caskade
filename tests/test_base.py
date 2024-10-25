@@ -1,4 +1,4 @@
-from caskade import Node, test
+from caskade import Node, test, GraphError
 
 import pytest
 
@@ -21,17 +21,17 @@ def test_link():
     node1.link("subnode", node2)
 
     # Already linked
-    with pytest.raises(ValueError):
+    with pytest.raises(GraphError):
         node1.link("subnode", node2)
 
     # Double link
-    with pytest.raises(ValueError):
+    with pytest.raises(GraphError):
         node1.link("subnode2", node2)
 
     # Make a cycle
     node3 = Node("node3")
     node2.link("subnode", node3)
-    with pytest.raises(ValueError):
+    with pytest.raises(GraphError):
         node3.link("subnode", node1)
 
     assert "subnode" in node1._children

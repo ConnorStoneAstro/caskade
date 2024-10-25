@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from caskade import Param
+from caskade import Param, ActiveStateError, ParamConfigurationError, ParamTypeError
 
 
 def test_param_creation():
@@ -19,35 +19,35 @@ def test_param_creation():
     p3 = Param("test", torch.ones((1, 2, 3)))
 
     # Cant update value when active
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ActiveStateError):
         p3.active = True
         p3.value = 1.0
 
     # Missmatch value and shape
-    with pytest.raises(AssertionError):
+    with pytest.raises(ParamConfigurationError):
         p4 = Param("test", 1.0, shape=(1, 2, 3))
 
     # Cant set shape of pointer or function
     p5 = Param("test", p3)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ParamTypeError):
         p5.shape = (1, 2, 3)
-    with pytest.raises(ValueError):
+    with pytest.raises(ParamTypeError):
         p5.to_valid(1.0)
-    with pytest.raises(ValueError):
+    with pytest.raises(ParamTypeError):
         p5.from_valid(1.0)
 
     # Function parameter
     p6 = Param("test", lambda p: p["other"].value * 2)
     p6.link("other", p2)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ParamTypeError):
         p6.shape = (1, 2, 3)
 
     # Missing value and shape
-    with pytest.raises(ValueError):
+    with pytest.raises(ParamConfigurationError):
         p7 = Param("test", None, None)
 
     # Shape is not a tuple
-    with pytest.raises(ValueError):
+    with pytest.raises(ParamConfigurationError):
         p8 = Param("test", None, 7)
 
 

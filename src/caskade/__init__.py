@@ -6,9 +6,37 @@ from .decorators import forward
 from .module import Module
 from .param import Param
 from .tests import test
+from .errors import (
+    CaskadeException,
+    GraphError,
+    ParamConfigurationError,
+    ParamTypeError,
+    ActiveStateError,
+    FillDynamicParamsError,
+    FillDynamicParamsTensorError,
+    FillDynamicParamsSequenceError,
+    FillDynamicParamsMappingError,
+)
 
 
 __version__ = VERSION
 __author__ = "Connor Stone and Alexandre Adam"
 
-__all__ = ("Node", "Module", "Param", "ActiveContext", "ValidContext", "forward", "test")
+__all__ = (
+    "Node",
+    "Module",
+    "Param",
+    "ActiveContext",
+    "ValidContext",
+    "forward",
+    "test",
+    "CaskadeException",
+    "GraphError",
+    "ParamConfigurationError",
+    "ParamTypeError",
+    "ActiveStateError",
+    "FillDynamicParamsError",
+    "FillDynamicParamsTensorError",
+    "FillDynamicParamsSequenceError",
+    "FillDynamicParamsMappingError",
+)
