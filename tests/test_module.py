@@ -1,4 +1,6 @@
-from caskade import Module, Param
+from caskade import Module, Param, ActiveStateError
+
+import pytest
 
 
 def test_module_creation():
@@ -12,6 +14,20 @@ def test_module_creation():
     assert m1.mod.p == p1
     assert m1.dynamic_params == (p1,)
     assert m2.dynamic_params == (p1,)
+
+    m3 = Module("test1")
+    assert m3.name == "test1_0"
+
+
+def test_module_methods():
+
+    m1 = Module("test1")
+
+    with pytest.raises(ActiveStateError):
+        m1.fill_params([1.0, 2.0, 3.0])
+
+    with pytest.raises(ActiveStateError):
+        m1.clear_params()
 
 
 def test_module_del():

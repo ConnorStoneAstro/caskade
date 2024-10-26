@@ -1,7 +1,13 @@
 import pytest
 import torch
 
-from caskade import Param
+from caskade import (
+    Param,
+    ActiveStateError,
+    ParamConfigurationError,
+    ParamTypeError,
+    InvalidValueWarning,
+)
 
 
 def test_param_creation():
@@ -19,36 +25,43 @@ def test_param_creation():
     p3 = Param("test", torch.ones((1, 2, 3)))
 
     # Cant update value when active
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ActiveStateError):
         p3.active = True
         p3.value = 1.0
 
     # Missmatch value and shape
-    with pytest.raises(AssertionError):
+    with pytest.raises(ParamConfigurationError):
         p4 = Param("test", 1.0, shape=(1, 2, 3))
 
     # Cant set shape of pointer or function
     p5 = Param("test", p3)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ParamTypeError):
         p5.shape = (1, 2, 3)
-    with pytest.raises(ValueError):
+    with pytest.raises(ParamTypeError):
         p5.to_valid(1.0)
-    with pytest.raises(ValueError):
+    with pytest.raises(ParamTypeError):
         p5.from_valid(1.0)
 
     # Function parameter
     p6 = Param("test", lambda p: p["other"].value * 2)
     p6.link("other", p2)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ParamTypeError):
         p6.shape = (1, 2, 3)
 
     # Missing value and shape
-    with pytest.raises(ValueError):
+    with pytest.raises(ParamConfigurationError):
         p7 = Param("test", None, None)
 
     # Shape is not a tuple
-    with pytest.raises(ValueError):
+    with pytest.raises(ParamConfigurationError):
         p8 = Param("test", None, 7)
+
+    # Metadata
+    p9 = Param("test", 1.0, units="none", cyclic=True, valid=(0, 1))
+    assert p9.units == "none"
+    assert p9.cyclic
+    assert p9.valid[0].item() == 0
+    assert p9.valid[1].item() == 1
 
 
 def test_param_to():
@@ -127,3 +140,25 @@ def test_valid():
     assert torch.all(
         p.from_valid(torch.linspace(-1e4, 1e4, 101)) <= 1
     ), "from_valid should map to valid range"
+
+    p.value = 0.5
+
+    with pytest.raises(ParamConfigurationError):
+        p.valid = None
+    with pytest.raises(ParamConfigurationError):
+        p.valid = (1, None)
+    with pytest.raises(ParamConfigurationError):
+        p.valid = (None, 1)
+    p.cyclic = False
+    with pytest.raises(ParamConfigurationError):
+        p.valid = (1, 0)
+    with pytest.raises(ParamConfigurationError):
+        p.valid = (0, 1, 2)
+    with pytest.raises(ParamConfigurationError):
+        p.valid = [0, 1]
+    with pytest.warns(InvalidValueWarning):
+        p.value = -1
+    with pytest.warns(InvalidValueWarning):
+        p.valid = (0, None)
+    with pytest.warns(InvalidValueWarning):
+        p.valid = (None, -2)

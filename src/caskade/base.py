@@ -1,5 +1,7 @@
 from typing import Optional, Union
 
+from .errors import GraphError, NodeConfigurationError
+
 
 class Node(object):
     """
@@ -30,8 +32,10 @@ class Node(object):
     def __init__(self, name: Optional[str] = None):
         if name is None:
             name = self.__class__.__name__
-        assert isinstance(name, str), f"{self.__class__.__name__} name must be a string"
-        assert "|" not in name, f"{self.__class__.__name__} cannot contain '|'"
+        if not isinstance(name, str):
+            raise NodeConfigurationError(f"{self.__class__.__name__} name must be a string")
+        if "|" in name:
+            raise NodeConfigurationError(f"{self.__class__.__name__} cannot contain '|'")
         self._name = name
         self._children = {}
         self._parents = set()
@@ -80,12 +84,12 @@ class Node(object):
             key = child.name
         # Avoid double linking to the same object
         if key in self.children:
-            raise ValueError(f"Child key {key} already linked to parent {self.name}")
+            raise GraphError(f"Child key {key} already linked to parent {self.name}")
         if child in self.children.values():
-            raise ValueError(f"Child {child.name} already linked to parent {self.name}")
+            raise GraphError(f"Child {child.name} already linked to parent {self.name}")
         # avoid cycles
         if self in child.topological_ordering():
-            raise ValueError(
+            raise GraphError(
                 f"Linking {child.name} to {self.name} would create a cycle in the graph"
             )
 
@@ -175,7 +179,7 @@ class Node(object):
             if node in components:
                 return
             dot.attr("node", **node.graphviz_types[node._type])
-            dot.node(str(id(node)), f"{node.__class__.__name__}('{node.name}')")
+            dot.node(str(id(node)), repr(node))
             components.add(node)
 
             for child in node.children.values():

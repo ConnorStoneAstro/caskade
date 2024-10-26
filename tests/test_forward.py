@@ -1,6 +1,15 @@
 import torch
 
-from caskade import Module, Param, forward, ValidContext
+from caskade import (
+    Module,
+    Param,
+    forward,
+    ValidContext,
+    FillDynamicParamsSequenceError,
+    FillDynamicParamsMappingError,
+    FillDynamicParamsTensorError,
+    ParamConfigurationError,
+)
 
 import pytest
 
@@ -56,19 +65,19 @@ def test_forward():
         assert valid_result.shape == (2, 2)
         assert torch.all(valid_result == result).item()
     # Wrong number of params, too few
-    with pytest.raises(AssertionError):
+    with pytest.raises(FillDynamicParamsSequenceError):
         result = main1.testfun(1.0, params=params[:3])
-    with pytest.raises(AssertionError):
+    with pytest.raises(FillDynamicParamsSequenceError):
         main1.to_valid(params[:3])
-    with pytest.raises(AssertionError):
+    with pytest.raises(FillDynamicParamsSequenceError):
         main1.from_valid(params[:3])
     # Wrong number of params, too many
     badparams = params + params + params
-    with pytest.raises(AssertionError):
+    with pytest.raises(FillDynamicParamsSequenceError):
         result = main1.testfun(1.0, params=badparams)
-    with pytest.raises(AssertionError):
+    with pytest.raises(FillDynamicParamsSequenceError):
         main1.to_valid(badparams)
-    with pytest.raises(AssertionError):
+    with pytest.raises(FillDynamicParamsSequenceError):
         main1.from_valid(badparams)
 
     # List by children
@@ -98,10 +107,10 @@ def test_forward():
         assert valid_result.shape == (2, 2)
         assert torch.all(valid_result == result).item()
     # Wrong number of params, too few
-    with pytest.raises(AssertionError):
+    with pytest.raises(FillDynamicParamsTensorError):
         result = main1.testfun(1.0, params[:-3])
     # Wrong number of params, too many
-    with pytest.raises(AssertionError):
+    with pytest.raises(FillDynamicParamsTensorError):
         result = main1.testfun(1.0, torch.cat((params, params)))
 
     # Batched tensor as params
@@ -133,11 +142,11 @@ def test_forward():
         assert torch.all(valid_result == result).item()
     # Wrong name for params
     params = {"q": torch.ones((2, 2)), "TestSubSim": torch.tensor((3.0, 4.0, 1.0))}
-    with pytest.raises(ValueError):
+    with pytest.raises(FillDynamicParamsMappingError):
         result = main1.testfun(1.0, params=params)
-    with pytest.raises(ValueError):
+    with pytest.raises(FillDynamicParamsMappingError):
         main1.to_valid(params)
-    with pytest.raises(ValueError):
+    with pytest.raises(FillDynamicParamsMappingError):
         main1.from_valid(params)
 
     # Dict as params, sub element is list
@@ -169,6 +178,13 @@ def test_forward():
         valid_result = main1.testfun(1.0, params=main1.to_valid(params))
         assert valid_result.shape == (2, 2)
         assert torch.all(valid_result == result).item()
+    # Missing param
+    params = {
+        "b": torch.ones((2, 2)),
+        "TestSubSim": {"d": torch.tensor(3.0), "e": torch.tensor(4.0)},  # , "f": torch.tensor(1.0)
+    }
+    with pytest.raises(FillDynamicParamsMappingError):
+        result = main1.testfun(1.0, params=params)
 
     # All params static
     main1.b = torch.ones((2, 2))
@@ -181,23 +197,15 @@ def test_forward():
     # dynamic with no shape
     main1.b = None
     main1.b.shape = None
-    with pytest.raises(ValueError):
+    with pytest.raises(ParamConfigurationError):
         main1.testfun(1.0, params=torch.ones(4))
     result = main1.testfun(1.0, params=[torch.ones((2, 2))])
     assert result.shape == (2, 2)
 
-    # wrong number of params
-    with pytest.raises(AssertionError):
-        main1.testfun(1.0, params=[torch.ones((2, 2)), torch.tensor(3.0)])
-
     # wrong parameter type
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         main1.testfun(1.0, params=None)
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         main1.to_valid(None)
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         main1.from_valid(None)
-
-    # param key doesn't exist
-    with pytest.raises(ValueError):
-        main1.testfun(1.0, params={"q": torch.ones((2, 2))})
