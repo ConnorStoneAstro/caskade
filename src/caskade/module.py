@@ -154,8 +154,14 @@ class Module(Node):
                     self[key]._value = params[key]
                 else:
                     raise FillDynamicParamsMappingError(
-                        self.name, key, self.children, self.dynamic_modules
+                        self.name, self.children, self.dynamic_modules, missing_key=key
                     )
+            if not local:
+                for param in dynamic_params:
+                    if param._value is None:
+                        raise FillDynamicParamsMappingError(
+                            self.name, self.children, self.dynamic_modules, missing_param=param
+                        )
         else:
             raise TypeError(
                 f"Input params type {type(params)} not supported. Should be Tensor, Sequence, or Mapping."
@@ -219,7 +225,7 @@ class Module(Node):
                     valid_params[key] = self[key].to_valid(params[key])
                 else:
                     raise FillDynamicParamsMappingError(
-                        self.name, key, self.children, self.dynamic_modules
+                        self.name, self.children, self.dynamic_modules, missing_key=key
                     )
         else:
             raise TypeError(
@@ -267,7 +273,7 @@ class Module(Node):
                     params[key] = self[key].from_valid(valid_params[key])
                 else:
                     raise FillDynamicParamsMappingError(
-                        self.name, key, self.children, self.dynamic_modules
+                        self.name, self.children, self.dynamic_modules, missing_key=key
                     )
         else:
             raise TypeError(

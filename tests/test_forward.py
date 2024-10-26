@@ -178,6 +178,13 @@ def test_forward():
         valid_result = main1.testfun(1.0, params=main1.to_valid(params))
         assert valid_result.shape == (2, 2)
         assert torch.all(valid_result == result).item()
+    # Missing param
+    params = {
+        "b": torch.ones((2, 2)),
+        "TestSubSim": {"d": torch.tensor(3.0), "e": torch.tensor(4.0)},  # , "f": torch.tensor(1.0)
+    }
+    with pytest.raises(FillDynamicParamsMappingError):
+        result = main1.testfun(1.0, params=params)
 
     # All params static
     main1.b = torch.ones((2, 2))
