@@ -1,6 +1,6 @@
 from typing import Optional, Union
 
-from .errors import GraphError
+from .errors import GraphError, NodeConfigurationError
 
 
 class Node(object):
@@ -32,8 +32,10 @@ class Node(object):
     def __init__(self, name: Optional[str] = None):
         if name is None:
             name = self.__class__.__name__
-        assert isinstance(name, str), f"{self.__class__.__name__} name must be a string"
-        assert "|" not in name, f"{self.__class__.__name__} cannot contain '|'"
+        if not isinstance(name, str):
+            raise NodeConfigurationError(f"{self.__class__.__name__} name must be a string")
+        if "|" in name:
+            raise NodeConfigurationError(f"{self.__class__.__name__} cannot contain '|'")
         self._name = name
         self._children = {}
         self._parents = set()

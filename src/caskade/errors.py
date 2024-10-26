@@ -10,7 +10,11 @@ class GraphError(CaskadeException):
     """Class for graph exceptions in Caskade."""
 
 
-class ParamConfigurationError(CaskadeException):
+class NodeConfigurationError(CaskadeException):
+    """Class for node configuration exceptions in Caskade."""
+
+
+class ParamConfigurationError(NodeConfigurationError):
     """Class for parameter configuration exceptions in Caskade."""
 
 

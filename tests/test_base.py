@@ -1,4 +1,4 @@
-from caskade import Node, test, GraphError
+from caskade import Node, test, GraphError, NodeConfigurationError
 
 import pytest
 
@@ -13,6 +13,12 @@ def test_creation():
 
     with pytest.raises(AttributeError):
         node.name = "newname"
+
+    with pytest.raises(NodeConfigurationError):
+        node2 = Node(1)
+
+    with pytest.raises(NodeConfigurationError):
+        node2 = Node("test|test")
 
 
 def test_link():
