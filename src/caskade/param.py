@@ -227,8 +227,10 @@ class Param(Node):
             valid = (torch.as_tensor(valid[0]), torch.as_tensor(valid[1]))
             if torch.any(valid[0] >= valid[1]):
                 raise ParamConfigurationError("Valid range (valid[1] - valid[0]) must be positive")
-            if self.static and (
-                torch.any(self.value < valid[0]) or torch.any(self.value > valid[1])
+            if (
+                self.static
+                and not self.cyclic
+                and (torch.any(self.value < valid[0]) or torch.any(self.value > valid[1]))
             ):
                 warn(InvalidValueWarning(self.name, self.value, valid))
 
