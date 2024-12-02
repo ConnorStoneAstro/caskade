@@ -313,3 +313,9 @@ class Module(Node):
         except AttributeError:
             pass
         super().__setattr__(key, value)
+
+    def __delattr__(self, key: str):
+        """Intercept attribute deletion to remove links."""
+        if key in self.children:
+            self.unlink(key)
+        super().__delattr__(key)
