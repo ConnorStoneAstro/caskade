@@ -56,30 +56,30 @@ class Node(object):
         return self._parents
 
     def link(self, key: Union[str, "Node"], child: Optional["Node"] = None):
-        """Link the current `Node` object to another `Node` object as a child.
+        """Link the current ``Node`` object to another ``Node`` object as a child.
 
         Parameters
         ----------
         key: (Union[str, Node])
             The key to link the child node with.
         child: (Optional[Node], optional)
-            The child `Node` object to link to. Defaults to None in which
+            The child ``Node`` object to link to. Defaults to None in which
             case the key is used as the child.
 
         Examples
         --------
 
-        ```python
-        n1 = Node()
-        n2 = Node()
+        Example making some ``Node`` objects and then linking/unlinking them. demonstrating multiple ways to link/unlink::
 
-        n1.link("subnode", n2) # may use any str as the key
-        n1.unlink("subnode")
+            n1 = Node()
+            n2 = Node()
 
-        # Alternately, link by object
-        n1.link(n2)
-        n1.unlink(n2)
-        ```
+            n1.link("subnode", n2) # may use any str as the key
+            n1.unlink("subnode")
+
+            # Alternately, link by object
+            n1.link(n2)
+            n1.unlink(n2)
         """
         if child is None:
             child = key
@@ -100,7 +100,7 @@ class Node(object):
         self.update_graph()
 
     def unlink(self, key: Union[str, "Node"]):
-        """Unlink the current `Node` object from another `Node` object which is a child."""
+        """Unlink the current ``Node`` object from another ``Node`` object which is a child."""
         if isinstance(key, Node):
             for node in self.children:
                 if self.children[node] == key:
@@ -124,7 +124,7 @@ class Node(object):
 
     def update_graph(self):
         """Triggers a call to all parents that the graph below them has been
-        updated. The base `Node` object does nothing with this information, but
+        updated. The base ``Node`` object does nothing with this information, but
         other node types may use this to update internal state."""
         for parent in self.parents:
             parent.update_graph()
@@ -148,7 +148,7 @@ class Node(object):
 
     def to(self, device=None, dtype=None):
         """
-        Moves and/or casts the PyTorch values of the Node.
+        Moves and/or casts the PyTorch values of the ``Node``.
 
         Parameters
         ----------

@@ -14,26 +14,23 @@ class Param(Node):
     """
     Node to represent a parameter in the graph.
 
-    The `Param` object is used to represent a parameter in the graph. During
+    The ``Param`` object is used to represent a parameter in the graph. During
     runtime this will represent a tensor value which can be used in various
-    calculations. The `Param` object can be set to a constant value (`static`);
-    `None` meaning the value is to be provided at runtime (`dynamic`);
-    `LiveParam` meaning the value will be computed internally in the simulator
-    during runtime (`live`); another `Param` object meaning it will take on that
-    value at runtime (`pointer`); or a function of other `Param` objects to be
-    computed at runtime (`function`). These options allow users to flexibly set
-    the behavior of the simulator.
+    calculations. The ``Param`` object can be set to a constant value (``static``);
+    ``None`` meaning the value is to be provided at runtime (``dynamic``); another
+    ``Param`` object meaning it will take on that  value at runtime (``pointer``);
+    or a function of other ``Param`` objects to be computed at runtime (also
+    ``pointer``, see user guides). These options allow users to flexibly set the
+    behavior of the simulator.
 
     Examples
     --------
+    Example making some ``Param`` objects::
 
-    ```python
-    p1 = Param("test", (1.0, 2.0)) # constant value, length 2 vector
-    p2 = Param("p2", None, (2,2)) # dynamic 2x2 matrix value
-    p3 = Param("p3", p1) # pointer to another parameter
-    p4 = Param("p4", lambda p: p.children["other"].value * 2) # arbitrary function of another parameter
-    p4.link("other", p2) # link the other parameter needed for the function
-    ```
+        p1 = Param("test", (1.0, 2.0)) # constant value, length 2 vector
+        p2 = Param("p2", None, (2,2)) # dynamic 2x2 matrix value
+        p3 = Param("p3", p1) # pointer to another parameter
+        p4 = Param("p4", lambda p: p.children["other"].value * 2) # arbitrary function of another parameter
 
     Parameters
     ----------

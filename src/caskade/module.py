@@ -19,43 +19,44 @@ class Module(Node):
     """
     Node to represent a simulation module in the graph.
 
-    The `Module` object is used to represent a simulation module in the graph.
+    The ``Module`` object is used to represent a simulation module in the graph.
     These are python objects that contain the calculations for a simulation,
-    they also hold the `Param` objects that are used in the calculations. The
-    `Module` object has additional functionality to manage the `Param` objects
-    below it in the graph, it keeps track of all `dynamic` `Param` objects so
-    that at runtime their values may be filled. The `Module` object manages its
+    they also hold the ``Param`` objects that are used in the calculations. The
+    ``Module`` object has additional functionality to manage the ``Param`` objects
+    below it in the graph, it keeps track of all ``dynamic`` ``Param`` objects so
+    that at runtime their values may be filled. The ``Module`` object manages its
     links to other nodes through attributes of the class.
 
     Examples
     --------
 
-    ```python
-    class MySim(Module):
-        def __init__(self, a, b=None):
-            super().__init__()
-            self.a = a
-            self.b = Param("b", b)
+    Example of a nested pair of ``Module`` objects and how their ``@forward`` methods are called::
 
-        @forward
-        def myfunc(self, x, b=None):
-            return x * self.a.otherfun(x) + b
+        class MySim(Module):
+            def __init__(self, a, b=None):
+                super().__init__()
+                self.a = a
+                self.b = Param("b", b)
 
-    class OtherSim(Module):
-        def __init__(self, c=None):
-            super().__init__()
-            self.c = Param("c", c)
+            @forward
+            def myfunc(self, x, b=None):
+                return x * self.a.otherfun(x) + b
 
-        @forward
-        def otherfun(self, x, c = None):
-            return x + c
+        class OtherSim(Module):
+            def __init__(self, c=None):
+                super().__init__()
+                self.c = Param("c", c)
 
-    othersim = OtherSim()
-    mysim = MySim(a=othersim)
-    #                       b                         c
-    params = [torch.tensor([1.0, 2.0]), torch.tensor([3.0, 4.0])]
-    result = mysim.myfunc(3.0, params=params)
-    # result is tensor([19.0, 23.0])
+            @forward
+            def otherfun(self, x, c = None):
+                return x + c
+
+        othersim = OtherSim()
+        mysim = MySim(a=othersim)
+        #                       b                         c
+        params = [torch.tensor([1.0, 2.0]), torch.tensor([3.0, 4.0])]
+        result = mysim.myfunc(3.0, params=params)
+        # result is tensor([19.0, 23.0])
     ```
     """
 
@@ -170,7 +171,7 @@ class Module(Node):
 
     def clear_params(self):
         """Set all dynamic parameters to None and live parameters to LiveParam.
-        This is to be used on exiting an `ActiveContext` and so should not be
+        This is to be used on exiting an ``ActiveContext`` and so should not be
         used by a user."""
         if not self.active:
             raise ActiveStateError("Module must be active to clear params")
@@ -180,9 +181,9 @@ class Module(Node):
 
     def fill_kwargs(self, keys: tuple[str]) -> dict[str, Tensor]:
         """
-        Fill the kwargs for an `@forward` method with the values of the dynamic
-        parameters. The requested keys are matched to names of `Param` objects
-        owned by the `Module`.
+        Fill the kwargs for an ``@forward`` method with the values of the dynamic
+        parameters. The requested keys are matched to names of ``Param`` objects
+        owned by the ``Module``.
         """
         kwargs = {}
         for key in keys:
