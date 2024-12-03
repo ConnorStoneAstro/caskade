@@ -41,11 +41,12 @@ sphinx:
     - "sphinx.ext.autodoc"
     - "sphinx.ext.napoleon"
     - "sphinx.ext.viewcode"
-    # - "sphinx.ext.autosummary"
-    # - "sphinx.ext.doctest"
-    # - "sphinx.ext.coverage"
-    # - "sphinx.ext.mathjax"
-    # - "sphinx.ext.ifconfig"
+    - "myst_parser"          # For Markdown support in Jupyter Book
+    - "sphinx.ext.autosummary"
+    - "sphinx.ext.doctest"
+    - "sphinx.ext.coverage"
+    - "sphinx.ext.mathjax"
+    - "sphinx.ext.ifconfig"
 #   config:
 #     numpydoc_show_class_members: False
   # config:
