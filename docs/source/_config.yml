@@ -45,6 +45,9 @@ sphinx:
     - "sphinx.ext.mathjax"
     - "sphinx.ext.ifconfig"
     - "sphinx.ext.viewcode"
+    - "sphinx_automodapi.automodapi"
+  config:
+    numpydoc_show_class_members: False
   # config:
   #   html_theme_options:
   #     logo:

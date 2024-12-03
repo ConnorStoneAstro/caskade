@@ -26,13 +26,13 @@ class Param(Node):
 
     Examples
     --------
-    ```{python}
-    p1 = Param("test", (1.0, 2.0)) # constant value, length 2 vector
-    p2 = Param("p2", None, (2,2)) # dynamic 2x2 matrix value
-    p3 = Param("p3", p1) # pointer to another parameter
-    p4 = Param("p4", lambda p: p.children["other"].value * 2) # arbitrary function of another parameter
-    p4.link("other", p2) # link the other parameter needed for the function
-    ```
+    .. code-block:: python
+        p1 = Param("test", (1.0, 2.0)) # constant value, length 2 vector
+        p2 = Param("p2", None, (2,2)) # dynamic 2x2 matrix value
+        p3 = Param("p3", p1) # pointer to another parameter
+        p4 = Param("p4", lambda p: p.children["other"].value * 2) # arbitrary function of another parameter
+        p4.link("other", p2) # link the other parameter needed for the function
+
 
     Parameters
     ----------

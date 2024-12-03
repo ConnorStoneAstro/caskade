@@ -3,4 +3,5 @@ jupyter-book
 matplotlib
 sphinx
 sphinx_rtd_theme
+sphinx-automodapi
 graphviz
