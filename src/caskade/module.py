@@ -57,7 +57,6 @@ class Module(Node):
         params = [torch.tensor([1.0, 2.0]), torch.tensor([3.0, 4.0])]
         result = mysim.myfunc(3.0, params=params)
         # result is tensor([19.0, 23.0])
-    ```
     """
 
     _module_names = set()
