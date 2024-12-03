@@ -6,9 +6,6 @@ root: intro
 chapters:
   - file: notebooks/BeginnersGuide
   - file: install
-  - file: Param
-  - file: Module
-  - file: Node
   - file: modules
   # - file: contributing
   # - file: frequently_asked_questions
