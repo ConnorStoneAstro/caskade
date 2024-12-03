@@ -7,20 +7,20 @@ class Node(object):
     """
     Base graph node class for caskade objects.
 
-    The `Node` object is the base class for all caskade objects. It is used to
+    The ``Node`` object is the base class for all caskade objects. It is used to
     construct the directed acyclic graph (DAG). The primary function of the
-    `Node` object is to manage the parent-child relationships between nodes in
-    the graph. There is limited functionality for the `Node` object, though it
-    implements the base versions of the `active` state and `to` /
-    `update_graph` methods. The `active` state is used to communicate
-    through the graph that the simulator is currently running. The `to` method
-    is used to move and/or cast the values of the parameter. The `update_graph`
+    ``Node`` object is to manage the parent-child relationships between nodes in
+    the graph. There is limited functionality for the ``Node`` object, though it
+    implements the base versions of the ``active`` state and ``to`` /
+    ``update_graph`` methods. The ``active`` state is used to communicate
+    through the graph that the simulator is currently running. The ``to`` method
+    is used to move and/or cast the values of the parameter. The ``update_graph``
     method is used signal all parents that the graph below them has changed.
 
     Examples
     --------
 
-    Example making some ``Node``s and then linking/unlinking them::
+    Example making some ``Node`` objects and then linking/unlinking them::
 
        n1 = Node()
        n2 = Node()
