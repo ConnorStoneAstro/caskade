@@ -29,33 +29,33 @@ class Module(Node):
 
     Examples
     --------
-    .. code-block:: python
-        class MySim(Module):
-            def __init__(self, a, b=None):
-                super().__init__()
-                self.a = a
-                self.b = Param("b", b)
+    ```python
+    class MySim(Module):
+        def __init__(self, a, b=None):
+            super().__init__()
+            self.a = a
+            self.b = Param("b", b)
 
-            @forward
-            def myfunc(self, x, b=None):
-                return x * self.a.otherfun(x) + b
+        @forward
+        def myfunc(self, x, b=None):
+            return x * self.a.otherfun(x) + b
 
-        class OtherSim(Module):
-            def __init__(self, c=None):
-                super().__init__()
-                self.c = Param("c", c)
+    class OtherSim(Module):
+        def __init__(self, c=None):
+            super().__init__()
+            self.c = Param("c", c)
 
-            @forward
-            def otherfun(self, x, c = None):
-                return x + c
+        @forward
+        def otherfun(self, x, c = None):
+            return x + c
 
-        othersim = OtherSim()
-        mysim = MySim(a=othersim)
-        #                       b                         c
-        params = [torch.tensor([1.0, 2.0]), torch.tensor([3.0, 4.0])]
-        result = mysim.myfunc(3.0, params=params)
-        # result is tensor([19.0, 23.0])
-
+    othersim = OtherSim()
+    mysim = MySim(a=othersim)
+    #                       b                         c
+    params = [torch.tensor([1.0, 2.0]), torch.tensor([3.0, 4.0])]
+    result = mysim.myfunc(3.0, params=params)
+    # result is tensor([19.0, 23.0])
+    ```
     """
 
     _module_names = set()

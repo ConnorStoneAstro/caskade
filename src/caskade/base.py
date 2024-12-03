@@ -19,12 +19,12 @@ class Node(object):
 
     Examples
     --------
-    .. code-block:: python
-        n1 = Node()
-        n2 = Node()
-        n1.link("subnode", n2) # link n2 as a child of n1, may use any str as the key
-        n1.unlink("subnode") # alternately n1.unlink(n2) to unlink by object
-
+    ```python
+    n1 = Node()
+    n2 = Node()
+    n1.link("subnode", n2) # link n2 as a child of n1, may use any str as the key
+    n1.unlink("subnode") # alternately n1.unlink(n2) to unlink by object
+    ```
     """
 
     graphviz_types = {"node": {"style": "solid", "color": "black", "shape": "circle"}}
@@ -67,17 +67,17 @@ class Node(object):
 
         Examples
         --------
-        .. code-block:: python
-            n1 = Node()
-            n2 = Node()
+        ```python
+        n1 = Node()
+        n2 = Node()
 
-            n1.link("subnode", n2) # may use any str as the key
-            n1.unlink("subnode")
+        n1.link("subnode", n2) # may use any str as the key
+        n1.unlink("subnode")
 
-            # Alternately, link by object
-            n1.link(n2)
-            n1.unlink(n2)
-
+        # Alternately, link by object
+        n1.link(n2)
+        n1.unlink(n2)
+        ```
         """
         if child is None:
             child = key
