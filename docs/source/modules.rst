@@ -1,8 +1,9 @@
 caskade
 =======
 
-.. automodapi:: caskade.Node
+.. toctree::
+   :maxdepth: 4
 
-.. automodapi:: caskade.Module
-
-.. automodapi:: caskade.Param
+   caskade.Node
+   caskade.Module
+   caskade.Param
