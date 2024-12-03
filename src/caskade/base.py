@@ -20,12 +20,10 @@ class Node(object):
     Examples
     --------
 
-    ```{code-block} python
-    n1 = Node()
-    n2 = Node()
-    n1.link("subnode", n2) # link n2 as a child of n1, may use any str as the key
-    n1.unlink("subnode") # alternately n1.unlink(n2) to unlink by object
-    ```
+    :    n1 = Node()
+    :    n2 = Node()
+    :    n1.link("subnode", n2) # link n2 as a child of n1, may use any str as the key
+    :    n1.unlink("subnode") # alternately n1.unlink(n2) to unlink by object
     """
 
     graphviz_types = {"node": {"style": "solid", "color": "black", "shape": "circle"}}
