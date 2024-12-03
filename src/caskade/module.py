@@ -29,6 +29,7 @@ class Module(Node):
 
     Examples
     --------
+
     ```python
     class MySim(Module):
         def __init__(self, a, b=None):

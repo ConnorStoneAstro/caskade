@@ -19,6 +19,7 @@ class Node(object):
 
     Examples
     --------
+
     ```python
     n1 = Node()
     n2 = Node()
@@ -67,6 +68,7 @@ class Node(object):
 
         Examples
         --------
+
         ```python
         n1 = Node()
         n2 = Node()
