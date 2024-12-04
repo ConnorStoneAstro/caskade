@@ -5,9 +5,9 @@ from .errors import GraphError, NodeConfigurationError
 
 class Node(object):
     """
-    Base graph node class for caskade objects.
+    Base graph node class for ``caskade`` objects.
 
-    The ``Node`` object is the base class for all caskade objects. It is used to
+    The ``Node`` object is the base class for all ``caskade`` objects. It is used to
     construct the directed acyclic graph (DAG). The primary function of the
     ``Node`` object is to manage the parent-child relationships between nodes in
     the graph. There is limited functionality for the ``Node`` object, though it

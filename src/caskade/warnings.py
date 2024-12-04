@@ -2,7 +2,7 @@ from textwrap import dedent
 
 
 class CaskadeWarning(Warning):
-    """Base warning for Caskade."""
+    """Base warning for ``caskade``."""
 
 
 class InvalidValueWarning(CaskadeWarning):
