@@ -43,5 +43,6 @@ def _test_full_integration():
 
 
 def test():
+    """Basic integration test of caskade to ensure that the library is functioning correctly."""
     _test_full_integration()
     print("Success!")

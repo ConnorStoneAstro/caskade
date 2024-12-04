@@ -20,6 +20,25 @@ def forward(method):
     method: (Callable)
         The forward method to be decorated.
 
+    Examples
+    --------
+    Standard usage of the forward decorator::
+
+        class ExampleSim(Module):
+            def __init__(self, a, b, c):
+                super().__init__("example_sim")
+                self.a = a
+                self.b = Param("b", b)
+                self.c = Param("c", c)
+
+            @forward
+            def example_func(self, x, b=None):
+                return x + self.a + b
+
+        E = ExampleSim(a=1, b=None, c=3)
+        print(E.example_func(4, params=[5]))
+        # Output: 10
+
     Returns
     -------
     Callable

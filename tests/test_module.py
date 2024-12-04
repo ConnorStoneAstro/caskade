@@ -1,4 +1,6 @@
-from caskade import Module, Param, ActiveStateError
+import torch
+
+from caskade import Module, Param, ActiveStateError, forward
 
 import pytest
 
@@ -66,3 +68,33 @@ def test_module_delattr():
     m.p = newparam
     assert m.p is not initparam, "Module should allow deletion of parameters"
     assert m.p is newparam, "Module should allow setting of parameters"
+
+
+def test_shared_param():
+
+    class TestModule(Module):
+        def __init__(self, name, param):
+            super().__init__(name)
+            self.p = param
+
+        @forward
+        def test(self, p):
+            return 2 * p
+
+    shared_param = Param("shared")
+
+    m1 = TestModule("m1", shared_param)
+    m2 = TestModule("m2", shared_param)
+
+    class CombineModules(Module):
+        def __init__(self, name, m1, m2):
+            super().__init__(name)
+            self.m1 = m1
+            self.m2 = m2
+
+        @forward
+        def big_test(self):
+            return self.m1.test() + self.m2.test()
+
+    c1 = CombineModules("c1", m1, m2)
+    assert c1.big_test([torch.tensor(1.0)]).item() == 4.0, "Shared parameter not working"

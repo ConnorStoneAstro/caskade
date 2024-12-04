@@ -3,34 +3,36 @@ from textwrap import dedent
 
 
 class CaskadeException(Exception):
-    """Base class for all exceptions in Caskade."""
+    """Base class for all exceptions in ``caskade``."""
 
 
 class GraphError(CaskadeException):
-    """Class for graph exceptions in Caskade."""
+    """Class for graph exceptions in ``caskade``."""
 
 
 class NodeConfigurationError(CaskadeException):
-    """Class for node configuration exceptions in Caskade."""
+    """Class for node configuration exceptions in ``caskade``."""
 
 
 class ParamConfigurationError(NodeConfigurationError):
-    """Class for parameter configuration exceptions in Caskade."""
+    """Class for parameter configuration exceptions in ``caskade``."""
 
 
 class ParamTypeError(CaskadeException):
-    """Class for exceptions related to the type of a parameter in Caskade."""
+    """Class for exceptions related to the type of a parameter in ``caskade``."""
 
 
 class ActiveStateError(CaskadeException):
-    """Class for exceptions related to the active state of a node in Caskade."""
+    """Class for exceptions related to the active state of a node in ``caskade``."""
 
 
 class FillDynamicParamsError(CaskadeException):
-    """Class for exceptions related to filling dynamic parameters in Caskade."""
+    """Class for exceptions related to filling dynamic parameters in ``caskade``."""
 
 
 class FillDynamicParamsTensorError(FillDynamicParamsError):
+    """Class for exceptions related to filling dynamic parameters with a tensor in ``caskade``."""
+
     def __init__(self, name, input_params, dynamic_params):
         fullnumel = sum(max(1, prod(p.shape)) for p in dynamic_params)
         message = dedent(
@@ -47,6 +49,8 @@ class FillDynamicParamsTensorError(FillDynamicParamsError):
 
 
 class FillDynamicParamsSequenceError(FillDynamicParamsError):
+    """Class for exceptions related to filling dynamic parameters with a sequence (list, tuple, etc.) in ``caskade``."""
+
     def __init__(self, name, input_params, dynamic_params, dynamic_modules):
         message = dedent(
             f"""
@@ -64,6 +68,8 @@ class FillDynamicParamsSequenceError(FillDynamicParamsError):
 
 
 class FillDynamicParamsMappingError(FillDynamicParamsError):
+    """Class for exceptions related to filling dynamic parameters with a mapping (dict) in ``caskade``."""
+
     def __init__(self, name, children, dynamic_modules, missing_key=None, missing_param=None):
         if missing_key is not None:
             message = dedent(
