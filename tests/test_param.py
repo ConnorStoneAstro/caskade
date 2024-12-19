@@ -93,7 +93,7 @@ def test_value_setter():
     p.value = lambda p: p["other"].value * 2
     p.link("other", other)
     assert p._type == "pointer"
-    assert p.value is None
+    assert p.value.item() == 4.0
 
 
 def test_units():
