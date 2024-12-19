@@ -106,8 +106,11 @@ class Param(Node):
 
     @property
     def value(self) -> Union[Tensor, None]:
-        if self.pointer and self._value is None and self.active:
-            self._value = self._pointer_func(self)
+        if self.pointer and self._value is None:
+            if self.active:
+                self._value = self._pointer_func(self)
+            else:
+                return self._pointer_func(self)
         return self._value
 
     @value.setter
