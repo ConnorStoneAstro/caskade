@@ -1,4 +1,5 @@
 from .module import Module
+from .param import Param
 
 
 class ActiveContext:
@@ -40,3 +41,33 @@ class ValidContext:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.module.valid_context = False
+
+
+class OverrideParam:
+    """
+    Context manager to override a parameter value. Only inside an
+    OverrideParam will the parameter be set to the new value.
+    """
+
+    def __init__(self, param, value):
+        self.param = param
+        self.value = value
+
+    def __enter__(self):
+        # Store the old value
+        self.old_values = {str(id(self.param)): self.param._value}
+        # Set the new value
+        self.param._value = self.value
+        # Clear the pointer values as they may have updated
+        for node in self.param.parents:
+            if isinstance(node, Param) and node.pointer:
+                self.old_values[str(id(node))] = node._value
+                node._value = None
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # Reset the old value
+        self.param._value = self.old_values[str(id(self.param))]
+        # Clear the pointer values as they may have updated
+        for node in self.param.parents:
+            if isinstance(node, Param) and node.pointer:
+                node._value = self.old_values[str(id(node))]
