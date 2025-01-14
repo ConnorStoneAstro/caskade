@@ -1,7 +1,7 @@
 from ._version import version as VERSION  # noqa
 
 from .base import Node
-from .context import ActiveContext, ValidContext
+from .context import ActiveContext, ValidContext, OverrideParam
 from .decorators import forward
 from .module import Module
 from .param import Param
@@ -30,6 +30,7 @@ __all__ = (
     "Param",
     "ActiveContext",
     "ValidContext",
+    "OverrideParam",
     "forward",
     "test",
     "CaskadeException",
