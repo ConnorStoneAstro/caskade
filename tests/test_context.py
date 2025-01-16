@@ -49,8 +49,13 @@ def test_override_param():
             self.a_vals = (torch.tensor(1.0), torch.tensor(2.0))
 
         @forward
-        def testfunc(self, a, b, c):
-            d = a + b + c
+        def testsubfunc(self, a, b, c):
+            return a + b + c
+
+        @forward
+        def testfunc(self):
+            d = self.testsubfunc()
+            d = d + self.testsubfunc(a=torch.tensor(4.0))
             with OverrideParam(self.a, self.a_vals[0]):
                 d = d + self.b.value
             with OverrideParam(self.a, self.a_vals[1]):
@@ -58,4 +63,5 @@ def test_override_param():
             return d
 
     testsim = TestSim()
-    assert testsim.testfunc(torch.tensor([5.0])).item() == 14.0
+    assert testsim.testfunc(torch.tensor([5.0])).item() == 27.0
+    assert testsim.a.value.item() == 3.0
