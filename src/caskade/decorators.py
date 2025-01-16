@@ -1,7 +1,8 @@
 import inspect
 import functools
+from contextlib import ExitStack
 
-from .context import ActiveContext
+from .context import ActiveContext, OverrideParam
 
 __all__ = ("forward",)
 
@@ -51,8 +52,19 @@ def forward(method):
     @functools.wraps(method)
     def wrapped(self, *args, **kwargs):
         if self.active:
-            kwargs = {**self.fill_kwargs(method_params), **kwargs}
-            return method(self, *args, **kwargs)
+            with ExitStack() as stack:
+                # User override of parameters for single function call
+                used_kwargs = []
+                for kwarg, kval in kwargs.items():
+                    for cname, cval in self.children.items():
+                        if kwarg == cname:
+                            stack.enter_context(OverrideParam(cval, kval))
+                            used_kwargs.append(kwarg)
+                # Remove used kwargs from kwargs
+                for kwarg in used_kwargs:
+                    kwargs.pop(kwarg)
+                kwargs = {**self.fill_kwargs(method_params), **kwargs}
+                return method(self, *args, **kwargs)
 
         # Extract params from the arguments
         if len(self.dynamic_params) == 0:

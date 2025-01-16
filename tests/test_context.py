@@ -59,3 +59,5 @@ def test_override_param():
 
     testsim = TestSim()
     assert testsim.testfunc(torch.tensor([5.0])).item() == 14.0
+    assert testsim.testfunc(torch.tensor([5.0]), a=torch.tensor(4.0)).item() == 15.0
+    assert testsim.a.value.item() == 3.0
