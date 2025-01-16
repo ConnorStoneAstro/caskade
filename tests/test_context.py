@@ -49,6 +49,10 @@ def test_override_param():
             self.a_vals = (torch.tensor(1.0), torch.tensor(2.0))
 
         @forward
+        def testsubfunc(self, a, b, c):
+            return a + b + c
+
+        @forward
         def testfunc(self):
             d = self.testsubfunc()
             d = d + self.testsubfunc(a=torch.tensor(4.0))
