@@ -53,21 +53,23 @@ class OverrideParam:
         self.param = param
         self.value = value
 
+    @staticmethod
+    def _collect_old_values(param):
+        # Recursively collect the old values for any pointer affected by the override
+        old_values = [(param, param._value)]
+        for node in param.parents:
+            if isinstance(node, Param) and node.pointer:
+                old_values += OverrideParam._collect_old_values(node)
+                node._value = None
+        return old_values
+
     def __enter__(self):
-        # Store the old value
-        self.old_values = {str(id(self.param)): self.param._value}
+        # Store the old value(s) of the parameter and any pointers that may need updating
+        self.old_values = OverrideParam._collect_old_values(self.param)
         # Set the new value
         self.param._value = self.value
-        # Clear the pointer values as they may have updated
-        for node in self.param.parents:
-            if isinstance(node, Param) and node.pointer:
-                self.old_values[str(id(node))] = node._value
-                node._value = None
 
     def __exit__(self, exc_type, exc_value, traceback):
-        # Reset the old value
-        self.param._value = self.old_values[str(id(self.param))]
-        # Clear the pointer values as they may have updated
-        for node in self.param.parents:
-            if isinstance(node, Param) and node.pointer:
-                node._value = self.old_values[str(id(node))]
+        # Reset the param and pointer values as they were before the override
+        for node, value in self.old_values:
+            node._value = value
