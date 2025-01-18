@@ -64,18 +64,19 @@ Python is widely used in the scientific community to develop analysis code that
 can perform inference, handle complex calculations, and build flexible
 simulators. Previously no unified framework existed for developing such codes and
 a number of common problems needed to be solved many times in different teams.
-Most simulators used in complex calculations and inference have some number of
+Most simulators used in complicated calculations and inference have some number of
 parameters which must be managed throughout the simulator. Common problems
 encountered when developing scientific simulators include passing parameters
 through the simulation, selectively fixing/freeing inference parameters,
 post-hoc reparametrizations, and linking parameters. Similarly, once a simulator
 has been constructed, one often needs to write tedious wrappers and
-modifications to interface with other scientific analysis codes. Any simulator
-may be understood as a directed acyclic graph (DAG) of individual calculations,
-though no framework previously existed for formalizing this conception.
-`caskade` presents a highly generalized format for constructing scientific
-simulators which promotes good coding practices and abstracts the passing of
-parameters through the DAG model.
+modifications to interface with other scientific analysis codes. 
+
+Any simulator may be understood as a directed acyclic graph (DAG) of individual
+calculations, though no framework previously existed for formalizing this
+conception. `caskade` presents a highly generalized format for constructing
+scientific simulators which promotes good coding practices and abstracts the
+passing of parameters through the DAG model.
 
 Originally developed for `caustics` [Stone2024], the `caskade` system is now
 used in multiple scientific analysis codes.
@@ -133,7 +134,7 @@ Notice that we pass all the registered `Param` values when calling the
 `Star.image` method; the `@forward` decorator collects and organizes them such
 that the values go to the correct places. The `sigma` parameter is fixed to
 `0.3` and so does not need to be passed at the call to the `image` method. One
-may now make simulators for other astronomical objects like galaxies and by
+may now make simulators for other astronomical objects like galaxies. By
 conforming to the above coding pattern the analysis will remain scalable and
 flexible. If one now wishes to make `mystar` move across the sky as a function
 of time, one would traditionally need to rewrite some elements of the code,
