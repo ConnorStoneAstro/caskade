@@ -190,6 +190,45 @@ class Module(Node):
                 kwargs[key] = self[key].value
         return kwargs
 
+    def auto_params_tensor(self) -> Tensor:
+        """Return an input Tensor for this module's methods by filling with dynamic values."""
+
+        x = []
+        for param in self.dynamic_params:
+            if "value" not in param._type:
+                raise ParamConfigurationError(
+                    f"Param {param.name} has no dynamic value, so the auto params cannot be filled. Set the `dynamic_value` to use this feature."
+                )
+            x.append(param.value.detach().flatten())
+        return torch.cat(x)
+
+    def auto_params_list(self) -> list[Tensor]:
+        """Return an input list for this module's methods by filling with dynamic values."""
+
+        x = []
+        for param in self.dynamic_params:
+            if "value" not in param._type:
+                raise ParamConfigurationError(
+                    f"Param {param.name} has no dynamic value, so the auto params cannot be filled. Set the `dynamic_value` to use this feature."
+                )
+            x.append(param.value.detach())
+        return x
+
+    def auto_params_dict(self, local=False) -> dict[str, Tensor]:
+        """Return an input dict for this module's methods by filling with dynamic values."""
+
+        x = {}
+        if not local:
+            for mod in self.dynamic_modules:
+                x[mod.name] = mod.auto_params_dict(local=True)
+        for param in self.local_dynamic_params:
+            if "value" not in param._type:
+                raise ParamConfigurationError(
+                    f"Param {param.name} has no dynamic value, so the auto params cannot be filled. Set the `dynamic_value` to use this feature."
+                )
+            x[param.name] = param.value.detach()
+        return x
+
     def to_valid(self, params: Union[Tensor, Sequence, Mapping], local=False):
         """Convert input params to valid params."""
         dynamic_params = self.local_dynamic_params if local else self.dynamic_params

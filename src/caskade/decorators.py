@@ -74,6 +74,8 @@ def forward(method):
         elif args:
             params = args[-1]
             args = args[:-1]
+        elif all("value" in p._type for p in self.dynamic_params):
+            params = [p.value for p in self.dynamic_params]
         else:
             raise ValueError(
                 f"Params must be provided for a top level @forward method. Either by keyword 'method(params=params)' or as the last positional argument 'method(a, b, c, params)'"

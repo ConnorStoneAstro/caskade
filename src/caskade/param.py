@@ -52,7 +52,8 @@ class Param(Node):
     graphviz_types = {
         "static": {"style": "filled", "color": "lightgrey", "shape": "box"},
         "dynamic": {"style": "solid", "color": "black", "shape": "box"},
-        "pointer": {"style": "filled", "color": "lightgrey", "shape": "cds"},
+        "dynamic value": {"style": "solid", "color": "#333333", "shape": "box"},
+        "pointer": {"style": "filled", "color": "lightgrey", "shape": "rarrow"},
     }
 
     def __init__(
@@ -63,6 +64,7 @@ class Param(Node):
         cyclic: bool = False,
         valid: Optional[tuple[Union[Tensor, float, int, None]]] = None,
         units: Optional[str] = None,
+        dynamic_value: Optional[Union[Tensor, float, int]] = None,
     ):
         super().__init__(name=name)
         if value is None:
@@ -78,21 +80,22 @@ class Param(Node):
                     f"Shape {shape} does not match value shape {value.shape}"
                 )
         self.value = value
+        self.dynamic_value = dynamic_value
         self.cyclic = cyclic
         self.valid = valid
         self.units = units
 
     @property
     def dynamic(self) -> bool:
-        return self._type == "dynamic"
+        return "dynamic" in self._type
 
     @property
     def pointer(self) -> bool:
-        return self._type == "pointer"
+        return "pointer" in self._type
 
     @property
     def static(self) -> bool:
-        return self._type == "static"
+        return "static" in self._type
 
     @property
     def shape(self) -> tuple:
@@ -105,12 +108,53 @@ class Param(Node):
         self._shape = shape
 
     @property
+    def dynamic_value(self) -> Union[Tensor, None]:
+        return self._dynamic_value
+
+    @dynamic_value.setter
+    def dynamic_value(self, value):
+        # While active no value can be set
+        if self.active:
+            raise ActiveStateError(
+                f"Cannot set dynamic value of parameter {self.name} while active"
+            )
+
+        # No dynamic value
+        if value is None:
+            self._dynamic_value = None
+            return
+
+        # Catch cases where input is invalid
+        if isinstance(value, Param) or callable(value):
+            raise ParamTypeError("Cannot set dynamic value to pointer or function")
+
+        # unlink if pointer, dynamic_value cannot be a pointer
+        if self.pointer:
+            for child in tuple(self.children.values()):
+                self.unlink(child)
+
+        # Set to dynamic value
+        self._type = "dynamic value"
+        self._pointer_func = None
+        value = torch.as_tensor(value)
+        self.shape = value.shape
+        self._dynamic_value = value
+        try:
+            self.valid = self._valid  # re-check valid range
+        except AttributeError:
+            pass
+
+        self.update_graph()
+
+    @property
     def value(self) -> Union[Tensor, None]:
         if self.pointer and self._value is None:
             if self.active:
                 self._value = self._pointer_func(self)
             else:
                 return self._pointer_func(self)
+        if self._value is None:
+            return self._dynamic_value
         return self._value
 
     @value.setter

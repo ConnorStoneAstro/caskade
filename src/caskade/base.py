@@ -120,7 +120,7 @@ class Node(object):
                     ordering.append(subnode)
         if with_type is None:
             return tuple(ordering)
-        return tuple(filter(lambda n: n._type == with_type, ordering))
+        return tuple(filter(lambda n: with_type in n._type, ordering))
 
     def update_graph(self):
         """Triggers a call to all parents that the graph below them has been
