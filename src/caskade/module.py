@@ -263,15 +263,17 @@ class Module(Node):
     def auto_params_dict(self, local=False) -> dict[str, Tensor]:
         """Return an input dict for this module's methods by filling with dynamic values."""
 
+        if not self.all_dynamic_value:
+            for param in self.dynamic_params:
+                if "value" not in param._type:
+                    raise ParamConfigurationError(
+                        f"Param {param.name} has no dynamic value, so the auto params cannot be filled. Set the `dynamic_value` to use this feature."
+                    )
         x = {}
         if not local:
             for mod in self.dynamic_modules.values():
                 x[mod.name] = mod.auto_params_list(local=True)
         for param in self.local_dynamic_params:
-            if "value" not in param._type:
-                raise ParamConfigurationError(
-                    f"Param {param.name} has no dynamic value, so the auto params cannot be filled. Set the `dynamic_value` to use this feature."
-                )
             x[param.name] = param.value.detach()
         return x
 
