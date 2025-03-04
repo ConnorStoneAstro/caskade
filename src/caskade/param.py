@@ -67,17 +67,25 @@ class Param(Node):
         dynamic_value: Optional[Union[Tensor, float, int]] = None,
     ):
         super().__init__(name=name)
-        if value is None:
+        if value is not None and dynamic_value is not None:
+            raise ParamConfigurationError("Cannot set both value and dynamic value")
+        elif value is None and dynamic_value is None:
             if shape is None:
                 raise ParamConfigurationError("Either value or shape must be provided")
-            if not isinstance(shape, tuple):
+            if not isinstance(shape, (tuple, list)):
                 raise ParamConfigurationError("Shape must be a tuple")
-            self.shape = shape
-        elif not isinstance(value, (Param, Callable)):
+            self.shape = tuple(shape)
+        elif not isinstance(value, (Param, Callable)) and value is not None:
             value = torch.as_tensor(value)
             if not (shape == () or shape is None or shape == value.shape):
                 raise ParamConfigurationError(
                     f"Shape {shape} does not match value shape {value.shape}"
+                )
+        elif not isinstance(dynamic_value, (Param, Callable)) and dynamic_value is not None:
+            dynamic_value = torch.as_tensor(dynamic_value)
+            if not (shape == () or shape is None or shape == dynamic_value.shape):
+                raise ParamConfigurationError(
+                    f"Shape {shape} does not match dynamic value shape {dynamic_value.shape}"
                 )
         self.value = value
         self.dynamic_value = dynamic_value
@@ -139,6 +147,7 @@ class Param(Node):
         value = torch.as_tensor(value)
         self.shape = value.shape
         self._dynamic_value = value
+        self._value = None
         try:
             self.valid = self._valid  # re-check valid range
         except AttributeError:

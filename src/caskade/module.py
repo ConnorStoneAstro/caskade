@@ -73,6 +73,7 @@ class Module(Node):
         """Maintain a tuple of dynamic and live parameters at all points lower
         in the DAG."""
         self.dynamic_params = tuple(self.topological_ordering("dynamic"))
+        self.all_dynamic_value = all("value" in p._type for p in self.dynamic_params)
         self.pointer_params = tuple(self.topological_ordering("pointer"))
         self.local_dynamic_params = tuple(
             p for p in self.children.values() if isinstance(p, Param) and p.dynamic

@@ -23,15 +23,22 @@ def test_param_creation():
     assert p2.name == "test"
     assert p2.value.item() == 1.0
     p3 = Param("test", torch.ones((1, 2, 3)))
+    p33 = Param("test", dynamic_value=torch.ones((1, 2, 3)))
+    assert torch.all(p3.value == p33.value)
 
     # Cant update value when active
     with pytest.raises(ActiveStateError):
         p3.active = True
         p3.value = 1.0
+    with pytest.raises(ActiveStateError):
+        p33.active = True
+        p33.dynamic_value = 1.0
 
     # Missmatch value and shape
     with pytest.raises(ParamConfigurationError):
         p4 = Param("test", 1.0, shape=(1, 2, 3))
+    with pytest.raises(ParamConfigurationError):
+        p44 = Param("test", dynamic_value=1.0, shape=(1, 2, 3))
 
     # Cant set shape of pointer or function
     p5 = Param("test", p3)
@@ -62,6 +69,25 @@ def test_param_creation():
     assert p9.cyclic
     assert p9.valid[0].item() == 0
     assert p9.valid[1].item() == 1
+
+    # Invalid dynamic value
+    with pytest.raises(ParamTypeError):
+        p10 = Param("test", dynamic_value=p9)
+    with pytest.raises(ParamTypeError):
+        p11 = Param("test", dynamic_value=lambda p: p["other"].value * 2)
+    with pytest.raises(ParamConfigurationError):
+        p12 = Param("test", value=1.0, dynamic_value=1.0)
+
+    # Set dynamic from other states
+    p13 = Param("test", 1.0)  # static
+    p13.dynamic_value = 2.0
+    assert p13.value.item() == 2.0
+    p14 = Param("test")  # dynamic
+    p14.dynamic_value = 1.0
+    assert p14.value.item() == 1.0
+    p15 = Param("test", p14)  # pointer
+    p15.dynamic_value = 2.0
+    assert p15.value.item() == 2.0
 
 
 def test_param_to():
