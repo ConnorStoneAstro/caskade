@@ -1,6 +1,6 @@
 import torch
 
-from caskade import Module, Param, ActiveStateError, forward
+from caskade import Module, Param, ActiveStateError, ParamConfigurationError, forward
 
 import pytest
 
@@ -130,8 +130,20 @@ def test_dynamic_value():
     main1 = TestSim(a=1.0, b_shape=(2,), c=4.0, m1=sub1)
 
     assert not main1.all_dynamic_value
+    # Try to get auto params when not all dynamic values available
+    with pytest.raises(ParamConfigurationError):
+        p0 = main1.auto_params_tensor()
+    with pytest.raises(ParamConfigurationError):
+        p0 = main1.auto_params_list()
+    with pytest.raises(ParamConfigurationError):
+        p0 = main1.auto_params_dict()
     main1.b = torch.tensor([1.0, 2.0])
     assert main1.all_dynamic_value
+
+    # Check dynamic value
+    assert main1.c.dynamic_value.item() == 4.0
+    assert main1.c.value.item() == 4.0
+    assert main1.c._value is None
 
     # Auto tensor
     p0 = main1.auto_params_tensor()
@@ -169,4 +181,9 @@ def test_dynamic_value():
             p02[k] = p0[k] * 2
     main1.fill_dynamic_values(p02)
     assert torch.allclose(main1.testfun(x=x), torch.tensor(28.8))
-    main1.fill_dynamic_values(p0)
+
+    # Check active state error
+    with pytest.raises(ActiveStateError):
+        main1.active = True
+        main1.fill_dynamic_values(p0)
+    main1.active = False
