@@ -88,6 +88,98 @@ class Module(Node):
         """Return True if the module has dynamic parameters"""
         return self.local_dynamic_params != ()
 
+    def _fill_values(
+        self, params: Union[Tensor, Sequence, Mapping], local=False, dynamic_values=False
+    ):
+        """
+        Fill the dynamic parameters of the module with the input values from
+        params.
+
+        Parameters
+        ----------
+        params: (Union[Tensor, Sequence, Mapping])
+            The input values to fill the dynamic parameters with. The input can
+            be a Tensor, a Sequence, or a Mapping. If the input is a Tensor, the
+            values are filled in order of the dynamic parameters. `params`
+            should be a flattened tensor with all parameters concatenated in the
+            order of the dynamic parameters. If `len(params.shape)>1` then all
+            dimensions but the last one are considered batch dimensions. If the
+            input is a Sequence, the values are filled in order of the dynamic
+            parameters. If the input is a Mapping, the values are filled by
+            matching the keys of the Mapping to the names of the dynamic
+            parameters. Note that the system does not check for missing keys in
+            the dictionary, but you will get an error eventually if a value is
+            missing.
+        """
+        if self.valid_context and not local:
+            params = self.from_valid(params)
+
+        dynamic_params = self.local_dynamic_params if local else self.dynamic_params
+
+        if isinstance(params, Tensor):
+            # check for batch dimension
+            batch = len(params.shape) > 1
+            B = tuple(params.shape[:-1]) if batch else ()
+            pos = 0
+            for param in dynamic_params:
+                if not isinstance(param.shape, tuple):
+                    raise ParamConfigurationError(
+                        f"Param {param.name} has no shape. dynamic parameters must have a shape to use Tensor input."
+                    )
+                # Handle scalar parameters
+                size = max(1, prod(param.shape))
+                try:
+                    val = params[..., pos : pos + size].view(B + param.shape)
+                    if dynamic_values:
+                        param.dynamic_value = val
+                    else:
+                        param._value = val
+                except (RuntimeError, IndexError):
+                    raise FillDynamicParamsTensorError(self.name, params, dynamic_params)
+
+                pos += size
+            if pos != params.shape[-1]:
+                raise FillDynamicParamsTensorError(self.name, params, dynamic_params)
+        elif isinstance(params, Sequence):
+            if len(params) == len(dynamic_params):
+                for param, value in zip(dynamic_params, params):
+                    if dynamic_values:
+                        param.dynamic_value = value
+                    else:
+                        param._value = value
+            elif len(params) == len(self.dynamic_modules):
+                for module, value in zip(self.dynamic_modules.values(), params):
+                    module._fill_values(value, local=True, dynamic_values=dynamic_values)
+            else:
+                raise FillDynamicParamsSequenceError(
+                    self.name, params, dynamic_params, self.dynamic_modules
+                )
+        elif isinstance(params, Mapping):
+            for key in params:
+                if key in self.dynamic_modules:
+                    self.dynamic_modules[key]._fill_values(
+                        params[key], local=True, dynamic_values=dynamic_values
+                    )
+                elif key in self.children and self[key].dynamic:
+                    if dynamic_values:
+                        self[key].dynamic_value = params[key]
+                    else:
+                        self[key]._value = params[key]
+                else:
+                    raise FillDynamicParamsMappingError(
+                        self.name, self.children, self.dynamic_modules, missing_key=key
+                    )
+            if not local:
+                for param in dynamic_params:
+                    if param.value is None:
+                        raise FillDynamicParamsMappingError(
+                            self.name, self.children, self.dynamic_modules, missing_param=param
+                        )
+        else:
+            raise TypeError(
+                f"Input params type {type(params)} not supported. Should be Tensor, Sequence, or Mapping."
+            )
+
     def fill_params(self, params: Union[Tensor, Sequence, Mapping], local=False):
         """
         Fill the dynamic parameters of the module with the input values from
@@ -112,62 +204,7 @@ class Module(Node):
         if not self.active:
             raise ActiveStateError("Module must be active to fill params")
 
-        if self.valid_context and not local:
-            params = self.from_valid(params)
-
-        dynamic_params = self.local_dynamic_params if local else self.dynamic_params
-
-        if isinstance(params, Tensor):
-            # check for batch dimension
-            batch = len(params.shape) > 1
-            B = tuple(params.shape[:-1]) if batch else ()
-            pos = 0
-            for param in dynamic_params:
-                if not isinstance(param.shape, tuple):
-                    raise ParamConfigurationError(
-                        f"Param {param.name} has no shape. dynamic parameters must have a shape to use Tensor input."
-                    )
-                # Handle scalar parameters
-                size = max(1, prod(param.shape))
-                try:
-                    param._value = params[..., pos : pos + size].view(B + param.shape)
-                except (RuntimeError, IndexError):
-                    raise FillDynamicParamsTensorError(self.name, params, dynamic_params)
-
-                pos += size
-            if pos != params.shape[-1]:
-                raise FillDynamicParamsTensorError(self.name, params, dynamic_params)
-        elif isinstance(params, Sequence):
-            if len(params) == len(dynamic_params):
-                for param, value in zip(dynamic_params, params):
-                    param._value = value
-            elif len(params) == len(self.dynamic_modules):
-                for module, value in zip(self.dynamic_modules.values(), params):
-                    module.fill_params(value, local=True)
-            else:
-                raise FillDynamicParamsSequenceError(
-                    self.name, params, dynamic_params, self.dynamic_modules
-                )
-        elif isinstance(params, Mapping):
-            for key in params:
-                if key in self.dynamic_modules:
-                    self.dynamic_modules[key].fill_params(params[key], local=True)
-                elif key in self.children and self[key].dynamic:
-                    self[key]._value = params[key]
-                else:
-                    raise FillDynamicParamsMappingError(
-                        self.name, self.children, self.dynamic_modules, missing_key=key
-                    )
-            if not local:
-                for param in dynamic_params:
-                    if param._value is None:
-                        raise FillDynamicParamsMappingError(
-                            self.name, self.children, self.dynamic_modules, missing_param=param
-                        )
-        else:
-            raise TypeError(
-                f"Input params type {type(params)} not supported. Should be Tensor, Sequence, or Mapping."
-            )
+        self._fill_values(params, local=local)
 
     def clear_params(self):
         """Set all dynamic parameters to None and live parameters to LiveParam.
@@ -191,6 +228,13 @@ class Module(Node):
                 kwargs[key] = self[key].value
         return kwargs
 
+    def fill_dynamic_values(self, params: Union[Tensor, Sequence, Mapping], local=False):
+        """Fill the dynamic values of the module with the input values from params."""
+        if self.active:
+            raise ActiveStateError("Cannot fill dynamic values when Module is active")
+
+        self._fill_values(params, local=local, dynamic_values=True)
+
     def auto_params_tensor(self) -> Tensor:
         """Return an input Tensor for this module's methods by filling with dynamic values."""
 
@@ -203,11 +247,12 @@ class Module(Node):
             x.append(param.value.detach().flatten())
         return torch.cat(x)
 
-    def auto_params_list(self) -> list[Tensor]:
+    def auto_params_list(self, local=False) -> list[Tensor]:
         """Return an input list for this module's methods by filling with dynamic values."""
 
         x = []
-        for param in self.dynamic_params:
+        dynamic_params = self.local_dynamic_params if local else self.dynamic_params
+        for param in dynamic_params:
             if "value" not in param._type:
                 raise ParamConfigurationError(
                     f"Param {param.name} has no dynamic value, so the auto params cannot be filled. Set the `dynamic_value` to use this feature."
@@ -220,8 +265,8 @@ class Module(Node):
 
         x = {}
         if not local:
-            for mod in self.dynamic_modules:
-                x[mod.name] = mod.auto_params_dict(local=True)
+            for mod in self.dynamic_modules.values():
+                x[mod.name] = mod.auto_params_list(local=True)
         for param in self.local_dynamic_params:
             if "value" not in param._type:
                 raise ParamConfigurationError(
