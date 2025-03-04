@@ -126,18 +126,21 @@ def test_dynamic_value():
         def __call__(self, d=None, e=None, live_c=None):
             return d + e + live_c.sum()
 
-    sub1 = TestSubSim(d=2.0, e=2.5, f=3.0)
+    sub1 = TestSubSim(d=2.0, e=2.5, f=None)
     main1 = TestSim(a=1.0, b_shape=(2,), c=4.0, m1=sub1)
 
     assert not main1.all_dynamic_value
+    main1.b = torch.tensor([1.0, 2.0])
     # Try to get auto params when not all dynamic values available
     with pytest.raises(ParamConfigurationError):
-        p0 = main1.auto_params_tensor()
+        p00 = main1.auto_params_tensor()
     with pytest.raises(ParamConfigurationError):
-        p0 = main1.auto_params_list()
+        p00 = main1.auto_params_list()
     with pytest.raises(ParamConfigurationError):
-        p0 = main1.auto_params_dict()
-    main1.b = torch.tensor([1.0, 2.0])
+        p00 = main1.auto_params_dict()
+    with pytest.raises(ParamConfigurationError):
+        p00 = sub1.auto_params_dict()
+    sub1.f.dynamic_value = 3.0
     assert main1.all_dynamic_value
 
     # Check dynamic value
