@@ -187,16 +187,19 @@ class Param(Node):
             self._pointer_func = lambda p: p[str(id(value))].value
             self._shape = None
             self._value = None
+            self._dynamic_value = None
         elif callable(value):
             self._type = "pointer"
             self._shape = None
             self._pointer_func = value
             self._value = None
+            self._dynamic_value = None
         else:
             self._type = "static"
             value = torch.as_tensor(value)
             self.shape = value.shape
             self._value = value
+            self._dynamic_value = None
             try:
                 self.valid = self._valid  # re-check valid range
             except AttributeError:

@@ -133,13 +133,13 @@ def test_dynamic_value():
     main1.b = torch.tensor([1.0, 2.0])
     # Try to get auto params when not all dynamic values available
     with pytest.raises(ParamConfigurationError):
-        p00 = main1.auto_params_tensor()
+        p00 = main1.build_params_tensor()
     with pytest.raises(ParamConfigurationError):
-        p00 = main1.auto_params_list()
+        p00 = main1.build_params_list()
     with pytest.raises(ParamConfigurationError):
-        p00 = main1.auto_params_dict()
+        p00 = main1.build_params_dict()
     with pytest.raises(ParamConfigurationError):
-        p00 = sub1.auto_params_dict()
+        p00 = sub1.build_params_dict()
     sub1.f.dynamic_value = 3.0
     assert main1.all_dynamic_value
 
@@ -149,7 +149,7 @@ def test_dynamic_value():
     assert main1.c._value is None
 
     # Auto tensor
-    p0 = main1.auto_params_tensor()
+    p0 = main1.build_params_tensor()
     x = torch.tensor([0.1, 0.2])
     assert p0.shape == (3,)
     assert torch.allclose(main1.testfun(x, p0), torch.tensor(18.8))
@@ -160,7 +160,7 @@ def test_dynamic_value():
     main1.fill_dynamic_values(p0)
 
     # Auto list
-    p0 = main1.auto_params_list()
+    p0 = main1.build_params_list()
     x = torch.tensor([0.1, 0.2])
     assert len(p0) == 3
     assert torch.allclose(main1.testfun(x, p0), torch.tensor(18.8))
@@ -171,7 +171,7 @@ def test_dynamic_value():
     main1.fill_dynamic_values(p0)
 
     # Auto dict
-    p0 = main1.auto_params_dict()
+    p0 = main1.build_params_dict()
     x = torch.tensor([0.1, 0.2])
     assert len(p0) == 3
     assert torch.allclose(main1.testfun(x, p0), torch.tensor(18.8))

@@ -235,44 +235,43 @@ class Module(Node):
 
         self._fill_values(params, local=local, dynamic_values=True)
 
-    def auto_params_tensor(self) -> Tensor:
-        """Return an input Tensor for this module's methods by filling with dynamic values."""
-
-        x = []
-        for param in self.dynamic_params:
-            if "value" not in param._type:
-                raise ParamConfigurationError(
-                    f"Param {param.name} has no dynamic value, so the auto params cannot be filled. Set the `dynamic_value` to use this feature."
-                )
-            x.append(param.value.detach().flatten())
-        return torch.cat(x)
-
-    def auto_params_list(self, local=False) -> list[Tensor]:
-        """Return an input list for this module's methods by filling with dynamic values."""
-
-        x = []
-        dynamic_params = self.local_dynamic_params if local else self.dynamic_params
-        for param in dynamic_params:
-            if "value" not in param._type:
-                raise ParamConfigurationError(
-                    f"Param {param.name} has no dynamic value, so the auto params cannot be filled. Set the `dynamic_value` to use this feature."
-                )
-            x.append(param.value.detach())
-        return x
-
-    def auto_params_dict(self, local=False) -> dict[str, Tensor]:
-        """Return an input dict for this module's methods by filling with dynamic values."""
-
+    def _check_dynamic_values(self):
+        """Check if all dynamic values are set."""
         if not self.all_dynamic_value:
             for param in self.dynamic_params:
                 if "value" not in param._type:
                     raise ParamConfigurationError(
-                        f"Param {param.name} has no dynamic value, so the auto params cannot be filled. Set the `dynamic_value` to use this feature."
+                        f"Param {param.name} has no dynamic value, so the params object cannot be built. Set the `dynamic_value` attribute to use this feature."
                     )
+
+    def build_params_tensor(self) -> Tensor:
+        """Return an input Tensor for this module's methods by filling with dynamic values."""
+
+        self._check_dynamic_values()
+        x = []
+        for param in self.dynamic_params:
+            x.append(param.value.detach().flatten())
+        return torch.cat(x)
+
+    def build_params_list(self, local=False) -> list[Tensor]:
+        """Return an input list for this module's methods by filling with dynamic values."""
+
+        if not local:
+            self._check_dynamic_values()
+        x = []
+        dynamic_params = self.local_dynamic_params if local else self.dynamic_params
+        for param in dynamic_params:
+            x.append(param.value.detach())
+        return x
+
+    def build_params_dict(self, local=False) -> dict[str, Tensor]:
+        """Return an input dict for this module's methods by filling with dynamic values."""
+
         x = {}
         if not local:
+            self._check_dynamic_values()
             for mod in self.dynamic_modules.values():
-                x[mod.name] = mod.auto_params_list(local=True)
+                x[mod.name] = mod.build_params_list(local=True)
         for param in self.local_dynamic_params:
             x[param.name] = param.value.detach()
         return x
