@@ -9,7 +9,16 @@ __all__ = ("forward",)
 
 def _get_arguments(method):
     sig = inspect.signature(method)
-    return tuple(sig.parameters.keys())
+    params = sig.parameters
+    required = []
+    for k, p in params.items():
+        if p.default is p.empty and p.kind not in [
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ]:
+            required.append(k)
+
+    return tuple(params.keys()), required
 
 
 def forward(method):
@@ -47,7 +56,7 @@ def forward(method):
     """
 
     # Get arguments from function signature
-    method_params = _get_arguments(method)
+    method_params, required = _get_arguments(method)
 
     @functools.wraps(method)
     def wrapped(self, *args, **kwargs):
@@ -71,7 +80,7 @@ def forward(method):
             params = {}
         elif "params" in kwargs:
             params = kwargs.pop("params")
-        elif args:
+        elif len(args) == len(required) - sum([n in required for n in self.local_params_names]):
             params = args[-1]
             args = args[:-1]
         elif self.all_dynamic_value:

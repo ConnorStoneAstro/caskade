@@ -78,6 +78,9 @@ class Module(Node):
         self.local_dynamic_params = tuple(
             p for p in self.children.values() if isinstance(p, Param) and p.dynamic
         )
+        self.local_params_names = tuple(
+            p.name for p in self.children.values() if isinstance(p, Param)
+        )
         self.dynamic_modules = dict(
             (m.name, m) for m in self.topological_ordering("module") if m.dynamic
         )
