@@ -173,15 +173,13 @@ def test_dynamic_value():
     # Auto dict
     p0 = main1.build_params_dict()
     x = torch.tensor([0.1, 0.2])
-    assert len(p0) == 3
+    assert len(p0) == 2
+    assert len(p0["test_sim"]) == 1
     assert torch.allclose(main1.testfun(x, p0), torch.tensor(18.8))
     assert torch.allclose(main1.testfun(x, p0), main1.testfun(x=x))
     p02 = {}
     for k in p0:
-        if isinstance(p0[k], list):
-            p02[k] = [p * 2 for p in p0[k]]
-        else:
-            p02[k] = p0[k] * 2
+        p02[k] = {p: p0[k][p] * 2 for p in p0[k]}
     main1.fill_dynamic_values(p02)
     assert torch.allclose(main1.testfun(x=x), torch.tensor(28.8))
 
