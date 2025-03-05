@@ -1,6 +1,13 @@
 import torch
 
-from caskade import Module, Param, ActiveStateError, ParamConfigurationError, forward
+from caskade import (
+    Module,
+    Param,
+    ActiveStateError,
+    ParamConfigurationError,
+    InvalidValueWarning,
+    forward,
+)
 
 import pytest
 
@@ -120,7 +127,7 @@ def test_dynamic_value():
             super().__init__()
             self.d = Param("d", dynamic_value=d)
             self.e = Param("e", e)
-            self.f = Param("f", dynamic_value=f)
+            self.f = Param("f", dynamic_value=f, valid=(0, 10))
 
         @forward
         def __call__(self, d=None, e=None, live_c=None):
@@ -192,3 +199,7 @@ def test_dynamic_value():
         main1.active = True
         main1.fill_dynamic_values(p0)
     main1.active = False
+
+    # Check invalid dynamic value
+    with pytest.warns(InvalidValueWarning):
+        sub1.f.dynamic_value = 11.0

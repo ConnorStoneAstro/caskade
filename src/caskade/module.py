@@ -235,7 +235,7 @@ class Module(Node):
 
         self._fill_values(params, local=local, dynamic_values=True)
 
-    def _check_dynamic_values(self):
+    def _check_dynamic_values(self, params_type: str = "Tensor"):
         """Check if all dynamic values are set."""
         if not self.all_dynamic_value:
             bad_params = []
@@ -243,13 +243,13 @@ class Module(Node):
                 if "value" not in param._type:
                     bad_params.append(param.name)
             raise ParamConfigurationError(
-                f"Param(s) {bad_params} have no dynamic value, so the params object cannot be built. Set the `dynamic_value` attribute to use this feature."
+                f"Param(s) {bad_params} have no dynamic value, so the params {params_type} cannot be built. Set the `dynamic_value` attribute to use this feature."
             )
 
     def build_params_tensor(self) -> Tensor:
         """Return an input Tensor for this module's @forward methods by filling with dynamic values."""
 
-        self._check_dynamic_values()
+        self._check_dynamic_values("Tensor")
         x = []
         for param in self.dynamic_params:
             x.append(param.value.detach().flatten())
@@ -258,7 +258,7 @@ class Module(Node):
     def build_params_list(self) -> list[Tensor]:
         """Return an input list for this module's @forward methods by filling with dynamic values."""
 
-        self._check_dynamic_values()
+        self._check_dynamic_values("List")
         x = []
         for param in self.dynamic_params:
             x.append(param.value.detach())
@@ -267,7 +267,7 @@ class Module(Node):
     def build_params_dict(self) -> dict[str, Tensor]:
         """Return an input dict for this module's @forward methods by filling with dynamic values."""
 
-        self._check_dynamic_values()
+        self._check_dynamic_values("Dict")
         unique_params = set()
         x = {}
         for mod in self.dynamic_modules.values():

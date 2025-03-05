@@ -134,7 +134,7 @@ class Param(Node):
 
         # Catch cases where input is invalid
         if isinstance(value, Param) or callable(value):
-            raise ParamTypeError("Cannot set dynamic value to pointer or function")
+            raise ParamTypeError("Cannot set dynamic value to pointer")
 
         # unlink if pointer, dynamic_value cannot be a pointer
         if self.pointer:
@@ -265,7 +265,7 @@ class Param(Node):
             self.to_valid = self._to_valid_rightvalid
             self.from_valid = self._from_valid_rightvalid
             valid = (None, torch.as_tensor(valid[1]))
-            if self.static and torch.any(self.value > valid[1]):
+            if self.value is not None and torch.any(self.value > valid[1]):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         elif valid[1] is None:
             if self.cyclic:
@@ -273,7 +273,7 @@ class Param(Node):
             self.to_valid = self._to_valid_leftvalid
             self.from_valid = self._from_valid_leftvalid
             valid = (torch.as_tensor(valid[0]), None)
-            if self.static and torch.any(self.value < valid[0]):
+            if self.value is not None and torch.any(self.value < valid[0]):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         else:
             if self.cyclic:
@@ -286,7 +286,7 @@ class Param(Node):
             if torch.any(valid[0] >= valid[1]):
                 raise ParamConfigurationError("Valid range (valid[1] - valid[0]) must be positive")
             if (
-                self.static
+                self.value is not None
                 and not self.cyclic
                 and (torch.any(self.value < valid[0]) or torch.any(self.value > valid[1]))
             ):
