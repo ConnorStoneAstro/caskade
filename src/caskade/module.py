@@ -6,6 +6,7 @@ import torch
 
 from .base import Node
 from .param import Param
+from .collection import TupleCollection, ListCollection
 from .errors import (
     ActiveStateError,
     ParamConfigurationError,
@@ -311,6 +312,12 @@ class Module(Node):
                 return
             if isinstance(value, Node):
                 self.link(key, value)
+            elif isinstance(value, list):
+                if all(isinstance(v, Node) for v in value):
+                    self.link(key, ListCollection(value))
+            elif isinstance(value, tuple):
+                if all(isinstance(v, Node) for v in value):
+                    self.link(key, TupleCollection(value))
         except AttributeError:
             pass
         super().__setattr__(key, value)

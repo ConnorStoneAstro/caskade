@@ -3,7 +3,7 @@ from typing import Optional, Union
 from .errors import GraphError, NodeConfigurationError
 
 
-class Node(object):
+class Node:
     """
     Base graph node class for ``caskade`` objects.
 
@@ -37,6 +37,7 @@ class Node(object):
             raise NodeConfigurationError(f"{self.__class__.__name__} name must be a string")
         if "|" in name:
             raise NodeConfigurationError(f"{self.__class__.__name__} cannot contain '|'")
+        assert isinstance(name, str), f"Name must be a string, not {type(name)}"
         self._name = name
         self._children = {}
         self._parents = set()
