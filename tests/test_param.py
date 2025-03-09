@@ -122,6 +122,52 @@ def test_value_setter():
     assert p.value.item() == 4.0
 
 
+def test_to_dynamic_static():
+
+    other = Param("other", 3.0)
+
+    # dynamic
+    p = Param("test")
+    p.to_dynamic()  # from dynamic
+    assert p.dynamic
+    p.dynamic_value = 1.0
+    assert p.dynamic
+    p.to_dynamic()  # from dynamic with dynamic value
+    assert p.dynamic
+    p.value = 2.0
+    p.to_dynamic()  # from static
+    assert p.dynamic
+    assert p.value.item() == 2.0
+    p.value = lambda p: p["other"].value * 2
+    p.to_dynamic()  # from pointer, fails
+    assert p.dynamic
+    assert p.value is None
+    p.value = lambda p: p["other"].value * 2
+    p.link("other", other)
+    p.to_dynamic()  # from pointer, succeeds
+    assert p.dynamic
+    assert p.value.item() == 6.0
+
+    # static
+    p = Param("test", 1.0)
+    p.to_static()  # from static
+    assert p.static
+    p.value = None
+    with pytest.raises(ParamTypeError):
+        p.to_static()  # from dynamic, fails
+    p.dynamic_value = 2.0
+    p.to_static()  # from dynamic with dynamic value
+    assert p.static
+    assert p.value.item() == 2.0
+    p.value = lambda p: p["other"].value * 2
+    with pytest.raises(ParamTypeError):
+        p.to_static()  # from pointer, fails
+    p.link("other", other)
+    p.to_static()  # from pointer, succeeds
+    assert p.static
+    assert p.value.item() == 6.0
+
+
 def test_units():
     p = Param("test", units="m")
     assert p.units == "m"

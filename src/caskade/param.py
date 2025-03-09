@@ -1,5 +1,6 @@
 from typing import Optional, Union, Callable
 from warnings import warn
+import traceback
 
 import torch
 from torch import Tensor
@@ -104,6 +105,38 @@ class Param(Node):
     @property
     def static(self) -> bool:
         return "static" in self._type
+
+    def to_dynamic(self):
+        if self.dynamic:
+            return
+        if self.pointer:
+            try:
+                eval_pointer = self._pointer_func(self)
+                self.dynamic_value = eval_pointer
+            except Exception as e:
+                self.value = None
+            return
+        self.dynamic_value = self.value
+
+    def to_static(self):
+        if self.static:
+            return
+        if self.pointer:
+            try:
+                eval_pointer = self._pointer_func(self)
+                self.value = eval_pointer
+            except Exception as e:
+                raise ParamTypeError(
+                    "Cannot set pointer parameter to static with `to_static`. Pointer could not be evaluated because of: \n"
+                    + traceback.format_exc()
+                )
+
+            return
+        if self.dynamic_value is None:
+            raise ParamTypeError(
+                "Cannot set dynamic parameter to static when no `dynamic_value` is set"
+            )
+        self.value = self.dynamic_value
 
     @property
     def shape(self) -> tuple:
