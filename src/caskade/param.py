@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 import torch
 from torch import Tensor, pi
-from numpy import ndarray
 
 from .base import Node
 from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError
@@ -14,7 +13,7 @@ from .warnings import InvalidValueWarning
 
 @dataclass
 class dynamic:
-    value: Union[Tensor, ndarray, float, int] = None
+    value: Union[Tensor, float, int] = None
 
 
 class Param(Node):
@@ -66,12 +65,12 @@ class Param(Node):
     def __init__(
         self,
         name: str,
-        value: Optional[Union[Tensor, ndarray, float, int]] = None,
+        value: Optional[Union[Tensor, float, int]] = None,
         shape: Optional[tuple[int, ...]] = (),
         cyclic: bool = False,
         valid: Optional[tuple[Union[Tensor, float, int, None]]] = None,
         units: Optional[str] = None,
-        dynamic_value: Optional[Union[Tensor, ndarray, float, int]] = None,
+        dynamic_value: Optional[Union[Tensor, float, int]] = None,
     ):
         super().__init__(name=name)
         if value is not None and dynamic_value is not None:
