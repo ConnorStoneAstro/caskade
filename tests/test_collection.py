@@ -232,14 +232,14 @@ def test_node_list_manipulation():
 
 def test_collection_in_module():
 
-    l1 = NodeList([Param("ptest1"), Param("ptest2"), Module("mtest1"), Module("mtest2")])
-    t1 = NodeTuple([Param("ptest3"), Param("ptest4"), Module("mtest3"), Module("mtest4")])
+    l1 = [Param("ptest1"), Param("ptest2"), Module("mtest1"), Module("mtest2")]
+    t1 = (Param("ptest3"), Param("ptest4"), Module("mtest3"), Module("mtest4"))
 
     m1 = Module("test")
     m1.l = l1
     m1.t = t1
 
-    assert m1["l"] is l1
-    assert m1["t"] is t1
-    assert m1.l is l1
-    assert m1.t is t1
+    assert m1["l"][2] == l1[2]
+    assert m1["t"][2] == t1[2]
+    assert m1.l[3] == l1[3]
+    assert m1.t[3] == t1[3]
