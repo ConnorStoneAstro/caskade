@@ -1,14 +1,20 @@
 from typing import Optional, Union, Callable
 from warnings import warn
 import traceback
+from dataclasses import dataclass
 
 import torch
-from torch import Tensor
-from torch import pi
+from torch import Tensor, pi
+from numpy import ndarray
 
 from .base import Node
 from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError
 from .warnings import InvalidValueWarning
+
+
+@dataclass
+class dynamic:
+    value: Union[Tensor, ndarray, float, int] = None
 
 
 class Param(Node):
@@ -60,16 +66,21 @@ class Param(Node):
     def __init__(
         self,
         name: str,
-        value: Optional[Union[Tensor, float, int]] = None,
+        value: Optional[Union[Tensor, ndarray, float, int]] = None,
         shape: Optional[tuple[int, ...]] = (),
         cyclic: bool = False,
         valid: Optional[tuple[Union[Tensor, float, int, None]]] = None,
         units: Optional[str] = None,
-        dynamic_value: Optional[Union[Tensor, float, int]] = None,
+        dynamic_value: Optional[Union[Tensor, ndarray, float, int]] = None,
     ):
         super().__init__(name=name)
         if value is not None and dynamic_value is not None:
             raise ParamConfigurationError("Cannot set both value and dynamic value")
+        if isinstance(value, dynamic):
+            dynamic_value = value.value
+            value = None
+        elif isinstance(dynamic_value, dynamic):
+            dynamic_value = dynamic_value.value
         elif value is None and dynamic_value is None:
             if shape is None:
                 raise ParamConfigurationError("Either value or shape must be provided")

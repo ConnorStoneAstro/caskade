@@ -7,6 +7,7 @@ from caskade import (
     ParamConfigurationError,
     ParamTypeError,
     InvalidValueWarning,
+    dynamic,
 )
 
 
@@ -25,6 +26,12 @@ def test_param_creation():
     p3 = Param("test", torch.ones((1, 2, 3)))
     p33 = Param("test", dynamic_value=torch.ones((1, 2, 3)))
     assert torch.all(p3.value == p33.value)
+    p33v2 = Param("test", dynamic(torch.ones((3, 2, 1))))
+    assert p33v2.dynamic
+    assert p33v2.value.shape == (3, 2, 1)
+    p33v3 = Param("test", dynamic_value=dynamic(torch.ones((3, 2, 1))))
+    assert p33v3.dynamic
+    assert p33v3.value.shape == (3, 2, 1)
 
     # Cant update value when active
     with pytest.raises(ActiveStateError):
