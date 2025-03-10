@@ -61,7 +61,11 @@ class Module(Node):
     """
 
     _module_names = set()
-    _special_tuples = ("dynamic_params", "pointer_params", "local_dynamic_params")
+    _special_tuples = (
+        "dynamic_params",
+        "pointer_params",
+        "local_dynamic_params",
+    )  # These tuples will not be converted to NodeTuple objects
     graphviz_types = {"module": {"style": "solid", "color": "black", "shape": "ellipse"}}
 
     def __init__(self, name: Optional[str] = None):
