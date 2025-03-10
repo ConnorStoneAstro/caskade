@@ -1,5 +1,3 @@
-from re import fullmatch
-
 from .base import Node
 
 
