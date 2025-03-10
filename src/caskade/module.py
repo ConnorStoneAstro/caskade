@@ -6,7 +6,7 @@ import torch
 
 from .base import Node
 from .param import Param
-from .collection import TupleCollection, ListCollection
+from .collection import NodeTuple, NodeList
 from .errors import (
     ActiveStateError,
     ParamConfigurationError,
@@ -61,6 +61,7 @@ class Module(Node):
     """
 
     _module_names = set()
+    _special_tuples = ("dynamic_params", "pointer_params", "local_dynamic_params")
     graphviz_types = {"module": {"style": "solid", "color": "black", "shape": "ellipse"}}
 
     def __init__(self, name: Optional[str] = None):
@@ -314,10 +315,10 @@ class Module(Node):
                 self.link(key, value)
             elif isinstance(value, list):
                 if all(isinstance(v, Node) for v in value):
-                    self.link(key, ListCollection(value))
-            elif isinstance(value, tuple):
+                    self.link(key, NodeList(value))
+            elif isinstance(value, tuple) and key not in self._special_tuples:
                 if all(isinstance(v, Node) for v in value):
-                    self.link(key, TupleCollection(value))
+                    self.link(key, NodeTuple(value))
         except AttributeError:
             pass
         super().__setattr__(key, value)

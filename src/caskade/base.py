@@ -174,7 +174,7 @@ class Node:
             Whether to draw the graph top-down (current node at top) or
             bottom-up (current node at bottom). Defaults to True.
         """
-        import graphviz
+        import graphviz  # noqa
 
         components = set()
 
@@ -223,3 +223,9 @@ class Node:
 
     def __getitem__(self, key: str) -> "Node":
         return self.children[key]
+
+    def __eq__(self, other: "Node") -> bool:
+        return self is other
+
+    def __hash__(self) -> int:
+        return id(self)
