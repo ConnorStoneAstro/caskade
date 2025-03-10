@@ -67,10 +67,10 @@ def forward(method):
                 return method(self, *args, **kwargs)
 
         # Extract params from the arguments
-        if len(self.dynamic_params) == 0:
-            params = {}
-        elif "params" in kwargs:
+        if "params" in kwargs:
             params = kwargs.pop("params")
+        elif len(self.dynamic_params) == 0:
+            params = {}
         elif args:
             params = args[-1]
             args = args[:-1]

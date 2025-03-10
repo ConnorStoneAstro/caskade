@@ -98,8 +98,10 @@ class Param(Node):
                 raise ParamConfigurationError(
                     f"Shape {shape} does not match dynamic value shape {dynamic_value.shape}"
                 )
+        self._type = "null"
         self.value = value
-        self.dynamic_value = dynamic_value
+        if not hasattr(self, "_dynamic_value"):
+            self.dynamic_value = dynamic_value
         self.cyclic = cyclic
         self.valid = valid
         self.units = units
@@ -221,6 +223,9 @@ class Param(Node):
                 self.unlink(child)
 
         if value is None:
+            if hasattr(self, "_value") and self._value is not None:
+                self.dynamic_value = self._value
+                return
             self._type = "dynamic"
             self._pointer_func = None
             self._value = None

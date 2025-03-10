@@ -253,6 +253,8 @@ class Module(Node):
         x = []
         for param in self.dynamic_params:
             x.append(param.value.detach().flatten())
+        if len(x) == 0:
+            return torch.tensor([])
         return torch.cat(x)
 
     def build_params_list(self) -> list[Tensor]:

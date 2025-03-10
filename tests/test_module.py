@@ -203,3 +203,14 @@ def test_dynamic_value():
     # Check invalid dynamic value
     with pytest.warns(InvalidValueWarning):
         sub1.f.dynamic_value = 11.0
+
+    # All static make params
+    main1.c.to_static()
+    main1.m1.d.to_static()
+    main1.m1.f.to_static()
+    p0 = main1.build_params_tensor()
+    assert p0.shape == (0,)
+    p0 = main1.build_params_list()
+    assert len(p0) == 0
+    p0 = main1.build_params_dict()
+    assert len(p0) == 0

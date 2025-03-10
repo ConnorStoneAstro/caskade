@@ -89,12 +89,17 @@ def test_param_creation():
     p13 = Param("test", 1.0)  # static
     p13.dynamic_value = 2.0
     assert p13.value.item() == 2.0
+    assert p13.dynamic
     p14 = Param("test")  # dynamic
     p14.dynamic_value = 1.0
     assert p14.value.item() == 1.0
     p15 = Param("test", p14)  # pointer
     p15.dynamic_value = 2.0
     assert p15.value.item() == 2.0
+    p16 = Param("test", 1.0)  # static
+    p16.value = None
+    assert p16.dynamic
+    assert p16.dynamic_value.item() == 1.0
 
 
 def test_param_to():
@@ -159,7 +164,7 @@ def test_to_dynamic_static():
     p = Param("test", 1.0)
     p.to_static()  # from static
     assert p.static
-    p.value = None
+    p = Param("test")
     with pytest.raises(ParamTypeError):
         p.to_static()  # from dynamic, fails
     p.dynamic_value = 2.0
