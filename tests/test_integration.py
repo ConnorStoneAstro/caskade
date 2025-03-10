@@ -49,8 +49,6 @@ def test_full_integration_v2():
             super().__init__()
             self.a_utility = a_utility  # This will hold a module
             self.b_action = b_action  # this is a list of modules, so we have to link them manually
-            for sim in self.b_action:
-                self.link(sim.name, sim)
             self.c_param = Param("c", c_param)  # regular parameter
             self.d_param = Param("d", None)  # live parameter
 
