@@ -79,7 +79,7 @@ class Module(Node):
             p for p in self.children.values() if isinstance(p, Param) and p.dynamic
         )
         self.dynamic_modules = dict(
-            (m.name, m) for m in self.topological_ordering("module") if m.dynamic
+            (m.name, m) for m in self.topological_ordering(with_isinstance=Module) if m.dynamic
         )
         super().update_graph()
 
@@ -87,6 +87,24 @@ class Module(Node):
     def dynamic(self):
         """Return True if the module has dynamic parameters"""
         return self.local_dynamic_params != ()
+
+    def to_dynamic(self, local_only=True):
+        if local_only:
+            for c in self.children.values():
+                if isinstance(c, Param):
+                    c.to_dynamic()
+        else:
+            for n in self.topological_ordering(with_isinstance=Param):
+                n.to_dynamic()
+
+    def to_static(self, local_only=True):
+        if local_only:
+            for c in self.children.values():
+                if isinstance(c, Param):
+                    c.to_static()
+        else:
+            for n in self.topological_ordering(with_isinstance=Param):
+                n.to_static()
 
     def _fill_values(
         self, params: Union[Tensor, Sequence, Mapping], local=False, dynamic_values=False

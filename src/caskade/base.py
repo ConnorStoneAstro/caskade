@@ -111,16 +111,27 @@ class Node(object):
         del self._children[key]
         self.update_graph()
 
-    def topological_ordering(self, with_type: Optional[str] = None) -> tuple["Node"]:
+    def topological_ordering(
+        self, with_type: Optional[str] = None, with_isinstance: Optional[object] = None
+    ) -> tuple["Node"]:
         """Return a topological ordering of the graph below the current node."""
         ordering = [self]
         for node in self.children.values():
             for subnode in node.topological_ordering():
                 if subnode not in ordering:
                     ordering.append(subnode)
-        if with_type is None:
+        if with_type is None and with_isinstance is None:
             return tuple(ordering)
-        return tuple(filter(lambda n: with_type in n._type, ordering))
+        if with_isinstance is None:
+            return tuple(filter(lambda n: with_type in n._type, ordering))
+        if with_type is None:
+            return tuple(filter(lambda n: isinstance(n, with_isinstance), ordering))
+        return tuple(
+            filter(
+                lambda n: isinstance(n, with_isinstance),
+                filter(lambda n: with_type in n._type, ordering),
+            )
+        )
 
     def update_graph(self):
         """Triggers a call to all parents that the graph below them has been

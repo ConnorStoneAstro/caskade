@@ -214,3 +214,17 @@ def test_dynamic_value():
     assert len(p0) == 0
     p0 = main1.build_params_dict()
     assert len(p0) == 0
+
+    # Module level to_dynamic/static
+    main1.to_dynamic()
+    assert main1.c.dynamic
+    assert main1.m1.d.static
+    main1.to_dynamic(False)
+    assert main1.c.dynamic
+    assert main1.m1.d.dynamic
+    main1.to_static()
+    assert main1.c.static
+    assert main1.m1.d.dynamic
+    main1.to_static(False)
+    assert main1.c.static
+    assert main1.m1.d.static
