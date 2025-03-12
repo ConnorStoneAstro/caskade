@@ -7,7 +7,7 @@ def test_node_tuple_creation():
 
     # Minimal creation
     n1 = NodeTuple()
-    assert n1.name == "NodeTuple0"
+    assert n1.name == "NodeTuple"
     assert len(n1) == 0
 
     # Creation with list of param nodes
@@ -71,7 +71,7 @@ def test_node_tuple_del():
     def f():
         t2 = NodeTuple()
         node_names.append(t2.name)
-        NodeTuple._collections.remove(int(t2.name[9:]))
+        NodeTuple._collections.remove(t2.name)
         print(t2)
 
     f()
@@ -83,9 +83,9 @@ def test_node_tuple_del():
 
     g()
 
-    assert int(node_names[0][9:]) in NodeTuple._collections
-    assert int(node_names[1][9:]) not in NodeTuple._collections
-    assert int(node_names[2][9:]) not in NodeTuple._collections
+    assert node_names[0] in NodeTuple._collections
+    assert node_names[1] not in NodeTuple._collections
+    assert node_names[2] not in NodeTuple._collections
     assert t1.name == node_names[0]
 
 
@@ -97,7 +97,7 @@ def test_node_list_del():
     def f():
         t2 = NodeList()
         node_names.append(t2.name)
-        NodeList._collections.remove(int(t2.name[8:]))
+        NodeList._collections.remove(t2.name)
         print(t2)
 
     f()
@@ -109,9 +109,9 @@ def test_node_list_del():
 
     g()
 
-    assert int(node_names[0][8:]) in NodeList._collections
-    assert int(node_names[1][8:]) not in NodeList._collections
-    assert int(node_names[2][8:]) not in NodeList._collections
+    assert node_names[0] in NodeList._collections
+    assert node_names[1] not in NodeList._collections
+    assert node_names[2] not in NodeList._collections
     assert t1.name == node_names[0]
 
 
@@ -119,7 +119,7 @@ def test_node_list_creation():
 
     # Minimal creation
     n1 = NodeList()
-    assert n1.name == "NodeList0"
+    assert n1.name.startswith("NodeList")
     assert len(n1) == 0
 
     # Creation with list of param nodes

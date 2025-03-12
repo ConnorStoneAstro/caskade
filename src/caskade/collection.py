@@ -4,9 +4,9 @@ from .base import Node
 class NodeTuple(tuple, Node):
     _collections = set()
 
-    def __init__(self, iterable=None):
+    def __init__(self, iterable=None, name=None):
         tuple.__init__(iterable)
-        Node.__init__(self, self._get_name())
+        Node.__init__(self, self._get_name(name))
 
         for n in range(len(self)):
             if not isinstance(self[n], Node):
@@ -22,12 +22,18 @@ class NodeTuple(tuple, Node):
             self[n].to_static(**kwargs)
 
     @classmethod
-    def _get_name(cls):
+    def _get_name(cls, name):
         c = 0
-        while c in cls._collections:
+        if name is None:
+            name = "NodeTuple"
+        if name not in cls._collections:
+            cls._collections.add(name)
+            return name
+        while f"{name}_{c}" in cls._collections:
             c += 1
-        cls._collections.add(c)
-        return f"NodeTuple{c}"
+        name = f"{name}_{c}"
+        cls._collections.add(name)
+        return name
 
     def __getitem__(self, key):
         if isinstance(key, str):
@@ -49,7 +55,7 @@ class NodeTuple(tuple, Node):
 
     def __del__(self):
         try:
-            self._collections.remove(int(self._name[9:]))
+            self._collections.remove(self._name)
         except:
             pass
 
@@ -57,9 +63,9 @@ class NodeTuple(tuple, Node):
 class NodeList(list, Node):
     _collections = set()
 
-    def __init__(self, *args, **kwargs):
-        list.__init__(self, *args, **kwargs)
-        Node.__init__(self, self._get_name())
+    def __init__(self, iterable=(), name=None):
+        list.__init__(self, iterable)
+        Node.__init__(self, self._get_name(name))
 
         self._link_nodes()
 
@@ -72,12 +78,18 @@ class NodeList(list, Node):
             self[n].to_static(**kwargs)
 
     @classmethod
-    def _get_name(cls):
+    def _get_name(cls, name):
         c = 0
-        while c in cls._collections:
+        if name is None:
+            name = "NodeList"
+        if name not in cls._collections:
+            cls._collections.add(name)
+            return name
+        while f"{name}_{c}" in cls._collections:
             c += 1
-        cls._collections.add(c)
-        return f"NodeList{c}"
+        name = f"{name}_{c}"
+        cls._collections.add(name)
+        return name
 
     def _unlink_nodes(self):
         for n in range(len(self)):
@@ -170,6 +182,6 @@ class NodeList(list, Node):
 
     def __del__(self):
         try:
-            self._collections.remove(int(self._name[8:]))
+            self._collections.remove(self._name)
         except:
             pass
