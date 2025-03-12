@@ -67,13 +67,15 @@ def forward(method):
                 return method(self, *args, **kwargs)
 
         # Extract params from the arguments
-        if len(self.dynamic_params) == 0:
-            params = {}
-        elif "params" in kwargs:
+        if "params" in kwargs:
             params = kwargs.pop("params")
+        elif len(self.dynamic_params) == 0:
+            params = {}
         elif args:
             params = args[-1]
             args = args[:-1]
+        elif self.all_dynamic_value:
+            params = [p.value.detach() for p in self.dynamic_params]
         else:
             raise ValueError(
                 f"Params must be provided for a top level @forward method. Either by keyword 'method(params=params)' or as the last positional argument 'method(a, b, c, params)'"
@@ -82,6 +84,10 @@ def forward(method):
         with ActiveContext(self):
             self.fill_params(params)
             kwargs = {**self.fill_kwargs(method_params), **kwargs}
-            return method(self, *args, **kwargs)
+            try:
+                return method(self, *args, **kwargs)
+            except TypeError:  # user supplied empty params
+                assert len(args[-1]) == 0, "Assumed empty params, but got non-empty params!"
+                return method(self, *args[:-1], **kwargs)
 
     return wrapped
