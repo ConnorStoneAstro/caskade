@@ -133,6 +133,13 @@ class Param(Node):
     def dynamic(self) -> bool:
         return "dynamic" in self._type
 
+    @dynamic.setter
+    def dynamic(self, dynamic: bool):
+        if dynamic:
+            self.to_dynamic()
+        else:
+            self.to_static()
+
     @property
     def pointer(self) -> bool:
         return "pointer" in self._type
@@ -140,6 +147,13 @@ class Param(Node):
     @property
     def static(self) -> bool:
         return "static" in self._type
+
+    @static.setter
+    def static(self, static: bool):
+        if static:
+            self.to_static()
+        else:
+            self.to_dynamic()
 
     def to_dynamic(self, **kwargs):
         """Change this parameter to a dynamic parameter. If the parameter has a
