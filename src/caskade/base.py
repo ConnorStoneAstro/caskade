@@ -120,18 +120,11 @@ class Node(object):
             for subnode in node.topological_ordering():
                 if subnode not in ordering:
                     ordering.append(subnode)
-        if with_type is None and with_isinstance is None:
-            return tuple(ordering)
-        if with_isinstance is None:
-            return tuple(filter(lambda n: with_type in n._type, ordering))
-        if with_type is None:
-            return tuple(filter(lambda n: isinstance(n, with_isinstance), ordering))
-        return tuple(
-            filter(
-                lambda n: isinstance(n, with_isinstance),
-                filter(lambda n: with_type in n._type, ordering),
-            )
-        )
+        if with_type is not None:
+            ordering = filter(lambda n: with_type in n._type, ordering)
+        if with_isinstance is not None:
+            ordering = filter(lambda n: isinstance(n, with_isinstance), ordering)
+        return tuple(ordering)
 
     def update_graph(self):
         """Triggers a call to all parents that the graph below them has been
