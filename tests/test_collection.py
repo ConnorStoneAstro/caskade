@@ -11,7 +11,7 @@ def test_node_tuple_creation():
     assert len(n1) == 0
 
     # Creation with list of param nodes
-    params = [Param("test1"), Param("test2")]
+    params = [Param("test1", 1), Param("test2", 2)]
     n2 = NodeTuple(params)
     assert len(n2) == 2
     assert n2[0] is params[0]
@@ -48,11 +48,19 @@ def test_node_tuple_creation():
     assert isinstance(repr(n4), str)
     assert "[5]" in repr(n4)
 
+    # Check copy
     with pytest.raises(NotImplementedError):
         n4.copy()
-
     with pytest.raises(NotImplementedError):
         n4.deepcopy()
+
+    # Check bad init
+    with pytest.raises(TypeError):
+        NodeTuple(modules + [1])
+
+    # Check to static/dynamic
+    n4.to_dynamic()
+    n4.to_static()
 
 
 def test_node_tuple_del():
@@ -152,21 +160,27 @@ def test_node_list_creation():
     assert isinstance(repr(n4), str)
     assert "[5]" in repr(n4)
 
+    # Check copy
     with pytest.raises(NotImplementedError):
         n4.copy()
-
     with pytest.raises(NotImplementedError):
         n4.deepcopy()
+
+    # Check bad init
+    with pytest.raises(TypeError):
+        NodeList(modules + [1])
+    with pytest.raises(TypeError):
+        n4.append(1)
 
 
 def test_node_list_manipulation():
 
-    params = [Param("ptest1"), Param("ptest2")]
+    params = [Param("ptest1", 1), Param("ptest2", 2)]
     modules = [Module("mtest1"), Module("mtest2"), Module("mtest3")]
     n1 = NodeList(params)
 
     # Append
-    n1.append(Param("ptest3"))
+    n1.append(Param("ptest3", 3))
     assert len(n1) == 3
     assert n1[2].name == "ptest3"
     assert n1["Node2"].name == "ptest3"
@@ -182,6 +196,10 @@ def test_node_list_manipulation():
     assert len(n1) == 7
     assert n1[4].name == "mtest1"
     assert n1["Node4"].name == "mtest1"
+
+    # Check to static/dynamic
+    n1.to_dynamic()
+    n1.to_static()
 
     # Clear
     n1.clear()

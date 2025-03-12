@@ -94,7 +94,7 @@ class Module(Node):
         """Return True if the module has dynamic parameters"""
         return self.local_dynamic_params != ()
 
-    def to_dynamic(self, local_only=True):
+    def to_dynamic(self, local_only=True, **kwargs):
         if local_only:
             for c in self.children.values():
                 if isinstance(c, Param):
@@ -103,7 +103,7 @@ class Module(Node):
             for n in self.topological_ordering(with_isinstance=Param):
                 n.to_dynamic()
 
-    def to_static(self, local_only=True):
+    def to_static(self, local_only=True, **kwargs):
         if local_only:
             for c in self.children.values():
                 if isinstance(c, Param):

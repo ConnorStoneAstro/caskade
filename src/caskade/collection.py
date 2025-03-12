@@ -8,12 +8,18 @@ class NodeTuple(tuple, Node):
         tuple.__init__(iterable)
         Node.__init__(self, self._get_name())
 
-        assert all(
-            isinstance(n, Node) for n in self
-        ), "All elements of a NodeTuple must be Node objects"
-
         for n in range(len(self)):
+            if not isinstance(self[n], Node):
+                raise TypeError(f"NodeTuple elements must be Node objects, not {type(self[n])}")
             self.link(f"Node{n}", self[n])
+
+    def to_dynamic(self, **kwargs):
+        for n in range(len(self)):
+            self[n].to_dynamic(**kwargs)
+
+    def to_static(self, **kwargs):
+        for n in range(len(self)):
+            self[n].to_static(**kwargs)
 
     @classmethod
     def _get_name(cls):
@@ -57,6 +63,14 @@ class NodeList(list, Node):
 
         self._link_nodes()
 
+    def to_dynamic(self, **kwargs):
+        for n in range(len(self)):
+            self[n].to_dynamic(**kwargs)
+
+    def to_static(self, **kwargs):
+        for n in range(len(self)):
+            self[n].to_static(**kwargs)
+
     @classmethod
     def _get_name(cls):
         c = 0
@@ -71,6 +85,8 @@ class NodeList(list, Node):
 
     def _link_nodes(self):
         for n in range(len(self)):
+            if not isinstance(self[n], Node):
+                raise TypeError(f"NodeList elements must be Node objects, not {type(self[n])}")
             self.link(f"Node{n}", self[n])
 
     def append(self, node):
