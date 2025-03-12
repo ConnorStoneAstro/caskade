@@ -1,13 +1,37 @@
 from typing import Optional, Union, Callable
 from warnings import warn
+import traceback
+from dataclasses import dataclass
 
 import torch
-from torch import Tensor
-from torch import pi
+from torch import Tensor, pi
 
 from .base import Node
 from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError
 from .warnings import InvalidValueWarning
+
+
+@dataclass
+class dynamic:
+    """Basic wrapper for an input to a ``Param`` object to indicate that the
+    value should be placed as a dynamic_value so that the ``Param`` is dynamic
+    instead of static.
+
+    Usage: ``dynamic(value)``
+
+    Example:
+
+    .. code-block:: python
+
+        class Test(Module):
+            def __init__(self, a):
+                self.a = Param("a", a)
+
+        t = Test(dynamic(1.0))
+        print(t.a.dynamic) # True
+    """
+
+    value: Union[Tensor, float, int] = None
 
 
 class Param(Node):
@@ -42,17 +66,23 @@ class Param(Node):
     shape: (Optional[tuple[int, ...]], optional)
         The shape of the parameter. Defaults to () meaning scalar.
     cyclic: (bool, optional)
-        Whether the parameter is cyclic, such as a rotation from 0 to 2pi. Defaults to False.
+        Whether the parameter is cyclic, such as a rotation from 0 to 2pi.
+        Defaults to False.
     valid: (Optional[tuple[Union[Tensor, float, int, None]]], optional)
-        The valid range of the parameter. Defaults to None meaning all of -inf to inf is valid.
+        The valid range of the parameter. Defaults to None meaning all of -inf
+        to inf is valid.
     units: (Optional[str], optional)
         The units of the parameter. Defaults to None.
+    dynamic_value: (Optional[Union[Tensor, float, int]], optional)
+        Allows the parameter to store a value while still dynamic (think of it
+        as a default value).
     """
 
     graphviz_types = {
         "static": {"style": "filled", "color": "lightgrey", "shape": "box"},
         "dynamic": {"style": "solid", "color": "black", "shape": "box"},
-        "pointer": {"style": "filled", "color": "lightgrey", "shape": "cds"},
+        "dynamic value": {"style": "solid", "color": "#333333", "shape": "box"},
+        "pointer": {"style": "filled", "color": "lightgrey", "shape": "rarrow"},
     }
 
     def __init__(
@@ -63,36 +93,90 @@ class Param(Node):
         cyclic: bool = False,
         valid: Optional[tuple[Union[Tensor, float, int, None]]] = None,
         units: Optional[str] = None,
+        dynamic_value: Optional[Union[Tensor, float, int]] = None,
     ):
         super().__init__(name=name)
-        if value is None:
+        if value is not None and dynamic_value is not None:
+            raise ParamConfigurationError("Cannot set both value and dynamic value")
+        if isinstance(value, dynamic):
+            dynamic_value = value.value
+            value = None
+        elif isinstance(dynamic_value, dynamic):
+            dynamic_value = dynamic_value.value
+        elif value is None and dynamic_value is None:
             if shape is None:
                 raise ParamConfigurationError("Either value or shape must be provided")
-            if not isinstance(shape, tuple):
+            if not isinstance(shape, (tuple, list)):
                 raise ParamConfigurationError("Shape must be a tuple")
-            self.shape = shape
-        elif not isinstance(value, (Param, Callable)):
+            self.shape = tuple(shape)
+        elif not isinstance(value, (Param, Callable)) and value is not None:
             value = torch.as_tensor(value)
             if not (shape == () or shape is None or shape == value.shape):
                 raise ParamConfigurationError(
                     f"Shape {shape} does not match value shape {value.shape}"
                 )
+        elif not isinstance(dynamic_value, (Param, Callable)) and dynamic_value is not None:
+            dynamic_value = torch.as_tensor(dynamic_value)
+            if not (shape == () or shape is None or shape == dynamic_value.shape):
+                raise ParamConfigurationError(
+                    f"Shape {shape} does not match dynamic value shape {dynamic_value.shape}"
+                )
+        self._type = "null"
         self.value = value
+        if not hasattr(self, "_dynamic_value"):
+            self.dynamic_value = dynamic_value
         self.cyclic = cyclic
         self.valid = valid
         self.units = units
 
     @property
     def dynamic(self) -> bool:
-        return self._type == "dynamic"
+        return "dynamic" in self._type
 
     @property
     def pointer(self) -> bool:
-        return self._type == "pointer"
+        return "pointer" in self._type
 
     @property
     def static(self) -> bool:
-        return self._type == "static"
+        return "static" in self._type
+
+    def to_dynamic(self):
+        """Change this parameter to a dynamic parameter. If the parameter has a
+        value, this will be stored in the ``dynamic_value`` attribute."""
+        if self.dynamic:
+            return
+        if self.pointer:
+            try:
+                eval_pointer = self._pointer_func(self)
+                self.dynamic_value = eval_pointer
+            except Exception as e:
+                self.value = None
+            return
+        self.dynamic_value = self.value
+
+    def to_static(self):
+        """Change this parameter to a static parameter. This only works if the
+        parameter has a ``dynamic_value`` set, or if the pointer can be
+        evaluated."""
+        if self.static:
+            return
+        if self.pointer:
+            try:
+                eval_pointer = self._pointer_func(self)
+                self.value = eval_pointer
+            except Exception as e:
+                raise ParamTypeError(
+                    "Cannot set pointer parameter to static with `to_static`. Pointer could not be evaluated because of: \n"
+                    + traceback.format_exc()
+                )
+
+            return
+        if self.dynamic_value is None:
+            raise ParamTypeError(
+                "Cannot set dynamic parameter to static when no `dynamic_value` is set"
+            )
+        self.value = self.dynamic_value
 
     @property
     def shape(self) -> tuple:
@@ -105,12 +189,54 @@ class Param(Node):
         self._shape = shape
 
     @property
+    def dynamic_value(self) -> Union[Tensor, None]:
+        return self._dynamic_value
+
+    @dynamic_value.setter
+    def dynamic_value(self, value):
+        # While active no value can be set
+        if self.active:
+            raise ActiveStateError(
+                f"Cannot set dynamic value of parameter {self.name} while active"
+            )
+
+        # No dynamic value
+        if value is None:
+            self._dynamic_value = None
+            return
+
+        # Catch cases where input is invalid
+        if isinstance(value, Param) or callable(value):
+            raise ParamTypeError("Cannot set dynamic value to pointer")
+
+        # unlink if pointer, dynamic_value cannot be a pointer
+        if self.pointer:
+            for child in tuple(self.children.values()):
+                self.unlink(child)
+
+        # Set to dynamic value
+        self._type = "dynamic value"
+        self._pointer_func = None
+        value = torch.as_tensor(value)
+        self.shape = value.shape
+        self._dynamic_value = value
+        self._value = None
+        try:
+            self.valid = self._valid  # re-check valid range
+        except AttributeError:
+            pass
+
+        self.update_graph()
+
+    @property
     def value(self) -> Union[Tensor, None]:
         if self.pointer and self._value is None:
             if self.active:
                 self._value = self._pointer_func(self)
             else:
                 return self._pointer_func(self)
+        if self._value is None:
+            return self._dynamic_value
         return self._value
 
     @value.setter
@@ -125,6 +251,9 @@ class Param(Node):
                 self.unlink(child)
 
         if value is None:
+            if hasattr(self, "_value") and self._value is not None:
+                self.dynamic_value = self._value
+                return
             self._type = "dynamic"
             self._pointer_func = None
             self._value = None
@@ -134,16 +263,19 @@ class Param(Node):
             self._pointer_func = lambda p: p[str(id(value))].value
             self._shape = None
             self._value = None
+            self._dynamic_value = None
         elif callable(value):
             self._type = "pointer"
             self._shape = None
             self._pointer_func = value
             self._value = None
+            self._dynamic_value = None
         else:
             self._type = "static"
             value = torch.as_tensor(value)
             self.shape = value.shape
             self._value = value
+            self._dynamic_value = None
             try:
                 self.valid = self._valid  # re-check valid range
             except AttributeError:
@@ -165,6 +297,8 @@ class Param(Node):
         super().to(device=device, dtype=dtype)
         if self.static:
             self._value = self._value.to(device=device, dtype=dtype)
+        if self._dynamic_value is not None:
+            self._dynamic_value = self._dynamic_value.to(device=device, dtype=dtype)
         if self.valid[0] is not None:
             self.valid = (self.valid[0].to(device=device, dtype=dtype), self.valid[1])
         if self.valid[1] is not None:
@@ -209,7 +343,7 @@ class Param(Node):
             self.to_valid = self._to_valid_rightvalid
             self.from_valid = self._from_valid_rightvalid
             valid = (None, torch.as_tensor(valid[1]))
-            if self.static and torch.any(self.value > valid[1]):
+            if self.value is not None and torch.any(self.value > valid[1]):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         elif valid[1] is None:
             if self.cyclic:
@@ -217,7 +351,7 @@ class Param(Node):
             self.to_valid = self._to_valid_leftvalid
             self.from_valid = self._from_valid_leftvalid
             valid = (torch.as_tensor(valid[0]), None)
-            if self.static and torch.any(self.value < valid[0]):
+            if self.value is not None and torch.any(self.value < valid[0]):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         else:
             if self.cyclic:
@@ -230,7 +364,7 @@ class Param(Node):
             if torch.any(valid[0] >= valid[1]):
                 raise ParamConfigurationError("Valid range (valid[1] - valid[0]) must be positive")
             if (
-                self.static
+                self.value is not None
                 and not self.cyclic
                 and (torch.any(self.value < valid[0]) or torch.any(self.value > valid[1]))
             ):

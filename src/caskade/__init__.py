@@ -4,7 +4,7 @@ from .base import Node
 from .context import ActiveContext, ValidContext, OverrideParam
 from .decorators import forward
 from .module import Module
-from .param import Param
+from .param import Param, dynamic
 from .tests import test
 from .errors import (
     CaskadeException,
@@ -28,6 +28,7 @@ __all__ = (
     "Node",
     "Module",
     "Param",
+    "dynamic",
     "ActiveContext",
     "ValidContext",
     "OverrideParam",

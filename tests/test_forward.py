@@ -193,6 +193,8 @@ def test_forward():
     sub1.f = torch.tensor(1.0)
     result = main1.testfun(1.0)
     assert result.shape == (2, 2)
+    result = main1.testfun(1.0, [])
+    assert result.shape == (2, 2)
 
     # dynamic with no shape
     main1.b = None
