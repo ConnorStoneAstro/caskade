@@ -103,7 +103,11 @@ def test_param_creation():
 
 
 def test_param_to():
+    # static
     p = Param("test", 1.0, valid=(0, 2))
+    p = p.to(dtype=torch.float64, device="cpu")
+    # dynamic value
+    p = Param("test", dynamic_value=1.0, valid=(0, 2))
     p = p.to(dtype=torch.float64, device="cpu")
 
 

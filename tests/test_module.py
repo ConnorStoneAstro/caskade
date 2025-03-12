@@ -107,6 +107,7 @@ def test_shared_param():
     assert c1.big_test([torch.tensor(1.0)]).item() == 4.0, "Shared parameter not working"
 
 
+@pytest.mark.filterwarnings("ignore")
 def test_dynamic_value():
 
     class TestSim(Module):

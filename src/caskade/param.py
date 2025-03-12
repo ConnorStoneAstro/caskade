@@ -269,6 +269,8 @@ class Param(Node):
         super().to(device=device, dtype=dtype)
         if self.static:
             self._value = self._value.to(device=device, dtype=dtype)
+        if self._dynamic_value is not None:
+            self._dynamic_value = self._dynamic_value.to(device=device, dtype=dtype)
         if self.valid[0] is not None:
             self.valid = (self.valid[0].to(device=device, dtype=dtype), self.valid[1])
         if self.valid[1] is not None:
