@@ -13,6 +13,24 @@ from .warnings import InvalidValueWarning
 
 @dataclass
 class dynamic:
+    """Basic wrapper for an input to a ``Param`` object to indicate that the
+    value should be placed as a dynamic_value so that the ``Param`` is dynamic
+    instead of static.
+
+    Usage: ``dynamic(value)``
+
+    Example:
+
+    .. code-block:: python
+
+        class Test(Module):
+            def __init__(self, a):
+                self.a = Param("a", a)
+
+        t = Test(dynamic(1.0))
+        print(t.a.dynamic) # True
+    """
+
     value: Union[Tensor, float, int] = None
 
 
@@ -48,11 +66,16 @@ class Param(Node):
     shape: (Optional[tuple[int, ...]], optional)
         The shape of the parameter. Defaults to () meaning scalar.
     cyclic: (bool, optional)
-        Whether the parameter is cyclic, such as a rotation from 0 to 2pi. Defaults to False.
+        Whether the parameter is cyclic, such as a rotation from 0 to 2pi.
+        Defaults to False.
     valid: (Optional[tuple[Union[Tensor, float, int, None]]], optional)
-        The valid range of the parameter. Defaults to None meaning all of -inf to inf is valid.
+        The valid range of the parameter. Defaults to None meaning all of -inf
+        to inf is valid.
     units: (Optional[str], optional)
         The units of the parameter. Defaults to None.
+    dynamic_value: (Optional[Union[Tensor, float, int]], optional)
+        Allows the parameter to store a value while still dynamic (think of it
+        as a default value).
     """
 
     graphviz_types = {
@@ -119,6 +142,8 @@ class Param(Node):
         return "static" in self._type
 
     def to_dynamic(self):
+        """Change this parameter to a dynamic parameter. If the parameter has a
+        value, this will be stored in the ``dynamic_value`` attribute."""
         if self.dynamic:
             return
         if self.pointer:
@@ -131,6 +156,9 @@ class Param(Node):
         self.dynamic_value = self.value
 
     def to_static(self):
+        """Change this parameter to a static parameter. This only works if the
+        parameter has a ``dynamic_value`` set, or if the pointer can be
+        evaluated."""
         if self.static:
             return
         if self.pointer:

@@ -129,10 +129,13 @@ class Module(Node):
             the dictionary, but you will get an error eventually if a value is
             missing.
         """
-        if self.valid_context and not local:
-            params = self.from_valid(params)
 
         dynamic_params = self.local_dynamic_params if local else self.dynamic_params
+        if len(dynamic_params) == 0 and not dynamic_values:
+            return
+
+        if self.valid_context and not local:
+            params = self.from_valid(params)
 
         if isinstance(params, Tensor):
             # check for batch dimension
