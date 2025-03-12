@@ -25,7 +25,8 @@ def test_module_creation():
     assert m2.dynamic_params == (p1,)
 
     m3 = Module("test1")
-    assert m3.name == "test1_0"
+    assert m3.name.startswith("test1_")
+    assert m3.name != m1.name
 
 
 def test_module_methods():
@@ -217,15 +218,20 @@ def test_dynamic_value():
     assert len(p0) == 0
 
     # Module level to_dynamic/static
+    main1.m1.f = main1.m1.d
     main1.to_dynamic()
     assert main1.c.dynamic
     assert main1.m1.d.static
+    assert main1.m1.f.pointer
     main1.to_dynamic(False)
     assert main1.c.dynamic
     assert main1.m1.d.dynamic
+    assert main1.m1.f.pointer
     main1.to_static()
     assert main1.c.static
     assert main1.m1.d.dynamic
+    assert main1.m1.f.pointer
     main1.to_static(False)
     assert main1.c.static
     assert main1.m1.d.static
+    assert main1.m1.f.pointer

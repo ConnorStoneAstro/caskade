@@ -6,6 +6,7 @@ import torch
 
 from .base import Node
 from .param import Param
+from .collection import NodeTuple, NodeList
 from .errors import (
     ActiveStateError,
     ParamConfigurationError,
@@ -60,6 +61,11 @@ class Module(Node):
     """
 
     _module_names = set()
+    _special_tuples = (
+        "dynamic_params",
+        "pointer_params",
+        "local_dynamic_params",
+    )  # These tuples will not be converted to NodeTuple objects
     graphviz_types = {"module": {"style": "solid", "color": "black", "shape": "ellipse"}}
 
     def __init__(self, name: Optional[str] = None):
@@ -88,23 +94,52 @@ class Module(Node):
         """Return True if the module has dynamic parameters"""
         return self.local_dynamic_params != ()
 
-    def to_dynamic(self, local_only=True):
+    def to_dynamic(self, local_only=True, ignore_pointer=True, **kwargs):
+        """Change all parameters to dynamic parameters. If the parameter has a
+        value, this will be stored in the ``dynamic_value`` attribute.
+
+        Parameters
+        ----------
+        local_only: (bool, optional)
+            If True, only convert the local parameters that are children of this
+            module. If False, convert all parameters in the graph below this
+            module. Defaults to True.
+        ignore_pointer: (bool, optional)
+            If True, do not convert any parameters that are pointers. Defaults
+            to True.
+        """
         if local_only:
             for c in self.children.values():
-                if isinstance(c, Param):
+                if isinstance(c, Param) and not (ignore_pointer and c.pointer):
                     c.to_dynamic()
         else:
             for n in self.topological_ordering(with_isinstance=Param):
-                n.to_dynamic()
+                if not (ignore_pointer and n.pointer):
+                    n.to_dynamic()
 
-    def to_static(self, local_only=True):
+    def to_static(self, local_only=True, ignore_pointer=True, **kwargs):
+        """Change all parameters to static parameters. This only works if the
+        parameter has a ``dynamic_value`` set, or if the pointer can be
+        evaluated.
+
+        Parameters
+        ----------
+        local_only: (bool, optional)
+            If True, only convert the local parameters that are children of this
+            module. If False, convert all parameters in the graph below this
+            module. Defaults to True.
+        ignore_pointer: (bool, optional)
+            If True, do not convert any parameters that are pointers. Defaults
+            to True.
+        """
         if local_only:
             for c in self.children.values():
-                if isinstance(c, Param):
+                if isinstance(c, Param) and not (ignore_pointer and c.pointer):
                     c.to_static()
         else:
             for n in self.topological_ordering(with_isinstance=Param):
-                n.to_static()
+                if not (ignore_pointer and n.pointer):
+                    n.to_static()
 
     def _fill_values(
         self, params: Union[Tensor, Sequence, Mapping], local=False, dynamic_values=False
@@ -423,6 +458,12 @@ class Module(Node):
                 return
             if isinstance(value, Node):
                 self.link(key, value)
+            elif isinstance(value, list):
+                if all(isinstance(v, Node) for v in value):
+                    self.link(key, NodeList(value))
+            elif isinstance(value, tuple) and key not in self._special_tuples:
+                if all(isinstance(v, Node) for v in value):
+                    self.link(key, NodeTuple(value))
         except AttributeError:
             pass
         super().__setattr__(key, value)

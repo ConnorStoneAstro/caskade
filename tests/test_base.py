@@ -1,4 +1,4 @@
-from caskade import Node, test, GraphError, NodeConfigurationError
+from caskade import Node, test, GraphError, NodeConfigurationError, ActiveContext
 
 import pytest
 
@@ -33,6 +33,13 @@ def test_link():
     # Double link
     with pytest.raises(GraphError):
         node1.link("subnode2", node2)
+
+    node1.active = True
+    with pytest.raises(GraphError):
+        node1.link("subnode3", node2)
+    with pytest.raises(GraphError):
+        node1.unlink("subnode")
+    node1.active = False
 
     # Make a cycle
     node3 = Node("node3")

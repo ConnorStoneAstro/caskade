@@ -3,7 +3,7 @@ from typing import Optional, Union
 from .errors import GraphError, NodeConfigurationError
 
 
-class Node(object):
+class Node:
     """
     Base graph node class for ``caskade`` objects.
 
@@ -81,6 +81,8 @@ class Node(object):
             n1.link(n2)
             n1.unlink(n2)
         """
+        if self.active:
+            raise GraphError("Cannot link/unlink nodes while the graph is active")
         if child is None:
             child = key
             key = child.name
@@ -101,6 +103,8 @@ class Node(object):
 
     def unlink(self, key: Union[str, "Node"]):
         """Unlink the current ``Node`` object from another ``Node`` object which is a child."""
+        if self.active:
+            raise GraphError("Cannot link/unlink nodes while the graph is active")
         if isinstance(key, Node):
             for node in self.children:
                 if self.children[node] == key:
@@ -177,7 +181,7 @@ class Node(object):
             Whether to draw the graph top-down (current node at top) or
             bottom-up (current node at bottom). Defaults to True.
         """
-        import graphviz
+        import graphviz  # noqa
 
         components = set()
 
@@ -226,3 +230,9 @@ class Node(object):
 
     def __getitem__(self, key: str) -> "Node":
         return self.children[key]
+
+    def __eq__(self, other: "Node") -> bool:
+        return self is other
+
+    def __hash__(self) -> int:
+        return id(self)
