@@ -3,10 +3,12 @@ from .base import Node
 
 class NodeTuple(tuple, Node):
     _collections = set()
+    graphviz_types = {"ntuple": {"style": "solid", "color": "black", "shape": "tab"}}
 
     def __init__(self, iterable=None, name=None):
         tuple.__init__(iterable)
         Node.__init__(self, self._get_name(name))
+        self._type = "ntuple"
 
         for n in range(len(self)):
             if not isinstance(self[n], Node):
@@ -15,11 +17,13 @@ class NodeTuple(tuple, Node):
 
     def to_dynamic(self, **kwargs):
         for n in range(len(self)):
-            self[n].to_dynamic(**kwargs)
+            if hasattr(self[n], "to_dynamic"):
+                self[n].to_dynamic(**kwargs)
 
     def to_static(self, **kwargs):
         for n in range(len(self)):
-            self[n].to_static(**kwargs)
+            if hasattr(self[n], "to_static"):
+                self[n].to_static(**kwargs)
 
     @classmethod
     def _get_name(cls, name):
@@ -62,20 +66,24 @@ class NodeTuple(tuple, Node):
 
 class NodeList(list, Node):
     _collections = set()
+    graphviz_types = {"nlist": {"style": "solid", "color": "black", "shape": "folder"}}
 
     def __init__(self, iterable=(), name=None):
         list.__init__(self, iterable)
         Node.__init__(self, self._get_name(name))
+        self._type = "nlist"
 
         self._link_nodes()
 
     def to_dynamic(self, **kwargs):
         for n in range(len(self)):
-            self[n].to_dynamic(**kwargs)
+            if hasattr(self[n], "to_dynamic"):
+                self[n].to_dynamic(**kwargs)
 
     def to_static(self, **kwargs):
         for n in range(len(self)):
-            self[n].to_static(**kwargs)
+            if hasattr(self[n], "to_static"):
+                self[n].to_static(**kwargs)
 
     @classmethod
     def _get_name(cls, name):
