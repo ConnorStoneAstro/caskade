@@ -3,10 +3,12 @@ from .base import Node
 
 class NodeTuple(tuple, Node):
     _collections = set()
+    graphviz_types = {"ntuple": {"style": "solid", "color": "black", "shape": "tab"}}
 
     def __init__(self, iterable=None, name=None):
         tuple.__init__(iterable)
         Node.__init__(self, self._get_name(name))
+        self._type = "ntuple"
 
         for n in range(len(self)):
             if not isinstance(self[n], Node):
@@ -62,10 +64,12 @@ class NodeTuple(tuple, Node):
 
 class NodeList(list, Node):
     _collections = set()
+    graphviz_types = {"nlist": {"style": "solid", "color": "black", "shape": "folder"}}
 
     def __init__(self, iterable=(), name=None):
         list.__init__(self, iterable)
         Node.__init__(self, self._get_name(name))
+        self._type = "nlist"
 
         self._link_nodes()
 
