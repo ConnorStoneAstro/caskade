@@ -17,11 +17,13 @@ class NodeTuple(tuple, Node):
 
     def to_dynamic(self, **kwargs):
         for n in range(len(self)):
-            self[n].to_dynamic(**kwargs)
+            if hasattr(self[n], "to_dynamic"):
+                self[n].to_dynamic(**kwargs)
 
     def to_static(self, **kwargs):
         for n in range(len(self)):
-            self[n].to_static(**kwargs)
+            if hasattr(self[n], "to_static"):
+                self[n].to_static(**kwargs)
 
     @classmethod
     def _get_name(cls, name):
@@ -75,11 +77,13 @@ class NodeList(list, Node):
 
     def to_dynamic(self, **kwargs):
         for n in range(len(self)):
-            self[n].to_dynamic(**kwargs)
+            if hasattr(self[n], "to_dynamic"):
+                self[n].to_dynamic(**kwargs)
 
     def to_static(self, **kwargs):
         for n in range(len(self)):
-            self[n].to_static(**kwargs)
+            if hasattr(self[n], "to_static"):
+                self[n].to_static(**kwargs)
 
     @classmethod
     def _get_name(cls, name):
