@@ -3,6 +3,7 @@ from math import prod
 
 from torch import Tensor
 import torch
+import yaml
 
 from .base import Node
 from .param import Param
@@ -68,12 +69,12 @@ class Module(Node):
     )  # These tuples will not be converted to NodeTuple objects
     graphviz_types = {"module": {"style": "solid", "color": "black", "shape": "ellipse"}}
 
-    def __init__(self, name: Optional[str] = None):
-        super().__init__(name=name)
+    def __init__(self, name: Optional[str] = None,  uid: Optional[str] = None):
+        super().__init__(name=name, uid=uid)
         self.dynamic_params = ()
         self.pointer_params = ()
         self._type = "module"
-        self.valid_context = False
+        self.valid_context = False # what is this?
 
     def update_graph(self):
         """Maintain a tuple of dynamic and live parameters at all points lower

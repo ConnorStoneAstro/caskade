@@ -2,6 +2,8 @@ from typing import Optional, Union, Callable
 from warnings import warn
 import traceback
 from dataclasses import dataclass
+import inspect
+from ruamel.yaml.comments import CommentedMap
 
 import torch
 from torch import Tensor, pi
@@ -53,9 +55,9 @@ class Param(Node):
 
         p1 = Param("test", (1.0, 2.0)) # constant value, length 2 vector
         p2 = Param("p2", None, (2,2)) # dynamic 2x2 matrix value
-        p3 = Param("p3", p1) # pointer to another parameter
         p4 = Param("p4", lambda p: p.children["other"].value * 2) # arbitrary function of another parameter
         p5 = Param("p5", valid=(0.0,2*pi), units="radians", cyclic=True) # parameter with metadata
+        p5 = Param("p5", valid=(0.0,2*pi), units="radians", cyclic=True)
 
     Parameters
     ----------
@@ -94,10 +96,12 @@ class Param(Node):
         valid: Optional[tuple[Union[Tensor, float, int, None]]] = None,
         units: Optional[str] = None,
         dynamic_value: Optional[Union[Tensor, float, int]] = None,
+        uid: Optional[str] = None,
     ):
-        super().__init__(name=name)
+        super().__init__(name=name, uid=uid)
         if value is not None and dynamic_value is not None:
             raise ParamConfigurationError("Cannot set both value and dynamic value")
+
         if isinstance(value, dynamic):
             dynamic_value = value.value
             value = None
@@ -273,8 +277,8 @@ class Param(Node):
             self._value = None
         elif isinstance(value, Param):
             self._type = "pointer"
-            self.link(str(id(value)), value)
-            self._pointer_func = lambda p: p[str(id(value))].value
+            self.link(value.uid, value)
+            self._pointer_func = lambda p: p[value.uid].value
             self._shape = None
             self._value = None
             self._dynamic_value = None
@@ -434,3 +438,59 @@ class Param(Node):
 
     def __repr__(self):
         return self.name
+
+    # TODO - handle all parameters like in base
+    def _traverse(self, data, params, full_path=""):
+
+        param_dict = {}
+        param_dict['path'] = full_path # call this path instead of name
+        param_dict['param'] = {}
+        param_dict['pointers'] = []
+
+        for key in inspect.signature(self.__init__).parameters:
+
+            # ensure do not save value in the value key if it's none (dynamic or a pointer)
+            if self._value == None and key == 'value':
+                continue
+            try:
+                v = getattr(self, key)
+                param_dict['param'][key] = self.process_non_node(v, data, params, f'{full_path}.{key}')
+            except Exception as e:
+                # This occurs when trying to call a function pointer when all the values have no been provided
+                pass
+
+        # if neither are set, will return None
+        value = param_dict['param']['value'] if param_dict['param'].get('value') is not None else param_dict['param'].get('dynamic_value')
+
+        if self.pointer:
+            lambda_string = inspect.getsource(self._pointer_func)
+            # handles the case where it's x = lambda x: x
+            lambda_string = lambda_string.split(' = ')[-1]
+            param_dict['is_func'] = True
+            param_dict['func'] = lambda_string
+
+            for (key, child) in self.children.items():
+                if params.get(child.uid) is None:
+                    child._traverse(data, params, f'{full_path}.{key}')
+
+                param_dict['pointers'].append(child.uid)
+
+            params[self.uid] = param_dict
+
+        # Not a pointer, so should have a value or be dynamic
+        else:
+            if isinstance(self.value, (torch.Tensor, torch.autograd.Variable)):
+                value = self.value.cpu().detach().numpy().tolist()
+            else:
+                value = self.value
+
+            if self.dynamic:
+                param_dict['param']['dynamic_value'] = value
+                param_dict['param']['value'] = None
+            else:
+                param_dict['param']['dynamic_value'] = None
+                param_dict['param']['value'] = value
+
+            params[self.uid] = param_dict
+
+        return param_dict

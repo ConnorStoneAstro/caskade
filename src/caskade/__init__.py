@@ -1,6 +1,6 @@
 from ._version import version as VERSION  # noqa
 
-from .base import Node
+from .base import Node, load # TODO - put this somewhere better
 from .context import ActiveContext, ValidContext, OverrideParam
 from .decorators import forward
 from .module import Module
@@ -49,4 +49,5 @@ __all__ = (
     "FillDynamicParamsMappingError",
     "CaskadeWarning",
     "InvalidValueWarning",
+    "load",
 )
