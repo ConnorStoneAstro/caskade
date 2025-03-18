@@ -3,6 +3,7 @@ import functools
 from contextlib import ExitStack
 
 from .context import ActiveContext, OverrideParam
+from .param import Param
 
 __all__ = ("forward",)
 
@@ -55,8 +56,10 @@ def forward(method):
             with ExitStack() as stack:
                 # User override of parameters for single function call
                 used_kwargs = []
-                for kwarg, kval in kwargs.items():
-                    for cname, cval in self.children.items():
+                for cname, cval in self.children.items():
+                    if not isinstance(cval, Param):
+                        continue
+                    for kwarg, kval in kwargs.items():
                         if kwarg == cname:
                             stack.enter_context(OverrideParam(cval, kval))
                             used_kwargs.append(kwarg)
