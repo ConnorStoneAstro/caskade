@@ -104,7 +104,7 @@ class Node:
     def unlink(self, key: Union[str, "Node"]):
         """Unlink the current ``Node`` object from another ``Node`` object which is a child."""
         if self.active:
-            raise GraphError("Cannot link/unlink nodes while the graph is active")
+            raise GraphError(f"Cannot link/unlink nodes while the graph is active ({self.name})")
         if isinstance(key, Node):
             for node in self.children:
                 if self.children[node] == key:

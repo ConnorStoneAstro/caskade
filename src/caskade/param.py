@@ -181,14 +181,14 @@ class Param(Node):
                 self.value = eval_pointer
             except Exception as e:
                 raise ParamTypeError(
-                    "Cannot set pointer parameter to static with `to_static`. Pointer could not be evaluated because of: \n"
+                    f"Cannot set pointer parameter {self.name} to static with `to_static`. Pointer could not be evaluated because of: \n"
                     + traceback.format_exc()
                 )
 
             return
         if self.dynamic_value is None:
             raise ParamTypeError(
-                "Cannot set dynamic parameter to static when no `dynamic_value` is set"
+                f"Cannot set dynamic parameter {self.name} to static when no `dynamic_value` is set"
             )
         self.value = self.dynamic_value
 
@@ -199,7 +199,7 @@ class Param(Node):
     @shape.setter
     def shape(self, shape):
         if self.pointer:
-            raise ParamTypeError("Cannot set shape of parameter with type 'pointer'")
+            raise ParamTypeError(f"Cannot set shape of parameter {self.name} with type 'pointer'")
         self._shape = shape
 
     @property
@@ -221,7 +221,7 @@ class Param(Node):
 
         # Catch cases where input is invalid
         if isinstance(value, Param) or callable(value):
-            raise ParamTypeError("Cannot set dynamic value to pointer")
+            raise ParamTypeError(f"Cannot set dynamic value to pointer ({self.name})")
 
         # unlink if pointer, dynamic_value cannot be a pointer
         if self.pointer:
@@ -342,18 +342,22 @@ class Param(Node):
             valid = (None, None)
 
         if not isinstance(valid, tuple):
-            raise ParamConfigurationError("Valid must be a tuple")
+            raise ParamConfigurationError(f"Valid must be a tuple ({self.name})")
         if len(valid) != 2:
-            raise ParamConfigurationError("Valid must be a tuple of length 2")
+            raise ParamConfigurationError(f"Valid must be a tuple of length 2 ({self.name})")
 
         if valid == (None, None):
             if self.cyclic:
-                raise ParamConfigurationError("Cannot set valid to None for cyclic parameter")
+                raise ParamConfigurationError(
+                    f"Cannot set valid to None for cyclic parameter ({self.name})"
+                )
             self.to_valid = self._to_valid_base
             self.from_valid = self._from_valid_base
         elif valid[0] is None:
             if self.cyclic:
-                raise ParamConfigurationError("Cannot set left valid to None for cyclic parameter")
+                raise ParamConfigurationError(
+                    f"Cannot set left valid to None for cyclic parameter ({self.name})"
+                )
             self.to_valid = self._to_valid_rightvalid
             self.from_valid = self._from_valid_rightvalid
             valid = (None, torch.as_tensor(valid[1]))
@@ -361,7 +365,9 @@ class Param(Node):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         elif valid[1] is None:
             if self.cyclic:
-                raise ParamConfigurationError("Cannot set right valid to None for cyclic parameter")
+                raise ParamConfigurationError(
+                    f"Cannot set right valid to None for cyclic parameter ({self.name})"
+                )
             self.to_valid = self._to_valid_leftvalid
             self.from_valid = self._from_valid_leftvalid
             valid = (torch.as_tensor(valid[0]), None)
@@ -376,7 +382,9 @@ class Param(Node):
                 self.from_valid = self._from_valid_fullvalid
             valid = (torch.as_tensor(valid[0]), torch.as_tensor(valid[1]))
             if torch.any(valid[0] >= valid[1]):
-                raise ParamConfigurationError("Valid range (valid[1] - valid[0]) must be positive")
+                raise ParamConfigurationError(
+                    f"Valid range (valid[1] - valid[0]) must be positive ({self.name})"
+                )
             if (
                 self.value is not None
                 and not self.cyclic
@@ -388,7 +396,9 @@ class Param(Node):
 
     def _to_valid_base(self, value):
         if self.pointer:
-            raise ParamTypeError("Cannot apply valid transformation to pointer parameter")
+            raise ParamTypeError(
+                f"Cannot apply valid transformation to pointer parameter ({self.name})"
+            )
         return value
 
     def _to_valid_fullvalid(self, value):
@@ -409,7 +419,9 @@ class Param(Node):
 
     def _from_valid_base(self, value):
         if self.pointer:
-            raise ParamTypeError("Cannot apply valid transformation to pointer parameter")
+            raise ParamTypeError(
+                f"Cannot apply valid transformation to pointer parameter ({self.name})"
+            )
         return value
 
     def _from_valid_fullvalid(self, value):

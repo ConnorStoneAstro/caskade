@@ -258,7 +258,7 @@ class Module(Node):
             missing.
         """
         if not self.active:
-            raise ActiveStateError("Module must be active to fill params")
+            raise ActiveStateError(f"Module {self.name} must be active to fill params")
 
         self._fill_values(params, local=local)
 
@@ -267,7 +267,7 @@ class Module(Node):
         This is to be used on exiting an ``ActiveContext`` and so should not be
         used by a user."""
         if not self.active:
-            raise ActiveStateError("Module must be active to clear params")
+            raise ActiveStateError(f"Module {self.name} must be active to clear params")
 
         for param in self.dynamic_params + self.pointer_params:
             param._value = None
@@ -287,7 +287,7 @@ class Module(Node):
     def fill_dynamic_values(self, params: Union[Tensor, Sequence, Mapping], local=False):
         """Fill the dynamic values of the module with the input values from params."""
         if self.active:
-            raise ActiveStateError("Cannot fill dynamic values when Module is active")
+            raise ActiveStateError(f"Cannot fill dynamic values when Module {self.name} is active")
 
         self._fill_values(params, local=local, dynamic_values=True)
 
@@ -299,7 +299,7 @@ class Module(Node):
                 if "value" not in param._type:
                     bad_params.append(param.name)
             raise ParamConfigurationError(
-                f"Param(s) {bad_params} have no dynamic value, so the params {params_type} cannot be built. Set the `dynamic_value` attribute to use this feature."
+                f"{self.name} Param(s) {bad_params} have no dynamic value, so the params {params_type} cannot be built. Set the `dynamic_value` attribute to use this feature."
             )
 
     def build_params_tensor(self) -> Tensor:
