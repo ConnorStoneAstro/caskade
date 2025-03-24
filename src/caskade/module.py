@@ -459,11 +459,13 @@ class Module(Node):
             if isinstance(value, Node):
                 self.link(key, value)
             elif isinstance(value, list):
-                if all(isinstance(v, Node) for v in value):
-                    self.link(key, NodeList(value))
+                if len(value) > 0 and all(isinstance(v, Node) for v in value):
+                    value = NodeList(value)
+                    self.link(key, value)
             elif isinstance(value, tuple) and key not in self._special_tuples:
-                if all(isinstance(v, Node) for v in value):
-                    self.link(key, NodeTuple(value))
+                if len(value) > 0 and all(isinstance(v, Node) for v in value):
+                    value = NodeTuple(value)
+                    self.link(key, value)
         except AttributeError:
             pass
         super().__setattr__(key, value)
