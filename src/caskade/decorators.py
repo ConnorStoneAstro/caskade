@@ -8,11 +8,6 @@ from .param import Param
 __all__ = ("forward",)
 
 
-def _get_arguments(method):
-    sig = inspect.signature(method)
-    return tuple(sig.parameters.keys())
-
-
 def forward(method):
     """
     Decorator to define a forward method for a module.
@@ -48,7 +43,8 @@ def forward(method):
     """
 
     # Get arguments from function signature
-    method_params = _get_arguments(method)
+    sig = inspect.signature(method)
+    method_params = tuple(sig.parameters.keys())
 
     @functools.wraps(method)
     def wrapped(self, *args, **kwargs):
@@ -88,9 +84,14 @@ def forward(method):
             self.fill_params(params)
             kwargs = {**self.fill_kwargs(method_params), **kwargs}
             try:
-                return method(self, *args, **kwargs)
-            except TypeError:  # user supplied empty params
-                assert len(args[-1]) == 0, "Assumed empty params, but got non-empty params!"
+                sig.bind(self, *args, **kwargs)
+                empty_params = False
+            except TypeError:  # user supplied empty params as last arg
+                empty_params = True
+
+            if empty_params:
                 return method(self, *args[:-1], **kwargs)
+            else:
+                return method(self, *args, **kwargs)
 
     return wrapped
