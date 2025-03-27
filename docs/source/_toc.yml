@@ -4,8 +4,9 @@
 format: jb-book
 root: intro
 chapters:
-  - file: notebooks/BeginnersGuide
   - file: install
+  - file: notebooks/BeginnersGuide
+  - file: notebooks/AdvancedGuide
   - file: modules
   # - file: contributing
   # - file: frequently_asked_questions
