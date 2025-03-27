@@ -8,7 +8,7 @@ from torch import Tensor, pi
 
 from .base import Node
 from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError
-from .warnings import InvalidValueWarning
+from .warnings import InvalidValueWarning, AttributeCollisionWarning
 
 
 @dataclass
@@ -32,6 +32,10 @@ class dynamic:
     """
 
     value: Union[Tensor, float, int] = None
+
+
+class meta:
+    pass
 
 
 class Param(Node):
@@ -128,6 +132,7 @@ class Param(Node):
         self.cyclic = cyclic
         self.valid = valid
         self.units = units
+        self.meta = meta()
 
     @property
     def dynamic(self) -> bool:
@@ -446,3 +451,19 @@ class Param(Node):
 
     def __repr__(self):
         return self.name
+
+    def link(self, key, child=None):
+        if child is None:
+            child = key
+            key = child.name
+        if hasattr(self, key):
+            newkey = f"{key}_param"
+            warn(AttributeCollisionWarning(self.name, key, newkey))
+            key = newkey
+        super().link(key, child)
+
+    def __getattribute__(self, name):
+        C = super().__getattribute__("_children")
+        if name in C:
+            return C[name]
+        return super().__getattribute__(name)

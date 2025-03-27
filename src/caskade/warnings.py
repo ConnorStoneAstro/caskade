@@ -15,3 +15,14 @@ class InvalidValueWarning(CaskadeWarning):
             Likely to cause errors or unexpected behavior!"""
         )
         super().__init__(message)
+
+
+class AttributeCollisionWarning(CaskadeWarning):
+    """Warning for attribute collisions."""
+
+    def __init__(self, name, key, newkey):
+        message = dedent(
+            f"""        
+            Attribute "{key}" already exists in {name}. Overwriting with new name {newkey} to avoid overwrite. This may cause problems on the user side, please choose names that dont collide with Param attributes"""
+        )
+        super().__init__(message)
