@@ -145,7 +145,7 @@ def test_value_setter():
     assert p.shape is None
 
     # function
-    p.value = lambda p: p["other"].value * 2
+    p.value = lambda p: p.other.value * 2
     p.link("other", other)
     assert p._type == "pointer"
     assert p.value.item() == 4.0
