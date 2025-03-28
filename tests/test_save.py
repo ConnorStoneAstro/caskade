@@ -65,7 +65,6 @@ def _make_files_and_test():
 def _load_not_appendable_and_test():
     gc.collect()
     main = _build_test_module()
-    print("Loading not appendable", main.name)
     main.load_state("test_save_notappend.h5")
     assert main.m1.p1.value.item() == 1.0
     assert main.m1.p1.units == "arcsec"
@@ -84,7 +83,6 @@ def _change_graph_fail_test():
     gc.collect()
     main = _build_test_module()
     main.link(Module("bad"))
-    print(main)
     with pytest.raises(GraphError):
         main.append_state("test_save_append.h5")
     with pytest.raises(GraphError):

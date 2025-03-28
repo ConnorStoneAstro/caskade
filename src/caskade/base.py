@@ -228,6 +228,7 @@ class Node:
     def _load_state_hdf5(self, h5group, index: int = -1):
         """Load the state of the node and its children from HDF5."""
         for child in self.children.values():
+            print(f"Loading {child.name} from {h5group.name} with keys {list(h5group.keys())}")
             if child.name in h5group:
                 child._load_state_hdf5(h5group[child.name], index=index)
             else:
