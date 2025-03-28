@@ -373,19 +373,12 @@ class Param(Node):
 
     def _append_state_cleanup(self):
         super()._append_state_cleanup()
-        try:
-            del self.appended
-        except AttributeError:
-            pass
+        del self.appended
 
     def _append_state_hdf5(self, h5group):
         super()._append_state_hdf5(h5group)
         if not hasattr(self, "appended"):
             self.appended = True
-            if not h5group["value"].attrs["appendable"]:
-                raise IOError(
-                    f"Cannot append to {self.name} because it was not created as appendable"
-                )
             if self.value is not None:
                 h5group["value"].resize((h5group["value"].shape[0] + 1,) + tuple(self.shape))
                 h5group["value"][-1] = self.value
