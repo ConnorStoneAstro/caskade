@@ -60,7 +60,6 @@ class Module(Node):
         # result is tensor([19.0, 23.0])
     """
 
-    _module_names = set()
     _special_tuples = (
         "dynamic_params",
         "pointer_params",
@@ -431,27 +430,6 @@ class Module(Node):
                 f"Input params type {type(valid_params)} not supported. Should be Tensor, Sequence or Mapping."
             )
         return params
-
-    @property
-    def _name(self) -> str:
-        return self.__name
-
-    @_name.setter
-    def _name(self, name: str):
-        i = 0
-        newname = name
-        while newname in Module._module_names:
-            newname = f"{name}_{i}"
-            i += 1
-        self._module_names.add(newname)
-        self.__name = newname
-
-    def __del__(self):
-        """Remove the name from the set of module names when the object is deleted."""
-        try:
-            self._module_names.remove(self._name)
-        except:
-            pass
 
     def __setattr__(self, key: str, value: Any):
         """Intercept attribute setting to update parameters and graph links."""

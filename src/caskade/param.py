@@ -194,7 +194,7 @@ class Param(Node):
 
     @property
     def shape(self) -> tuple:
-        if self.value is not None:
+        if self.pointer and self.value is not None:
             return self.value.shape
         return self._shape
 
