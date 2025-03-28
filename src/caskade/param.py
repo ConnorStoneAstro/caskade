@@ -364,9 +364,19 @@ class Param(Node):
                 self._h5group["value"].attrs["valid_right"] = self.valid[1].detach().cpu().numpy()
             self._h5group["value"].attrs["units"] = self.units if self.units is not None else "None"
 
+    def _check_append_state_hdf5(self, h5group):
+        super()._check_append_state_hdf5(h5group)
+        if not h5group["value"].attrs["appendable"]:
+            raise IOError(
+                f"{self.name} is not appendable. Need to save the HDF5 file with `appendable=True`."
+            )
+
     def _append_state_cleanup(self):
         super()._append_state_cleanup()
-        del self.appended
+        try:
+            del self.appended
+        except AttributeError:
+            pass
 
     def _append_state_hdf5(self, h5group):
         super()._append_state_hdf5(h5group)
@@ -385,7 +395,6 @@ class Param(Node):
         self.cyclic = False
         self.valid = None
         if not self.pointer:
-            print(h5group["value"], h5group["value"][()])
             if isinstance(h5group["value"][()], bytes):
                 assert h5group["value"][()] == b"None"
                 self.value = None
@@ -396,13 +405,13 @@ class Param(Node):
         self.units = h5group["value"].attrs["units"]
         if "valid_left" in h5group["value"].attrs:
             self.valid = (
-                torch.as_tensor(h5group["value"].attrs["valid_left"]),
+                h5group["value"].attrs["valid_left"],
                 self.valid[1],
             )
         if "valid_right" in h5group["value"].attrs:
             self.valid = (
                 self.valid[0],
-                torch.as_tensor(h5group["value"].attrs["valid_right"]),
+                h5group["value"].attrs["valid_right"],
             )
         self.cyclic = h5group["value"].attrs["cyclic"]
 

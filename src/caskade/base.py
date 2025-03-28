@@ -183,8 +183,8 @@ class Node:
 
     def save_state(self, saveto: str, appendable: bool = False):
         """Save the state of the node and its children."""
-        if saveto.endswith(".h5"):
-            import h5py
+        if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
+            import h5py  # noqa
 
             with h5py.File(saveto, "w") as h5file:
                 self._save_state_hdf5(h5file, appendable=appendable)
@@ -196,11 +196,11 @@ class Node:
                 "Only HDF5 files ('.h5') are currently supported for saving state"
             )
 
-    def _check_state_hdf5(self, h5group):
+    def _check_append_state_hdf5(self, h5group):
         """Check the state and HDF5 file have the same structure."""
         for child in self.children.values():
             if child.name in h5group:
-                child._check_state_hdf5(h5group[child.name])
+                child._check_append_state_hdf5(h5group[child.name])
             else:
                 raise GraphError(
                     f"Child {child.name} not found in HDF5 group {h5group.name}. Structure of graph changed from last save."
@@ -217,11 +217,11 @@ class Node:
 
     def append_state(self, saveto: str):
         """Append the state of the node and its children to an existing HDF5 file."""
-        if saveto.endswith(".h5"):
-            import h5py
+        if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
+            import h5py  # noqa
 
             with h5py.File(saveto, "a") as h5file:
-                self._check_state_hdf5(h5file[self.name])
+                self._check_append_state_hdf5(h5file[self.name])
                 self._append_state_hdf5(h5file[self.name])
 
             for node in self.topological_ordering():
@@ -231,6 +231,16 @@ class Node:
                 "Only HDF5 files ('.h5') are currently supported for saving state"
             )
 
+    def _check_load_state_hdf5(self, h5group):
+        """Check the state and HDF5 file have the same structure."""
+        for child in self.children.values():
+            if child.name in h5group:
+                child._check_load_state_hdf5(h5group[child.name])
+            else:
+                raise GraphError(
+                    f"Child {child.name} not found in HDF5 group {h5group.name}. Structure of graph changed from last save."
+                )
+
     def _load_state_hdf5(self, h5group, index: int = -1):
         """Load the state of the node and its children from HDF5."""
         for child in self.children.values():
@@ -238,11 +248,11 @@ class Node:
 
     def load_state(self, loadfrom: str, index: int = -1):
         """Load the state of the node and its children."""
-        if loadfrom.endswith(".h5"):
-            import h5py
+        if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
+            import h5py  # noqa
 
             with h5py.File(loadfrom, "r") as h5file:
-                self._check_state_hdf5(h5file[self.name])
+                self._check_load_state_hdf5(h5file[self.name])
                 self._load_state_hdf5(h5file[self.name], index=index)
         else:
             raise NotImplementedError(

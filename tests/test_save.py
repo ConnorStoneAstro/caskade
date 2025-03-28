@@ -59,6 +59,7 @@ def _make_files_and_test():
     main.m1.p1.value = 2.0
     main.m1.p2.value = (3.0, 3.5)
     main.append_state("test_save_append.h5")
+    assert not hasattr(main.m1.p2, "appended")
     main.append_state("test_save_append.h5")
 
 
@@ -77,6 +78,15 @@ def _load_appendable_and_test():
     assert main.m1.p1.value.item() == 2.0
     assert main.m1.p2.value[0].item() == 3.0
     assert main.m1.p2.value[1].item() == 3.5
+    import h5py
+
+    with h5py.File("test_save_append.h5", "r") as f:
+        assert "main/m1/p1" in f
+        assert "main/m1/p2" in f
+        assert "main/m1/p3" not in f
+        assert "main/m2/p4" not in f
+        assert "main/m2/p5" not in f
+        assert len(f["main/m1/p2/value"][()]) == 3
 
 
 def _change_graph_fail_test():
