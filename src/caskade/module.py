@@ -71,7 +71,10 @@ class Module(Node):
     def __init__(self, name: Optional[str] = None):
         super().__init__(name=name)
         self.dynamic_params = ()
+        self.all_dynamic_value = True
         self.pointer_params = ()
+        self.local_dynamic_params = ()
+        self.dynamic_modules = {}
         self._type = "module"
         self.valid_context = False
 

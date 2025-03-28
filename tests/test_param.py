@@ -137,7 +137,7 @@ def test_value_setter():
     other = Param("testother", 2.0)
     p.value = other
     assert p._type == "pointer"
-    assert p.shape is None
+    assert p.shape == other.shape
 
     # function
     p.value = lambda p: p["other"].value * 2

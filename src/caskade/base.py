@@ -171,6 +171,82 @@ class Node:
 
         return self
 
+    def _save_state_hdf5(self, h5group, appendable: bool = False):
+        """Save the state of the node and its children to HDF5."""
+        if not hasattr(self, "_h5group"):
+            self._h5group = h5group.create_group(self.name)
+        elif self.name not in h5group:
+            h5group[self.name] = self._h5group
+
+        for child in self.children.values():
+            child._save_state_hdf5(self._h5group, appendable=appendable)
+
+    def save_state(self, saveto: str, appendable: bool = False):
+        """Save the state of the node and its children."""
+        if saveto.endswith(".h5"):
+            import h5py
+
+            with h5py.File(saveto, "w") as h5file:
+                self._save_state_hdf5(h5file, appendable=appendable)
+
+            for node in self.topological_ordering():
+                del node._h5group
+        else:
+            raise NotImplementedError(
+                "Only HDF5 files ('.h5') are currently supported for saving state"
+            )
+
+    def _append_state_cleanup(self):
+        """Cleanup the state of the node and its children after appending to HDF5."""
+        pass
+
+    def _append_state_hdf5(self, h5group):
+        """Append the state of the node and its children to an existing HDF5 file."""
+        for child in self.children.values():
+            if child.name in h5group:
+                child._append_state_hdf5(h5group[child.name])
+            else:
+                raise GraphError(
+                    f"Child {child.name} not found in HDF5 group {h5group.name}. Structure of graph changed from last save."
+                )
+
+    def append_state(self, saveto: str):
+        """Append the state of the node and its children to an existing HDF5 file."""
+        if saveto.endswith(".h5"):
+            import h5py
+
+            with h5py.File(saveto, "a") as h5file:
+                self._append_state_hdf5(h5file[self.name])
+
+            for node in self.topological_ordering():
+                node._append_state_cleanup()
+        else:
+            raise NotImplementedError(
+                "Only HDF5 files ('.h5') are currently supported for saving state"
+            )
+
+    def _load_state_hdf5(self, h5group, index: int = -1):
+        """Load the state of the node and its children from HDF5."""
+        for child in self.children.values():
+            if child.name in h5group:
+                child._load_state_hdf5(h5group[child.name], index=index)
+            else:
+                raise GraphError(
+                    f"Child {child.name} not found in HDF5 group {h5group.name}. Structure of graph changed from last save."
+                )
+
+    def load_state(self, loadfrom: str, index: int = -1):
+        """Load the state of the node and its children."""
+        if loadfrom.endswith(".h5"):
+            import h5py
+
+            with h5py.File(loadfrom, "r") as h5file:
+                self._load_state_hdf5(h5file[self.name], index=index)
+        else:
+            raise NotImplementedError(
+                "Only HDF5 files ('.h5') are currently supported for loading state"
+            )
+
     def graphviz(self, top_down=True) -> "graphviz.Digraph":
         """Return a graphviz object representing the graph below the current
         node in the DAG.
