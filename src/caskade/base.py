@@ -196,6 +196,16 @@ class Node:
                 "Only HDF5 files ('.h5') are currently supported for saving state"
             )
 
+    def _check_state_hdf5(self, h5group):
+        """Check the state and HDF5 file have the same structure."""
+        for child in self.children.values():
+            if child.name in h5group:
+                child._check_state_hdf5(h5group[child.name])
+            else:
+                raise GraphError(
+                    f"Child {child.name} not found in HDF5 group {h5group.name}. Structure of graph changed from last save."
+                )
+
     def _append_state_cleanup(self):
         """Cleanup the state of the node and its children after appending to HDF5."""
         pass
@@ -203,12 +213,7 @@ class Node:
     def _append_state_hdf5(self, h5group):
         """Append the state of the node and its children to an existing HDF5 file."""
         for child in self.children.values():
-            if child.name in h5group:
-                child._append_state_hdf5(h5group[child.name])
-            else:
-                raise GraphError(
-                    f"Child {child.name} not found in HDF5 group {h5group.name}. Structure of graph changed from last save."
-                )
+            child._append_state_hdf5(h5group[child.name])
 
     def append_state(self, saveto: str):
         """Append the state of the node and its children to an existing HDF5 file."""
@@ -216,6 +221,7 @@ class Node:
             import h5py
 
             with h5py.File(saveto, "a") as h5file:
+                self._check_state_hdf5(h5file[self.name])
                 self._append_state_hdf5(h5file[self.name])
 
             for node in self.topological_ordering():
@@ -228,13 +234,7 @@ class Node:
     def _load_state_hdf5(self, h5group, index: int = -1):
         """Load the state of the node and its children from HDF5."""
         for child in self.children.values():
-            print(f"Loading {child.name} from {h5group.name} with keys {list(h5group.keys())}")
-            if child.name in h5group:
-                child._load_state_hdf5(h5group[child.name], index=index)
-            else:
-                raise GraphError(
-                    f"Child {child.name} not found in HDF5 group {h5group.name}. Structure of graph changed from last save."
-                )
+            child._load_state_hdf5(h5group[child.name], index=index)
 
     def load_state(self, loadfrom: str, index: int = -1):
         """Load the state of the node and its children."""
@@ -242,6 +242,7 @@ class Node:
             import h5py
 
             with h5py.File(loadfrom, "r") as h5file:
+                self._check_state_hdf5(h5file[self.name])
                 self._load_state_hdf5(h5file[self.name], index=index)
         else:
             raise NotImplementedError(
