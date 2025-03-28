@@ -194,6 +194,8 @@ class Param(Node):
 
     @property
     def shape(self) -> tuple:
+        if self.pointer and self.value is not None:
+            return self.value.shape
         return self._shape
 
     @shape.setter
@@ -273,8 +275,8 @@ class Param(Node):
             self._value = None
         elif isinstance(value, Param):
             self._type = "pointer"
-            self.link(str(id(value)), value)
-            self._pointer_func = lambda p: p[str(id(value))].value
+            self.link(value)
+            self._pointer_func = lambda p: p[value.name].value
             self._shape = None
             self._value = None
             self._dynamic_value = None
@@ -332,6 +334,80 @@ class Param(Node):
         except AttributeError:
             pass
 
+    def _save_state_hdf5(self, h5group, appendable: bool = False):
+        super()._save_state_hdf5(h5group, appendable=appendable)
+        if "value" not in self._h5group:
+            if self.value is None:
+                value = "None"
+            elif appendable:
+                value = self.value.unsqueeze(0).detach().cpu().numpy()
+            else:
+                value = self.value.detach().cpu().numpy()
+            if appendable:
+                self._h5group.create_dataset(
+                    "value",
+                    data=value,
+                    chunks=True if self.value is not None else False,
+                    maxshape=(None,) + tuple(self.shape) if self.value is not None else None,
+                    compression="gzip" if self.value is not None else None,
+                )
+            else:
+                self._h5group.create_dataset(
+                    "value",
+                    data=value,
+                )
+            self._h5group["value"].attrs["appendable"] = appendable
+            self._h5group["value"].attrs["cyclic"] = self.cyclic
+            if self.valid[0] is not None:
+                self._h5group["value"].attrs["valid_left"] = self.valid[0].detach().cpu().numpy()
+            if self.valid[1] is not None:
+                self._h5group["value"].attrs["valid_right"] = self.valid[1].detach().cpu().numpy()
+            self._h5group["value"].attrs["units"] = self.units if self.units is not None else "None"
+
+    def _check_append_state_hdf5(self, h5group):
+        super()._check_append_state_hdf5(h5group)
+        if not h5group["value"].attrs["appendable"]:
+            raise IOError(
+                f"{self.name} is not appendable. Need to save the HDF5 file with `appendable=True`."
+            )
+
+    def _append_state_cleanup(self):
+        super()._append_state_cleanup()
+        del self.appended
+
+    def _append_state_hdf5(self, h5group):
+        super()._append_state_hdf5(h5group)
+        if not hasattr(self, "appended"):
+            self.appended = True
+            if self.value is not None:
+                h5group["value"].resize((h5group["value"].shape[0] + 1,) + tuple(self.shape))
+                h5group["value"][-1] = self.value
+
+    def _load_state_hdf5(self, h5group, index: int = -1):
+        super()._load_state_hdf5(h5group, index=index)
+        self.cyclic = False
+        self.valid = None
+        if not self.pointer:
+            if isinstance(h5group["value"][()], bytes):
+                assert h5group["value"][()] == b"None"
+                self.value = None
+            elif h5group["value"].attrs["appendable"]:
+                self.value = h5group["value"][index]
+            else:
+                self.value = h5group["value"][()]
+        self.units = h5group["value"].attrs["units"]
+        if "valid_left" in h5group["value"].attrs:
+            self.valid = (
+                h5group["value"].attrs["valid_left"],
+                self.valid[1],
+            )
+        if "valid_right" in h5group["value"].attrs:
+            self.valid = (
+                self.valid[0],
+                h5group["value"].attrs["valid_right"],
+            )
+        self.cyclic = h5group["value"].attrs["cyclic"]
+
     @property
     def valid(self):
         return self._valid
@@ -346,7 +422,7 @@ class Param(Node):
         if len(valid) != 2:
             raise ParamConfigurationError(f"Valid must be a tuple of length 2 ({self.name})")
 
-        if valid == (None, None):
+        if valid[0] is None and valid[1] is None:
             if self.cyclic:
                 raise ParamConfigurationError(
                     f"Cannot set valid to None for cyclic parameter ({self.name})"

@@ -44,6 +44,7 @@ dev = [
     "pytest-mock>=3.12,<4",
     "pre-commit>=3.6,<4",
     "graphviz>=0.17,<1",
+    "h5py>=3.11,<4",
 ]
 
 [tool.hatch.metadata.hooks.requirements_txt]
