@@ -6,7 +6,9 @@ from caskade import (
     ActiveStateError,
     ParamConfigurationError,
     ParamTypeError,
+    GraphError,
     InvalidValueWarning,
+    LinkToAttributeError,
     dynamic,
 )
 
@@ -70,6 +72,14 @@ def test_param_creation():
     with pytest.raises(ParamConfigurationError):
         p8 = Param("test", None, 7)
 
+    # Attempt link with attribute name
+    with pytest.raises(LinkToAttributeError):
+        p6.link("link", p5)
+
+    # Attempt link with existing name
+    with pytest.raises(GraphError):
+        p6.link("other", p5)
+
     # Metadata
     p9 = Param("test", 1.0, units="none", cyclic=True, valid=(0, 1))
     assert p9.units == "none"
@@ -81,7 +91,7 @@ def test_param_creation():
     with pytest.raises(ParamTypeError):
         p10 = Param("test", dynamic_value=p9)
     with pytest.raises(ParamTypeError):
-        p11 = Param("test", dynamic_value=lambda p: p["other"].value * 2)
+        p11 = Param("test", dynamic_value=lambda p: p.other.value * 2)
     with pytest.raises(ParamConfigurationError):
         p12 = Param("test", value=1.0, dynamic_value=1.0)
 
@@ -140,7 +150,7 @@ def test_value_setter():
     assert p.shape == other.shape
 
     # function
-    p.value = lambda p: p["other"].value * 2
+    p.value = lambda p: p.other.value * 2
     p.link("other", other)
     assert p._type == "pointer"
     assert p.value.item() == 4.0

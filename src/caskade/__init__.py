@@ -10,6 +10,7 @@ from .tests import test
 from .errors import (
     CaskadeException,
     GraphError,
+    LinkToAttributeError,
     NodeConfigurationError,
     ParamConfigurationError,
     ParamTypeError,
@@ -39,6 +40,7 @@ __all__ = (
     "test",
     "CaskadeException",
     "GraphError",
+    "LinkToAttributeError",
     "NodeConfigurationError",
     "ParamConfigurationError",
     "ParamTypeError",

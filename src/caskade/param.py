@@ -34,6 +34,10 @@ class dynamic:
     value: Union[Tensor, float, int] = None
 
 
+class meta:
+    pass
+
+
 class Param(Node):
     """
     Node to represent a parameter in the graph.
@@ -128,6 +132,7 @@ class Param(Node):
         self.cyclic = cyclic
         self.valid = valid
         self.units = units
+        self.meta = meta()
 
     @property
     def dynamic(self) -> bool:
