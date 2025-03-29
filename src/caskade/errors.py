@@ -10,6 +10,10 @@ class GraphError(CaskadeException):
     """Class for graph exceptions in ``caskade``."""
 
 
+class LinkToAttributeError(GraphError):
+    """Class for exceptions related to linking to an attribute in ``caskade``."""
+
+
 class NodeConfigurationError(CaskadeException):
     """Class for node configuration exceptions in ``caskade``."""
 

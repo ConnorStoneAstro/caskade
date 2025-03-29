@@ -1,6 +1,6 @@
-from typing import Optional, Union
+from typing import Optional, Union, Any
 
-from .errors import GraphError, NodeConfigurationError
+from .errors import GraphError, NodeConfigurationError, LinkToAttributeError
 
 
 class Node:
@@ -55,6 +55,31 @@ class Node:
     def parents(self) -> set:
         return self._parents
 
+    def _link(self, key: str, child: "Node"):
+        if self.active:
+            raise GraphError("Cannot link/unlink nodes while the graph is active")
+        # Avoid double linking to the same object
+        if key in self.children:
+            if self.children[key] is child:
+                return
+            raise GraphError(f"Child key '{key}' already linked to parent {self.name}")
+        if child in self.children.values():
+            raise GraphError(f"Child {child.name} already linked to parent {self.name}")
+        if hasattr(self, key):
+            raise LinkToAttributeError(
+                f"Child key '{key}' already an attribute of parent {self.name}, use a different name"
+            )
+
+        # avoid cycles
+        if self in child.topological_ordering():
+            raise GraphError(
+                f"Linking {child.name} to {self.name} would create a cycle in the graph"
+            )
+
+        self._children[key] = child
+        child._parents.add(self)
+        self.update_graph()
+
     def link(self, key: Union[str, "Node"], child: Optional["Node"] = None):
         """Link the current ``Node`` object to another ``Node`` object as a child.
 
@@ -81,39 +106,27 @@ class Node:
             n1.link(n2)
             n1.unlink(n2)
         """
-        if self.active:
-            raise GraphError("Cannot link/unlink nodes while the graph is active")
         if child is None:
             child = key
             key = child.name
-        # Avoid double linking to the same object
-        if key in self.children:
-            raise GraphError(f"Child key {key} already linked to parent {self.name}")
-        if child in self.children.values():
-            raise GraphError(f"Child {child.name} already linked to parent {self.name}")
-        # avoid cycles
-        if self in child.topological_ordering():
-            raise GraphError(
-                f"Linking {child.name} to {self.name} would create a cycle in the graph"
-            )
+        self.__setattr__(key, child)
 
-        self._children[key] = child
-        child._parents.add(self)
-        self.update_graph()
-
-    def unlink(self, key: Union[str, "Node"]):
-        """Unlink the current ``Node`` object from another ``Node`` object which is a child."""
+    def _unlink(self, key: str):
         if self.active:
             raise GraphError(f"Cannot link/unlink nodes while the graph is active ({self.name})")
-        if isinstance(key, Node):
-            for node in self.children:
-                if self.children[node] == key:
-                    key = node
-                    break
         self._children[key]._parents.remove(self)
         self._children[key].update_graph()
         del self._children[key]
         self.update_graph()
+
+    def unlink(self, key: Union[str, "Node"]):
+        """Unlink the current ``Node`` object from another ``Node`` object which is a child."""
+        if isinstance(key, Node):
+            for node in self.children:
+                if self.children[node] is key:
+                    key = node
+                    break
+        self.__delattr__(key)
 
     def topological_ordering(
         self, with_type: Optional[str] = None, with_isinstance: Optional[object] = None
@@ -324,3 +337,20 @@ class Node:
 
     def __hash__(self) -> int:
         return id(self)
+
+    def __setattr__(self, key: str, value: Any):
+        """Intercept attribute setting to update parameters and graph links."""
+        try:
+            if isinstance(value, Node):
+                # check for trying setting an attr with its own setter, allow the setter to handle throwing errors (e.g. value, and dynamic_value)
+                if not hasattr(getattr(type(self), key, None), "fset"):
+                    self._link(key, value)
+        except AttributeError:
+            pass
+        super().__setattr__(key, value)
+
+    def __delattr__(self, key: str):
+        """Intercept attribute deletion to remove links."""
+        if key in self.children:
+            self._unlink(key)
+        super().__delattr__(key)

@@ -7,7 +7,7 @@ from caskade import (
     ParamConfigurationError,
     ParamTypeError,
     InvalidValueWarning,
-    AttributeCollisionWarning,
+    LinkToAttributeError,
     dynamic,
 )
 
@@ -72,7 +72,7 @@ def test_param_creation():
         p8 = Param("test", None, 7)
 
     # Attempt link with attribute name
-    with pytest.warns(AttributeCollisionWarning):
+    with pytest.raises(LinkToAttributeError):
         p6.link("link", p5)
 
     # Metadata

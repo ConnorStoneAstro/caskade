@@ -10,6 +10,7 @@ from .tests import test
 from .errors import (
     CaskadeException,
     GraphError,
+    LinkToAttributeError,
     NodeConfigurationError,
     ParamConfigurationError,
     ParamTypeError,
@@ -19,7 +20,7 @@ from .errors import (
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
 )
-from .warnings import CaskadeWarning, InvalidValueWarning, AttributeCollisionWarning
+from .warnings import CaskadeWarning, InvalidValueWarning
 
 
 __version__ = VERSION
@@ -39,6 +40,7 @@ __all__ = (
     "test",
     "CaskadeException",
     "GraphError",
+    "LinkToAttributeError",
     "NodeConfigurationError",
     "ParamConfigurationError",
     "ParamTypeError",
@@ -49,5 +51,4 @@ __all__ = (
     "FillDynamicParamsMappingError",
     "CaskadeWarning",
     "InvalidValueWarning",
-    "AttributeCollisionWarning",
 )

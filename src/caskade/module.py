@@ -437,22 +437,17 @@ class Module(Node):
             if key in self.children and isinstance(self[key], Param):
                 self[key].value = value
                 return
-            if isinstance(value, Node):
-                self.link(key, value)
-            elif isinstance(value, list):
+
+            if isinstance(value, list) and not isinstance(value, NodeList):
                 if len(value) > 0 and all(isinstance(v, Node) for v in value):
                     value = NodeList(value)
-                    self.link(key, value)
-            elif isinstance(value, tuple) and key not in self._special_tuples:
+            elif (
+                isinstance(value, tuple)
+                and not isinstance(value, NodeTuple)
+                and key not in self._special_tuples
+            ):
                 if len(value) > 0 and all(isinstance(v, Node) for v in value):
                     value = NodeTuple(value)
-                    self.link(key, value)
         except AttributeError:
             pass
         super().__setattr__(key, value)
-
-    def __delattr__(self, key: str):
-        """Intercept attribute deletion to remove links."""
-        if key in self.children:
-            self.unlink(key)
-        super().__delattr__(key)

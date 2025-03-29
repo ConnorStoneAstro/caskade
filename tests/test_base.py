@@ -27,8 +27,8 @@ def test_link():
     node1.link("subnode", node2)
 
     # Already linked
-    with pytest.raises(GraphError):
-        node1.link("subnode", node2)
+    node1.link("subnode", node2)
+    assert len(node1._children) == 1
 
     # Double link
     with pytest.raises(GraphError):
