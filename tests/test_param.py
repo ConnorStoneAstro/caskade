@@ -6,6 +6,7 @@ from caskade import (
     ActiveStateError,
     ParamConfigurationError,
     ParamTypeError,
+    GraphError,
     InvalidValueWarning,
     LinkToAttributeError,
     dynamic,
@@ -74,6 +75,10 @@ def test_param_creation():
     # Attempt link with attribute name
     with pytest.raises(LinkToAttributeError):
         p6.link("link", p5)
+
+    # Attempt link with existing name
+    with pytest.raises(GraphError):
+        p6.link("other", p5)
 
     # Metadata
     p9 = Param("test", 1.0, units="none", cyclic=True, valid=(0, 1))

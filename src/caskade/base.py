@@ -340,13 +340,11 @@ class Node:
 
     def __setattr__(self, key: str, value: Any):
         """Intercept attribute setting to update parameters and graph links."""
-        try:
-            if isinstance(value, Node):
-                # check for trying setting an attr with its own setter, allow the setter to handle throwing errors (e.g. value, and dynamic_value)
-                if not hasattr(getattr(type(self), key, None), "fset"):
-                    self._link(key, value)
-        except AttributeError:
-            pass
+        if isinstance(value, Node):
+            # check for trying setting an attr with its own setter, allow the setter to handle throwing errors (e.g. value, and dynamic_value)
+            if not hasattr(getattr(type(self), key, None), "fset"):
+                self._link(key, value)
+
         super().__setattr__(key, value)
 
     def __delattr__(self, key: str):
