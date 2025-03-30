@@ -440,14 +440,14 @@ class Module(Node):
 
             if isinstance(value, list) and not isinstance(value, NodeList):
                 if len(value) > 0 and all(isinstance(v, Node) for v in value):
-                    value = NodeList(value)
+                    value = NodeList(value, name=key)
             elif (
                 isinstance(value, tuple)
                 and not isinstance(value, NodeTuple)
                 and key not in self._special_tuples
             ):
                 if len(value) > 0 and all(isinstance(v, Node) for v in value):
-                    value = NodeTuple(value)
+                    value = NodeTuple(value, name=key)
         except AttributeError:
             pass
         super().__setattr__(key, value)

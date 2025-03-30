@@ -11,38 +11,33 @@ def test_node_tuple_creation():
     assert len(n1) == 0
 
     # Creation with list of param nodes
-    params = [Param("test1", 1), Param("test2", 2)]
+    params = [Param("ptest1", 1), Param("ptest2", 2)]
     n2 = NodeTuple(params)
     assert len(n2) == 2
     assert n2[0] is params[0]
-    assert n2["Node0"] is params[0]
+    assert n2.ptest1 is params[0]
     assert n2[1] is params[1]
-    assert n2["Node1"] is params[1]
+    assert n2.ptest2 is params[1]
 
     # Creation with list of module nodes
-    modules = [Module("test1"), Module("test2"), Module("test3")]
+    modules = [Module("mtest1"), Module("mtest2"), Module("mtest3")]
     n3 = NodeTuple(modules)
     assert len(n3) == 3
     assert n3[0] is modules[0]
-    assert n3["Node0"] is modules[0]
+    assert n3.mtest1 is modules[0]
     assert n3[1] is modules[1]
-    assert n3["Node1"] is modules[1]
+    assert n3["mtest2"] is modules[1]
     assert n3[2] is modules[2]
-    assert n3["Node2"] is modules[2]
+    assert n3["mtest3"] is modules[2]
 
     # Adding node tuples
     n4 = n1 + n2 + n3
     assert len(n4) == 5
     assert n4[0] is params[0]
-    assert n4["Node0"] is params[0]
     assert n4[1] is params[1]
-    assert n4["Node1"] is params[1]
     assert n4[2] is modules[0]
-    assert n4["Node2"] is modules[0]
     assert n4[3] is modules[1]
-    assert n4["Node3"] is modules[1]
     assert n4[4] is modules[2]
-    assert n4["Node4"] is modules[2]
 
     # Check repr
     assert isinstance(repr(n4), str)
@@ -63,58 +58,6 @@ def test_node_tuple_creation():
     n4.to_static()
 
 
-def test_node_tuple_del():
-    node_names = []
-    t1 = NodeTuple()
-    node_names.append(t1.name)
-
-    def f():
-        t2 = NodeTuple()
-        node_names.append(t2.name)
-        NodeTuple._collections.remove(t2.name)
-        print(t2)
-
-    f()
-
-    def g():
-        t3 = NodeTuple()
-        node_names.append(t3.name)
-        print(t3)
-
-    g()
-
-    assert node_names[0] in NodeTuple._collections
-    assert node_names[1] not in NodeTuple._collections
-    assert node_names[2] not in NodeTuple._collections
-    assert t1.name == node_names[0]
-
-
-def test_node_list_del():
-    node_names = []
-    t1 = NodeList()
-    node_names.append(t1.name)
-
-    def f():
-        t2 = NodeList()
-        node_names.append(t2.name)
-        NodeList._collections.remove(t2.name)
-        print(t2)
-
-    f()
-
-    def g():
-        t3 = NodeList()
-        node_names.append(t3.name)
-        print(t3)
-
-    g()
-
-    assert node_names[0] in NodeList._collections
-    assert node_names[1] not in NodeList._collections
-    assert node_names[2] not in NodeList._collections
-    assert t1.name == node_names[0]
-
-
 def test_node_list_creation():
 
     # Minimal creation
@@ -123,38 +66,33 @@ def test_node_list_creation():
     assert len(n1) == 0
 
     # Creation with list of param nodes
-    params = [Param("test1"), Param("test2")]
+    params = [Param("ptest1"), Param("ptest2")]
     n2 = NodeList(params)
     assert len(n2) == 2
     assert n2[0] is params[0]
-    assert n2["Node0"] is params[0]
+    assert n2.ptest1 is params[0]
     assert n2[1] is params[1]
-    assert n2["Node1"] is params[1]
+    assert n2["ptest2"] is params[1]
 
     # Creation with list of module nodes
-    modules = [Module("test1"), Module("test2"), Module("test3")]
+    modules = [Module("mtest1"), Module("mtest2"), Module("mtest3")]
     n3 = NodeList(modules)
     assert len(n3) == 3
     assert n3[0] is modules[0]
-    assert n3["Node0"] is modules[0]
+    assert n3.mtest1 is modules[0]
     assert n3[1] is modules[1]
-    assert n3["Node1"] is modules[1]
+    assert n3["mtest2"] is modules[1]
     assert n3[2] is modules[2]
-    assert n3["Node2"] is modules[2]
+    assert n3["mtest3"] is modules[2]
 
     # Adding node Lists
     n4 = n1 + n2 + n3
     assert len(n4) == 5
     assert n4[0] is params[0]
-    assert n4["Node0"] is params[0]
     assert n4[1] is params[1]
-    assert n4["Node1"] is params[1]
     assert n4[2] is modules[0]
-    assert n4["Node2"] is modules[0]
     assert n4[3] is modules[1]
-    assert n4["Node3"] is modules[1]
     assert n4[4] is modules[2]
-    assert n4["Node4"] is modules[2]
 
     # Check repr
     assert isinstance(repr(n4), str)
@@ -183,19 +121,18 @@ def test_node_list_manipulation():
     n1.append(Param("ptest3", 3))
     assert len(n1) == 3
     assert n1[2].name == "ptest3"
-    assert n1["Node2"].name == "ptest3"
+    assert n1.ptest3.name == "ptest3"
 
     # Insert
     n1.insert(1, Module("mtest4"))
     assert len(n1) == 4
     assert n1[1].name == "mtest4"
-    assert n1["Node1"].name == "mtest4"
 
     # Extend
     n1.extend(modules)
     assert len(n1) == 7
     assert n1[4].name == "mtest1"
-    assert n1["Node4"].name == "mtest1"
+    assert n1.mtest1.name == "mtest1"
 
     # Check to static/dynamic
     n1.to_dynamic()
@@ -209,7 +146,6 @@ def test_node_list_manipulation():
     n1 += params
     assert len(n1) == 2
     assert n1[0].name == "ptest1"
-    assert n1["Node0"].name == "ptest1"
 
     # Pop
     assert n1.pop().name == "ptest2"
@@ -232,7 +168,6 @@ def test_node_list_manipulation():
     # Get item
     n2 = NodeList(modules)
     assert n2[1] is modules[1]
-    assert n2["Node1"] is modules[1]
     assert all(n == m for n, m in zip(n2[:2], modules[:2]))
     assert all(n == m for n, m in zip(n2[1:], modules[1:]))
 

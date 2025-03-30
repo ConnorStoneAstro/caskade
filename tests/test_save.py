@@ -5,7 +5,7 @@ import gc
 import pytest
 
 
-def _build_test_module():
+def _build_test_module(blank=False):
     main = Module("main")
     m1 = Module("m1")
     m2 = Module("m2")
@@ -17,11 +17,12 @@ def _build_test_module():
     m1.m3 = m3
     m2.m3 = m3
 
-    p1 = Param("p1", 1.0, valid=(0.0, 2.0), units="arcsec")
-    p2 = Param("p2", (2.0, 2.5), valid=(None, (5, 6)))
+    p1 = Param("p1", None if blank else 1.0, valid=(0.0, 2.0), units="arcsec")
+    p2 = Param("p2", None if blank else (2.0, 2.5), shape=(2,), valid=(None, (5, 6)))
     p3 = Param(
         "p3",
-        np.ones((2, 3, 4)),
+        None if blank else np.ones((2, 3, 4)),
+        shape=(2, 3, 4),
         cyclic=True,
         valid=(np.zeros((2, 3, 4)), 2 * np.ones((2, 3, 4))),
         units="m",
@@ -32,6 +33,8 @@ def _build_test_module():
     m1.p1 = p1
     m1.p2 = p2
     m2.p3 = p3
+    m2.link("p4_param", p4)
+    m2.p5_param = p5
     m3.p4 = p4
     m3.p5 = p5
 
@@ -65,15 +68,16 @@ def _make_files_and_test():
 
 def _load_not_appendable_and_test():
     gc.collect()
-    main = _build_test_module()
+    main = _build_test_module(blank=True)
     main.load_state("test_save_notappend.h5")
     assert main.m1.p1.value.item() == 1.0
     assert main.m1.p1.units == "arcsec"
+    assert main.m2.p4_param.value[1].item() == 2.5
 
 
 def _load_appendable_and_test():
     gc.collect()
-    main = _build_test_module()
+    main = _build_test_module(blank=True)
     main.load_state("test_save_append.h5")
     assert main.m1.p1.value.item() == 2.0
     assert main.m1.p2.value[0].item() == 3.0
