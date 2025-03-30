@@ -45,10 +45,10 @@ def test_full_integration():
 
 def test_full_integration_v2():
     class MyMainSim(Module):
-        def __init__(self, a_utility, b_action, c_param=None):
-            super().__init__()
+        def __init__(self, name, a_utility, b_action, c_param=None):
+            super().__init__(name)
             self.a_utility = a_utility  # This will hold a module
-            self.b_action = b_action  # this is a list of modules, so we have to link them manually
+            self.b_action = b_action
             self.c_param = Param("c", c_param)  # regular parameter
             self.d_param = Param("d", None)  # live parameter
 
@@ -68,8 +68,8 @@ def test_full_integration_v2():
             return u + y + d_param
 
     class MyActionSim(Module):
-        def __init__(self, a_utility, a=None, b=None):
-            super().__init__()
+        def __init__(self, name, a_utility, a=None, b=None):
+            super().__init__(name)
             self.a_utility = a_utility  # same module as in MyMainSim
             self.a = Param("a", a)
             self.b = Param("b", b)
@@ -80,24 +80,24 @@ def test_full_integration_v2():
             return u * a + b
 
     class MyUtilitySim(Module):
-        def __init__(self, u=None):
-            super().__init__()
+        def __init__(self, name, u=None):
+            super().__init__(name)
             self.u = Param("u", u)
 
         @forward
         def myutilityfunction(self, z, u=None):
             return u * z
 
-    util = MyUtilitySim()
+    util = MyUtilitySim("util")
     #                      u for MyUtilitySim
     params = [torch.tensor(1.0)]
     actions = []
     for i in range(3):
-        actions.append(MyActionSim(util))
+        actions.append(MyActionSim(f"action_{i}", util))
         #                     a for MyActionSim, b for MyActionSim
         params = params + [torch.tensor(i), torch.tensor(i + 1)]
 
-    main = MyMainSim(util, actions)
+    main = MyMainSim("main", util, actions)
 
     main.d_param = lambda p: p["utility u"].myutilityfunction(p["c"].value) * 2
     main.d_param.link("utility u", util)

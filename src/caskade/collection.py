@@ -2,42 +2,27 @@ from .base import Node
 
 
 class NodeTuple(tuple, Node):
-    _collections = set()
     graphviz_types = {"ntuple": {"style": "solid", "color": "black", "shape": "tab"}}
 
     def __init__(self, iterable=None, name=None):
         tuple.__init__(iterable)
-        Node.__init__(self, self._get_name(name))
+        Node.__init__(self, name=name)
         self._type = "ntuple"
 
-        for n in range(len(self)):
-            if not isinstance(self[n], Node):
-                raise TypeError(f"NodeTuple elements must be Node objects, not {type(self[n])}")
-            self.link(f"Node{n}", self[n])
+        for node in self:
+            if not isinstance(node, Node):
+                raise TypeError(f"NodeTuple elements must be Node objects, not {type(node)}")
+            self.link(node)
 
     def to_dynamic(self, **kwargs):
-        for n in range(len(self)):
-            if hasattr(self[n], "to_dynamic"):
-                self[n].to_dynamic(**kwargs)
+        for node in self:
+            if hasattr(node, "to_dynamic"):
+                node.to_dynamic(**kwargs)
 
     def to_static(self, **kwargs):
-        for n in range(len(self)):
-            if hasattr(self[n], "to_static"):
-                self[n].to_static(**kwargs)
-
-    @classmethod
-    def _get_name(cls, name):
-        c = 0
-        if name is None:
-            name = "NodeTuple"
-        if name not in cls._collections:
-            cls._collections.add(name)
-            return name
-        while f"{name}_{c}" in cls._collections:
-            c += 1
-        name = f"{name}_{c}"
-        cls._collections.add(name)
-        return name
+        for node in self:
+            if hasattr(node, "to_static"):
+                node.to_static(**kwargs)
 
     def __getitem__(self, key):
         if isinstance(key, str):
@@ -57,57 +42,36 @@ class NodeTuple(tuple, Node):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.name})[{len(self)}]"
 
-    def __del__(self):
-        try:
-            self._collections.remove(self._name)
-        except:
-            pass
-
 
 class NodeList(list, Node):
-    _collections = set()
     graphviz_types = {"nlist": {"style": "solid", "color": "black", "shape": "folder"}}
 
     def __init__(self, iterable=(), name=None):
         list.__init__(self, iterable)
-        Node.__init__(self, self._get_name(name))
+        Node.__init__(self, name)
         self._type = "nlist"
 
         self._link_nodes()
 
     def to_dynamic(self, **kwargs):
-        for n in range(len(self)):
-            if hasattr(self[n], "to_dynamic"):
-                self[n].to_dynamic(**kwargs)
+        for node in self:
+            if hasattr(node, "to_dynamic"):
+                node.to_dynamic(**kwargs)
 
     def to_static(self, **kwargs):
-        for n in range(len(self)):
-            if hasattr(self[n], "to_static"):
-                self[n].to_static(**kwargs)
-
-    @classmethod
-    def _get_name(cls, name):
-        c = 0
-        if name is None:
-            name = "NodeList"
-        if name not in cls._collections:
-            cls._collections.add(name)
-            return name
-        while f"{name}_{c}" in cls._collections:
-            c += 1
-        name = f"{name}_{c}"
-        cls._collections.add(name)
-        return name
+        for node in self:
+            if hasattr(node, "to_static"):
+                node.to_static(**kwargs)
 
     def _unlink_nodes(self):
-        for n in range(len(self)):
-            self.unlink(f"Node{n}")
+        for node in self:
+            self.unlink(node)
 
     def _link_nodes(self):
-        for n in range(len(self)):
-            if not isinstance(self[n], Node):
-                raise TypeError(f"NodeList elements must be Node objects, not {type(self[n])}")
-            self.link(f"Node{n}", self[n])
+        for node in self:
+            if not isinstance(node, Node):
+                raise TypeError(f"NodeList elements must be Node objects, not {type(node)}")
+            self.link(node)
 
     def append(self, node):
         self._unlink_nodes()
@@ -150,7 +114,7 @@ class NodeList(list, Node):
         if isinstance(key, str):
             return Node.__getitem__(self, key)
         if isinstance(key, slice):
-            return NodeList(super().__getitem__(key))
+            return NodeList(super().__getitem__(key), name=self.name)
         return list.__getitem__(self, key)
 
     def __setitem__(self, key, value):
@@ -165,7 +129,7 @@ class NodeList(list, Node):
 
     def __add__(self, other):
         res = super().__add__(other)
-        return NodeList(res)
+        return NodeList(res, name=self.name)
 
     def __iadd__(self, other):
         self._unlink_nodes()
@@ -187,9 +151,3 @@ class NodeList(list, Node):
 
     def __hash__(self):
         return Node.__hash__(self)
-
-    def __del__(self):
-        try:
-            self._collections.remove(self._name)
-        except:
-            pass
