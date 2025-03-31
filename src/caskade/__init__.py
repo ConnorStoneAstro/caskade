@@ -20,7 +20,7 @@ from .errors import (
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
 )
-from .warnings import CaskadeWarning, InvalidValueWarning
+from .warnings import CaskadeWarning, InvalidValueWarning, SaveStateWarning
 
 
 __version__ = VERSION
@@ -51,4 +51,5 @@ __all__ = (
     "FillDynamicParamsMappingError",
     "CaskadeWarning",
     "InvalidValueWarning",
+    "SaveStateWarning",
 )

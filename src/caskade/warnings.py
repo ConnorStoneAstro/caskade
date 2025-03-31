@@ -15,3 +15,7 @@ class InvalidValueWarning(CaskadeWarning):
             Likely to cause errors or unexpected behavior!"""
         )
         super().__init__(message)
+
+
+class SaveStateWarning(CaskadeWarning):
+    """Warning for when an issue occurs when a state is saved."""

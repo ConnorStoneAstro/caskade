@@ -1,12 +1,13 @@
-from caskade import Module, Param, GraphError
+from caskade import Module, Param, GraphError, SaveStateWarning
 import numpy as np
 import gc
 
 import pytest
 
 
-def _build_test_module(blank=False):
+def _build_test_module(blank=False, check_warns=False):
     main = Module("main")
+    main.meta.extra_info = "This is some extra info"
     m1 = Module("m1")
     m2 = Module("m2")
     m3 = Module("m3")
@@ -19,6 +20,7 @@ def _build_test_module(blank=False):
 
     p1 = Param("p1", None if blank else 1.0, valid=(0.0, 2.0), units="arcsec")
     p2 = Param("p2", None if blank else (2.0, 2.5), shape=(2,), valid=(None, (5, 6)))
+    p2.meta.basic_data = np.array([1, 2, 3])
     p3 = Param(
         "p3",
         None if blank else np.ones((2, 3, 4)),
@@ -53,12 +55,16 @@ def _make_files_and_test():
         main.append_state("test_save_bad.png")
 
     # Save not appendable
-    main.save_state("test_save_notappend.h5", appendable=False)
+    with pytest.warns(SaveStateWarning):
+        main.m1.meta.bad_meta = None
+        main.save_state("test_save_notappend.h5", appendable=False)
     with pytest.raises(IOError):
         main.append_state("test_save_notappend.h5")
 
     # Save and append
-    main.save_state("test_save_append.h5", appendable=True)
+    with pytest.warns(SaveStateWarning):
+        main.m1.p1.meta.very_bad_meta = np.array(["hello", "wor\0ld"], dtype=object)
+        main.save_state("test_save_append.h5", appendable=True)
     main.m1.p1.value = 2.0
     main.m1.p2.value = (3.0, 3.5)
     main.append_state("test_save_append.h5")
@@ -69,7 +75,10 @@ def _make_files_and_test():
 def _load_not_appendable_and_test():
     gc.collect()
     main = _build_test_module(blank=True)
+    main.meta.extra_info = "The wrong extra info"
     main.load_state("test_save_notappend.h5")
+    assert main.meta.extra_info == "This is some extra info"
+    assert main.m1.p2.meta.basic_data[2] == 3
     assert main.m1.p1.value.item() == 1.0
     assert main.m1.p1.units == "arcsec"
     assert main.m2.p4_param.value[1].item() == 2.5
