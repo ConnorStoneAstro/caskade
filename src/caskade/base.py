@@ -1,6 +1,14 @@
 from typing import Optional, Union, Any
+from warnings import warn
 
 from .errors import GraphError, NodeConfigurationError, LinkToAttributeError
+from .warnings import SaveStateWarning
+
+
+class meta:
+    """Meta information for a ``Node`` object."""
+
+    pass
 
 
 class Node:
@@ -42,6 +50,7 @@ class Node:
         self._parents = set()
         self._active = False
         self._type = "node"
+        self.meta = meta()
 
     @property
     def name(self) -> str:
@@ -184,8 +193,22 @@ class Node:
 
         return self
 
-    def _save_state_hdf5(self, h5group, appendable: bool = False):
+    def _save_state_hdf5(self, h5group, appendable: bool = False, save_meta: bool = True):
         """Save the state of the node and its children to HDF5."""
+        if save_meta:
+            for meta_key, meta_value in self.meta.__dict__.items():
+                if meta_key in h5group.attrs:  # already saved
+                    continue
+                try:
+                    h5group.attrs[meta_key] = meta_value
+                except TypeError:
+                    warn(
+                        SaveStateWarning(
+                            f"Meta value '{meta_key}' of type {type(meta_value)} cannot be saved to HDF5"
+                        )
+                    )
+                except Exception as e:
+                    warn(SaveStateWarning(f"Unable to save meta value '{meta_key}' due to: {e}"))
         for key, child in self.children.items():
             if not hasattr(child, "_h5group"):
                 child._h5group = h5group.create_group(key)
@@ -193,14 +216,14 @@ class Node:
                 h5group[key] = child._h5group
             child._save_state_hdf5(h5group[key], appendable=appendable)
 
-    def save_state(self, saveto: str, appendable: bool = False):
+    def save_state(self, saveto: str, appendable: bool = False, save_meta: bool = True):
         """Save the state of the node and its children."""
         if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
             import h5py  # noqa
 
             with h5py.File(saveto, "w") as h5file:
                 self._h5group = h5file.create_group(self.name)
-                self._save_state_hdf5(h5file[self.name], appendable=appendable)
+                self._save_state_hdf5(h5file[self.name], appendable=appendable, save_meta=save_meta)
 
             for node in self.topological_ordering():
                 del node._h5group
@@ -254,19 +277,22 @@ class Node:
                     f"Child '{child.name}' (identified by key '{key}') not found in HDF5 group '{h5group.name}'. Structure of graph changed from last save."
                 )
 
-    def _load_state_hdf5(self, h5group, index: int = -1):
+    def _load_state_hdf5(self, h5group, index: int = -1, load_meta: bool = True):
         """Load the state of the node and its children from HDF5."""
+        if load_meta:
+            for meta_key in h5group.attrs:
+                setattr(self.meta, meta_key, h5group.attrs[meta_key])
         for key, child in self.children.items():
             child._load_state_hdf5(h5group[key], index=index)
 
-    def load_state(self, loadfrom: str, index: int = -1):
+    def load_state(self, loadfrom: str, index: int = -1, load_meta: bool = True):
         """Load the state of the node and its children."""
         if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
             import h5py  # noqa
 
             with h5py.File(loadfrom, "r") as h5file:
                 self._check_load_state_hdf5(h5file[self.name])
-                self._load_state_hdf5(h5file[self.name], index=index)
+                self._load_state_hdf5(h5file[self.name], index=index, load_meta=load_meta)
         else:
             raise NotImplementedError(
                 "Only HDF5 files ('.h5') are currently supported for loading state"
