@@ -63,7 +63,7 @@ class Module(Node):
     _special_tuples = (
         "dynamic_params",
         "pointer_params",
-        "local_dynamic_params",
+        "dynamic_modules",
     )  # These tuples will not be converted to NodeTuple objects
     graphviz_types = {"module": {"style": "solid", "color": "black", "shape": "ellipse"}}
 
@@ -72,8 +72,7 @@ class Module(Node):
         self.dynamic_params = ()
         self.all_dynamic_value = True
         self.pointer_params = ()
-        self.local_dynamic_params = ()
-        self.dynamic_modules = {}
+        self.local_dynamic_params = {}
         self._type = "module"
         self.valid_context = False
 
@@ -83,18 +82,18 @@ class Module(Node):
         self.dynamic_params = tuple(self.topological_ordering("dynamic"))
         self.all_dynamic_value = all("value" in p._type for p in self.dynamic_params)
         self.pointer_params = tuple(self.topological_ordering("pointer"))
-        self.local_dynamic_params = tuple(
-            p for p in self.children.values() if isinstance(p, Param) and p.dynamic
+        self.local_dynamic_params = dict(
+            (k, p) for k, p in self.children.items() if isinstance(p, Param) and p.dynamic
         )
-        self.dynamic_modules = dict(
-            (m.name, m) for m in self.topological_ordering(with_isinstance=Module) if m.dynamic
+        self.dynamic_modules = tuple(
+            m for m in self.topological_ordering(with_isinstance=Module) if m.dynamic
         )
         super().update_graph()
 
     @property
     def dynamic(self):
         """Return True if the module has dynamic parameters"""
-        return self.local_dynamic_params != ()
+        return len(self.local_dynamic_params) > 0
 
     def to_dynamic(self, local_only=True, ignore_pointer=True, **kwargs):
         """Change all parameters to dynamic parameters. If the parameter has a
@@ -167,7 +166,7 @@ class Module(Node):
             missing.
         """
 
-        dynamic_params = self.local_dynamic_params if local else self.dynamic_params
+        dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
         if len(dynamic_params) == 0 and not dynamic_values:
             return
 
@@ -206,7 +205,7 @@ class Module(Node):
                     else:
                         param._value = value
             elif len(params) == len(self.dynamic_modules):
-                for module, value in zip(self.dynamic_modules.values(), params):
+                for module, value in zip(self.dynamic_modules, params):
                     module._fill_values(value, local=True, dynamic_values=dynamic_values)
             else:
                 raise FillDynamicParamsSequenceError(
@@ -214,11 +213,9 @@ class Module(Node):
                 )
         elif isinstance(params, Mapping):
             for key in params:
-                if key in self.dynamic_modules:
-                    self.dynamic_modules[key]._fill_values(
-                        params[key], local=True, dynamic_values=dynamic_values
-                    )
-                elif key in self.children and self[key].dynamic:
+                if key in self.children and isinstance(self[key], Module) and self[key].dynamic:
+                    self[key]._fill_values(params[key], local=True, dynamic_values=dynamic_values)
+                elif key in self.children and isinstance(self[key], Param) and self[key].dynamic:
                     if dynamic_values:
                         self[key].dynamic_value = params[key]
                     else:
@@ -324,24 +321,28 @@ class Module(Node):
             x.append(param.value.detach())
         return x
 
+    def _recursive_build_params_dict(self, unique_params: set):
+        params = {}
+        for link, child in self.children.items():
+            if isinstance(child, Param) and child.dynamic and child not in unique_params:
+                unique_params.add(child)
+                params[link] = child.value.detach()
+        for link, child in self.children.items():
+            if isinstance(child, Module) and len(child.dynamic_params) > 0:
+                params[link] = child._recursive_build_params_dict(unique_params=unique_params)
+        return params
+
     def build_params_dict(self) -> dict[str, Tensor]:
         """Return an input dict for this module's @forward methods by filling with dynamic values."""
 
         self._check_dynamic_values("Dict")
         unique_params = set()
-        x = {}
-        for mod in self.dynamic_modules.values():
-            x[mod.name] = {}
-            for param in mod.local_dynamic_params:
-                if param not in unique_params:
-                    unique_params.add(param)
-                    x[mod.name][param.name] = param.value.detach()
-
+        x = self._recursive_build_params_dict(unique_params=unique_params)
         return x
 
     def to_valid(self, params: Union[Tensor, Sequence, Mapping], local=False):
         """Convert input params to valid params."""
-        dynamic_params = self.local_dynamic_params if local else self.dynamic_params
+        dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
         if isinstance(params, Tensor):
             valid_params = torch.zeros_like(params)
             batch = len(params.shape) > 1
@@ -360,7 +361,7 @@ class Module(Node):
                 for param, value in zip(dynamic_params, params):
                     valid_params.append(param.to_valid(value))
             elif len(params) == len(self.dynamic_modules):
-                for module, value in zip(self.dynamic_modules.values(), params):
+                for module, value in zip(self.dynamic_modules, params):
                     valid_params.append(module.to_valid(value, local=True))
             else:
                 raise FillDynamicParamsSequenceError(
@@ -369,9 +370,9 @@ class Module(Node):
         elif isinstance(params, Mapping):
             valid_params = {}
             for key in params:
-                if key in self.dynamic_modules:
-                    valid_params[key] = self.dynamic_modules[key].to_valid(params[key], local=True)
-                elif key in self.children and self[key].dynamic:
+                if key in self.children and isinstance(self[key], Module) and self[key].dynamic:
+                    valid_params[key] = self[key].to_valid(params[key], local=True)
+                elif key in self.children and isinstance(self[key], Param) and self[key].dynamic:
                     valid_params[key] = self[key].to_valid(params[key])
                 else:
                     raise FillDynamicParamsMappingError(
@@ -386,7 +387,7 @@ class Module(Node):
     def from_valid(self, valid_params: Union[Tensor, Sequence, Mapping], local=False):
         """Convert valid params to input params."""
 
-        dynamic_params = self.local_dynamic_params if local else self.dynamic_params
+        dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
 
         if isinstance(valid_params, Tensor):
             params = torch.zeros_like(valid_params)
@@ -406,7 +407,7 @@ class Module(Node):
                 for param, value in zip(dynamic_params, valid_params):
                     params.append(param.from_valid(value))
             elif len(valid_params) == len(self.dynamic_modules):
-                for module, value in zip(self.dynamic_modules.values(), valid_params):
+                for module, value in zip(self.dynamic_modules, valid_params):
                     params.append(module.from_valid(value, local=True))
             else:
                 raise FillDynamicParamsSequenceError(
@@ -415,11 +416,9 @@ class Module(Node):
         elif isinstance(valid_params, Mapping):
             params = {}
             for key in valid_params:
-                if key in self.dynamic_modules:
-                    params[key] = self.dynamic_modules[key].from_valid(
-                        valid_params[key], local=True
-                    )
-                elif key in self.children and self[key].dynamic:
+                if key in self.children and isinstance(self[key], Module) and self[key].dynamic:
+                    params[key] = self[key].from_valid(valid_params[key], local=True)
+                elif key in self.children and isinstance(self[key], Param) and self[key].dynamic:
                     params[key] = self[key].from_valid(valid_params[key])
                 else:
                     raise FillDynamicParamsMappingError(
