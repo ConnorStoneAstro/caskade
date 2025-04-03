@@ -159,15 +159,17 @@ def test_dynamic_value():
     x = torch.tensor([0.1, 0.2])
     print(p0)
     assert len(p0) == 2
-    s1, s2 = p0.keys()
-    assert len(p0[s1]) in [1, 2]
-    assert len(p0[s2]) in [1, 2]
-    assert len(p0[s1]) != len(p0[s2])
+    assert p0["c"].item() == 4.0
+    assert p0["m1"]["d"] == 2.0
+    assert p0["m1"]["f"] == 3.0
+    print(main1.m1.d.dynamic)
     assert torch.allclose(main1.testfun(x, p0), torch.tensor(18.8))
     assert torch.allclose(main1.testfun(x, p0), main1.testfun(x=x))
     p02 = {}
-    for k in p0:
-        p02[k] = {p: p0[k][p] * 2 for p in p0[k]}
+    p02["c"] = p0["c"] * 2
+    p02["m1"] = {}
+    p02["m1"]["d"] = p0["m1"]["d"] * 2
+    p02["m1"]["f"] = p0["m1"]["f"] * 2
     main1.fill_dynamic_values(p02)
     assert torch.allclose(main1.testfun(x=x), torch.tensor(28.8))
 

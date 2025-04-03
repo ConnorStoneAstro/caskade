@@ -78,9 +78,9 @@ class FillDynamicParamsMappingError(FillDynamicParamsError):
         if missing_key is not None:
             message = dedent(
                 f"""
-                Input params key "{missing_key}" not found in dynamic modules or children of: {name}. 
+                Input params key "{missing_key}" not found in children of: {name}. 
                 
-                Registered dynamic modules: 
+                All registered dynamic modules: 
                 {', '.join(repr(m) for m in dynamic_modules)}
 
                 Registered dynamic children:
