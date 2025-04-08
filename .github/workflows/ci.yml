@@ -89,9 +89,9 @@ jobs:
           ls -a
           cat .coverage
           coverage report -m
-#          coverage combine
           coverage xml
           coverage report -m
+#          coverage combine
         shell: bash
         env:
           CASKADE_BACKEND: object
