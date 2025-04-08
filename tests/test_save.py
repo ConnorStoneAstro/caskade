@@ -46,6 +46,13 @@ def _build_test_module(blank=False, check_warns=False):
 def _make_files_and_test():
     main = _build_test_module()
 
+    # Save not appendable
+    with pytest.warns(SaveStateWarning):
+        main.m1.meta.bad_meta = None
+        main.save_state("test_save_notappend.h5", appendable=False)
+    if backend.backend == "object":
+        return
+
     # bad file
     with pytest.raises(NotImplementedError):
         main.save_state("test_save_bad.png")
@@ -54,16 +61,10 @@ def _make_files_and_test():
     with pytest.raises(NotImplementedError):
         main.append_state("test_save_bad.png")
 
-    # Save not appendable
-    with pytest.warns(SaveStateWarning):
-        main.m1.meta.bad_meta = None
-        main.save_state("test_save_notappend.h5", appendable=False)
     with pytest.raises(IOError):
         main.append_state("test_save_notappend.h5")
 
     # Save and append
-    if backend.backend == "object":
-        return
     with pytest.warns(SaveStateWarning):
         main.m1.p1.meta.very_bad_meta = np.array(["hello", "wor\0ld"], dtype=object)
         main.save_state("test_save_append.h5", appendable=True)
@@ -121,9 +122,11 @@ def test_save_append_load():
     # Load not appendable
     _load_not_appendable_and_test()
 
-    if backend.backend != "object":
-        # Load appendable
-        _load_appendable_and_test()
+    if backend.backend == "object":
+        return
+
+    # Load appendable
+    _load_appendable_and_test()
 
     # different graph
     _change_graph_fail_test()

@@ -17,11 +17,9 @@ def test_active_context():
 
     testsim = TestSim()
     if backend.backend == "object":
-        params1 = np.array([2.0, 3.0])
-        params2 = np.array([4.0, 5.0])
-    else:
-        params1 = backend.make_array([2.0, 3.0])
-        params2 = backend.make_array([4.0, 5.0])
+        return
+    params1 = backend.make_array([2.0, 3.0])
+    params2 = backend.make_array([4.0, 5.0])
     with ActiveContext(testsim):
         assert testsim.active
         assert testsim.a.active

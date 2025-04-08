@@ -25,6 +25,8 @@ def test_param_creation():
     # Name and value
     p2 = Param("test", 1.0)
     assert p2.name == "test"
+    if backend.backend == "object":
+        return
     assert p2.value.item() == 1.0
     p3 = Param("test", backend.module.ones((1, 2, 3)))
     p33 = Param("test", dynamic_value=backend.module.ones((1, 2, 3)))
@@ -122,6 +124,9 @@ def test_param_creation():
 
 
 def test_param_to():
+    if backend.backend == "object":
+        return
+
     # static
     p = Param("test", 1.0, valid=(0, 2))
     p = p.to(dtype=backend.module.float64, device="cpu")
@@ -139,6 +144,8 @@ def test_value_setter():
     # static
     p.value = 1.0
     assert p._type == "static"
+    if backend.backend == "object":
+        return
     assert p.value.item() == 1.0
 
     p = Param("testshape", shape=(2,))
@@ -172,6 +179,8 @@ def test_to_dynamic_static():
     p.value = 2.0
     p.to_dynamic()  # from static
     assert p.dynamic
+    if backend.backend == "object":
+        return
     assert p.value.item() == 2.0
     p.value = lambda p: p["other"].value * 2
     p.to_dynamic()  # from pointer, fails

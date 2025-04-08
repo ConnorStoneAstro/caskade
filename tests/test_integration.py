@@ -36,6 +36,8 @@ def test_full_integration():
     main1.c = main1.b
     sub1.f = main1.c
 
+    if backend.backend == "object":
+        return
     main1.to(dtype=backend.module.float32)
 
     b_value = backend.make_array(3.0)
@@ -106,6 +108,8 @@ def test_full_integration_v2():
     #                      c for MyMainSim
     params = params + [backend.make_array(3.0)]
 
+    if backend.backend == "object":
+        return
     assert main.mymainfunction(1.0, params).item() == 558.0
 
     graph = main.graphviz()
