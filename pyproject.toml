@@ -49,6 +49,7 @@ dev = [
 torch = ["torch"]
 jax = ["jax", "jaxlib"]
 numpy = ["numpy"]
+object = []
 
 [tool.hatch.metadata.hooks.requirements_txt]
 files = ["requirements.txt"]

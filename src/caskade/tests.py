@@ -1,6 +1,4 @@
-import torch
-
-from caskade import Module, Param, forward
+from caskade import Module, Param, forward, backend
 
 __all__ = ("test",)
 
@@ -37,7 +35,9 @@ def _test_full_integration():
     main1.c = main1.b
     sub1.f = main1.c
 
-    b_value = torch.tensor(3.0)
+    if backend.backend == "object":
+        return
+    b_value = backend.make_array(3.0)
     res = main1.testfun(1.0, params=[b_value])
     assert res.item() == 13.0
 
