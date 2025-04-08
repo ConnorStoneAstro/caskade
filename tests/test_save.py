@@ -1,4 +1,4 @@
-from caskade import Module, Param, GraphError, SaveStateWarning, backend
+from caskade import Module, Param, GraphError, SaveStateWarning, backend, BackendError
 import numpy as np
 import gc
 
@@ -51,6 +51,10 @@ def _make_files_and_test():
         main.m1.meta.bad_meta = None
         main.save_state("test_save_notappend.h5", appendable=False)
     if backend.backend == "object":
+        with pytest.raises(BackendError):
+            main.save_state("test_save_badappend.h5", appendable=True)
+        with pytest.raises(BackendError):
+            main.append_state("test_save_badappend.h5")
         return
 
     # bad file

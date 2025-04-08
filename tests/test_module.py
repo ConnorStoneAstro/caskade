@@ -1,4 +1,4 @@
-import torch
+import numpy as np
 
 from caskade import (
     Module,
@@ -8,6 +8,7 @@ from caskade import (
     InvalidValueWarning,
     forward,
     backend,
+    BackendError,
 )
 
 import pytest
@@ -119,6 +120,14 @@ def test_dynamic_value():
     assert not main1.all_dynamic_value
     main1.b = backend.make_array([1.0, 2.0])
     if backend.backend == "object":
+        with pytest.raises(BackendError):
+            main1.testfun(np.array([1.0, 2.0]), np.ones(3))
+        with pytest.raises(BackendError):
+            main1.build_params_array()
+        x = main1.to_valid(np.array([1, 2, 3]))
+        assert x[1] == 2.0
+        x = main1.from_valid(x)
+        assert x[1] == 2.0
         return
     # Try to get auto params when not all dynamic values available
     with pytest.raises(ParamConfigurationError):

@@ -25,6 +25,10 @@ def test_param_creation():
     p2 = Param("test", 1.0)
     assert p2.name == "test"
     if backend.backend == "object":
+        with pytest.raises(ParamTypeError):
+            p2.shape = (1, 2, 3)
+        assert p2.shape is None
+        p2 = p2.to()
         return
     assert p2.value.item() == 1.0
     p3 = Param("test", backend.module.ones((1, 2, 3)))
