@@ -356,7 +356,7 @@ class Param(Node):
             elif appendable:
                 value = backend.to_numpy(self.value.reshape(1, *self.value.shape))
             else:
-                value = backend.to_numpy(self.value.detach())
+                value = backend.to_numpy(self.value)
             if appendable:
                 self._h5group.create_dataset(
                     "value",

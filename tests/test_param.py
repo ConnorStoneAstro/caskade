@@ -266,6 +266,8 @@ def test_valid():
         p.valid = (0, 1, 2)
     with pytest.raises(ParamConfigurationError):
         p.valid = [0, 1]
+
+    print(p.valid)
     with pytest.warns(InvalidValueWarning):
         p.value = -1
     with pytest.warns(InvalidValueWarning):

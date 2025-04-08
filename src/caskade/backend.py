@@ -46,36 +46,51 @@ class Backend:
         self._array_type = self._array_type_torch
         self.concatenate = self._concatenate_torch
         self.copy = self._copy_torch
+        self.detach = self._detach_torch
+        self.tolist = self._tolist_torch
+        self.view = self._view_torch
         self.zeros_like = self._zeros_like_torch
         self.as_array = self._as_array_torch
         self.to = self._to_torch
         self.to_numpy = self._to_numpy_torch
+        self.atan = self._atan_torch
 
     def setup_jax(self):
         self.make_array = self._make_array_jax
         self._array_type = self._array_type_jax
         self.concatenate = self._concatenate_jax
         self.copy = self._copy_jax
+        self.detach = self._detach_jax
+        self.tolist = self._tolist_jax
+        self.view = self._view_jax
         self.zeros_like = self._zeros_like_jax
         self.as_array = self._as_array_jax
         self.to = self._to_jax
         self.to_numpy = self._to_numpy_jax
+        self.atan = self._atan_jax
 
     def setup_numpy(self):
         self.make_array = self._make_array_numpy
         self._array_type = self._array_type_numpy
         self.concatenate = self._concatenate_numpy
         self.copy = self._copy_numpy
+        self.detach = self._detach_numpy
+        self.tolist = self._tolist_numpy
+        self.view = self._view_numpy
         self.zeros_like = self._zeros_like_numpy
         self.as_array = self._as_array_numpy
         self.to = self._to_numpy
         self.to_numpy = self._to_numpy_numpy
+        self.atan = self._atan_numpy
 
     def setup_object(self):
         self.make_array = self._make_array_object
         self._array_type = self._array_type_object
         self.concatenate = None
         self.copy = self._copy_object
+        self.detach = self._detach_object
+        self.tolist = None
+        self.view = None
         self.zeros_like = None
         self.as_array = self._as_array_object
         self.to = None
@@ -89,7 +104,7 @@ class Backend:
         return self.module.tensor(array, dtype=dtype, device=device)
 
     def _make_array_jax(self, array, dtype=None, **kwargs):
-        return self.module.numpy.array(array, dtype=dtype)
+        return self.module.array(array, dtype=dtype)
 
     def _make_array_numpy(self, array, dtype=None, **kwargs):
         return self.module.array(array, dtype=dtype)
@@ -101,7 +116,7 @@ class Backend:
         return self.module.Tensor
 
     def _array_type_jax(self):
-        return self.module.numpy.ndarray
+        return self.module.ndarray
 
     def _array_type_numpy(self):
         return self.module.ndarray
@@ -113,7 +128,7 @@ class Backend:
         return self.module.cat(arrays, dim=axis)
 
     def _concatenate_jax(self, arrays, axis=0):
-        return self.module.numpy.concatenate(arrays, axis=axis)
+        return self.module.concatenate(arrays, axis=axis)
 
     def _concatenate_numpy(self, arrays, axis=0):
         return self.module.concatenate(arrays, axis=axis)
@@ -122,13 +137,43 @@ class Backend:
         return array.detach().clone()
 
     def _copy_jax(self, array):
-        return self.module.numpy.copy(array)
+        return self.module.copy(array)
 
     def _copy_numpy(self, array):
         return self.module.copy(array)
 
     def _copy_object(self, array):
         return copy(array)
+
+    def _detach_torch(self, array):
+        return array.detach()
+
+    def _detach_jax(self, array):
+        return array
+
+    def _detach_numpy(self, array):
+        return array
+
+    def _detach_object(self, array):
+        return array
+
+    def _tolist_torch(self, array):
+        return array.detach().cpu().tolist()
+
+    def _tolist_jax(self, array):
+        return array.block_until_ready().tolist()
+
+    def _tolist_numpy(self, array):
+        return array.tolist()
+
+    def _view_torch(self, array, shape):
+        return array.view(shape)
+
+    def _view_jax(self, array, shape):
+        return array.reshape(shape)
+
+    def _view_numpy(self, array, shape):
+        return array.reshape(shape)
 
     def _zeros_like_torch(self, array):
         return self.module.zeros_like(array)
@@ -143,7 +188,7 @@ class Backend:
         return self.module.as_tensor(array, dtype=dtype, device=device)
 
     def _as_array_jax(self, array, dtype=None, **kwargs):
-        return self.module.numpy.asarray(array, dtype=dtype)
+        return self.module.asarray(array, dtype=dtype)
 
     def _as_array_numpy(self, array, dtype=None, **kwargs):
         return self.module.asarray(array, dtype=dtype)
@@ -184,8 +229,14 @@ class Backend:
     def tan(self, array):
         return self.module.tan(array)
 
-    def atan(self, array):
+    def _atan_torch(self, array):
         return self.module.atan(array)
+
+    def _atan_jax(self, array):
+        return self.module.arctan(array)
+
+    def _atan_numpy(self, array):
+        return self.module.arctan(array)
 
     def sqrt(self, array):
         return self.module.sqrt(array)

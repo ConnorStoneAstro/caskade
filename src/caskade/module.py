@@ -188,12 +188,12 @@ class Module(Node):
                 # Handle scalar parameters
                 size = max(1, prod(param.shape))
                 try:
-                    val = params[..., pos : pos + size].view(B + param.shape)
+                    val = backend.view(params[..., pos : pos + size], B + param.shape)
                     if dynamic_values:
                         param.dynamic_value = val
                     else:
                         param._value = val
-                except (RuntimeError, IndexError):
+                except (RuntimeError, IndexError, ValueError):
                     raise FillDynamicParamsArrayError(self.name, params, dynamic_params)
 
                 pos += size
@@ -332,7 +332,7 @@ class Module(Node):
         for link, child in self.children.items():
             if isinstance(child, Param) and child.dynamic and child not in unique_params:
                 unique_params.add(child)
-                params[link] = child.value.detach()
+                params[link] = backend.copy(child.value)
         for link, child in self.children.items():
             if isinstance(child, Module) and len(child.dynamic_params) > 0:
                 params[link] = child._recursive_build_params_dict(unique_params=unique_params)
@@ -360,9 +360,10 @@ class Module(Node):
             for param in dynamic_params:
                 size = max(1, prod(param.shape))  # Handle scalar parameters
                 return_shape = params[..., pos : pos + size].shape
-                valid_params[..., pos : pos + size] = param.to_valid(
-                    params[..., pos : pos + size].view(B + param.shape)
-                ).view(return_shape)
+                valid_params[..., pos : pos + size] = backend.view(
+                    param.to_valid(backend.view(params[..., pos : pos + size], B + param.shape)),
+                    return_shape,
+                )
                 pos += size
         elif isinstance(params, Sequence):
             valid_params = []
@@ -408,9 +409,12 @@ class Module(Node):
             for param in dynamic_params:
                 size = max(1, prod(param.shape))
                 return_shape = valid_params[..., pos : pos + size].shape
-                params[..., pos : pos + size] = param.from_valid(
-                    valid_params[..., pos : pos + size].view(B + param.shape)
-                ).view(return_shape)
+                params[..., pos : pos + size] = backend.view(
+                    param.from_valid(
+                        backend.view(valid_params[..., pos : pos + size], B + param.shape)
+                    ),
+                    return_shape,
+                )
                 pos += size
         elif isinstance(valid_params, Sequence):
             params = []

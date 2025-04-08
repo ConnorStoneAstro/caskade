@@ -1,5 +1,3 @@
-import torch
-
 from caskade import (
     Module,
     Param,
@@ -28,7 +26,7 @@ def test_forward():
         @forward
         def testfun(self, x, a=None, b=None, c=None):
             y = self.m1(live_c=c + x)
-            return x + a + b + y.unsqueeze(-1)
+            return x + a + b + y[..., None]
 
     class TestSubSim(Module):
         def __init__(self, d=None, e=None, f=None):
@@ -72,7 +70,7 @@ def test_forward():
     with ValidContext(main1):
         valid_result = main1.testfun(1.0, params=main1.to_valid(params))
         assert valid_result.shape == (2, 2)
-        assert torch.all(valid_result == result).item()
+        assert backend.all(valid_result == result).item()
     # Wrong number of params, too few
     with pytest.raises(FillDynamicParamsSequenceError):
         result = main1.testfun(1.0, params=params[:3])
@@ -97,20 +95,20 @@ def test_forward():
     assert result.shape == (2, 2)
     # valid context
     for param1, param2 in zip(main1.from_valid(main1.to_valid(params)), params):
-        assert torch.all(param1 == param2).item()
+        assert backend.all(param1 == param2).item()
     with ValidContext(main1):
         valid_result = main1.testfun(1.0, params=main1.to_valid(params))
         assert valid_result.shape == (2, 2)
-        assert torch.all(valid_result == result).item()
+        assert backend.all(valid_result == result).item()
 
     # Tensor as params
-    params = torch.cat(tuple(p.flatten() for p in params))
+    params = backend.concatenate(tuple(p.flatten() for p in params))
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
     result = main1.testfun(1.0, params)
     assert result.shape == (2, 2)
     # valid context
-    assert torch.all(main1.from_valid(main1.to_valid(params)) == params).item()
+    assert backend.all(main1.from_valid(main1.to_valid(params)) == params).item()
     with ValidContext(main1):
         valid_result = main1.testfun(1.0, params=main1.to_valid(params))
         assert valid_result.shape == (2, 2)
@@ -123,17 +121,17 @@ def test_forward():
         result = main1.testfun(1.0, backend.concatenate((params, params)))
 
     # Batched tensor as params
-    params = params.repeat(3, 1).unsqueeze(1)
-    result = main1.testfun(torch.tensor((1.0, 1.0)), params=params)
+    params = backend.module.stack([params] * 3, axis=0)[:, None]  # shape (3, 1, nparams)
+    result = main1.testfun(backend.make_array((1.0, 1.0)), params=params)
     assert result.shape == (3, 3, 2, 2)
-    result = main1.testfun(torch.tensor((1.0, 1.0)), params)
+    result = main1.testfun(backend.make_array((1.0, 1.0)), params)
     assert result.shape == (3, 3, 2, 2)
     # valid context
-    assert torch.all(main1.from_valid(main1.to_valid(params)) == params).item()
+    assert backend.all(main1.from_valid(main1.to_valid(params)) == params).item()
     with ValidContext(main1):
         valid_result = main1.testfun(1.0, params=main1.to_valid(params))
         assert valid_result.shape == (3, 3, 2, 2)
-        assert torch.all(valid_result == result).item()
+        assert backend.all(valid_result == result).item()
 
     # Dict as params, sub element is tensor
     params = {"b": backend.module.ones((2, 2)), "m1": backend.make_array((3.0, 4.0, 1.0))}
