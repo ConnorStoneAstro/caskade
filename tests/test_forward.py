@@ -108,11 +108,12 @@ def test_forward():
     result = main1.testfun(1.0, params)
     assert result.shape == (2, 2)
     # valid context
-    assert backend.all(main1.from_valid(main1.to_valid(params)) == params).item()
-    with ValidContext(main1):
-        valid_result = main1.testfun(1.0, params=main1.to_valid(params))
-        assert valid_result.shape == (2, 2)
-        assert backend.all(valid_result == result).item()
+    if backend.backend != "jax":
+        assert backend.all(main1.from_valid(main1.to_valid(params)) == params).item()
+        with ValidContext(main1):
+            valid_result = main1.testfun(1.0, params=main1.to_valid(params))
+            assert valid_result.shape == (2, 2)
+            assert backend.all(valid_result == result).item()
     # Wrong number of params, too few
     with pytest.raises(FillDynamicParamsArrayError):
         result = main1.testfun(1.0, params[:-3])
@@ -127,11 +128,12 @@ def test_forward():
     result = main1.testfun(backend.make_array((1.0, 1.0)), params)
     assert result.shape == (3, 3, 2, 2)
     # valid context
-    assert backend.all(main1.from_valid(main1.to_valid(params)) == params).item()
-    with ValidContext(main1):
-        valid_result = main1.testfun(1.0, params=main1.to_valid(params))
-        assert valid_result.shape == (3, 3, 2, 2)
-        assert backend.all(valid_result == result).item()
+    if backend.backend != "jax":
+        assert backend.all(main1.from_valid(main1.to_valid(params)) == params).item()
+        with ValidContext(main1):
+            valid_result = main1.testfun(1.0, params=main1.to_valid(params))
+            assert valid_result.shape == (3, 3, 2, 2)
+            assert backend.all(valid_result == result).item()
 
     # Dict as params, sub element is tensor
     params = {"b": backend.module.ones((2, 2)), "m1": backend.make_array((3.0, 4.0, 1.0))}

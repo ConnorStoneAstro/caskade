@@ -4,6 +4,7 @@ from typing import Annotated
 from copy import copy
 
 from torch import Tensor
+import numpy as np
 
 ArrayLike = Annotated[
     Tensor,
@@ -209,7 +210,7 @@ class Backend:
         return array.detach().cpu().numpy()
 
     def _to_numpy_jax(self, array):
-        return array.block_until_ready().to_py()
+        return np.array(array.block_until_ready())
 
     def _to_numpy_numpy(self, array):
         return array
