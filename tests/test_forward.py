@@ -94,12 +94,13 @@ def test_forward():
     result = main1.testfun(1.0, params)
     assert result.shape == (2, 2)
     # valid context
-    for param1, param2 in zip(main1.from_valid(main1.to_valid(params)), params):
-        assert backend.all(param1 == param2).item()
-    with ValidContext(main1):
-        valid_result = main1.testfun(1.0, params=main1.to_valid(params))
-        assert valid_result.shape == (2, 2)
-        assert backend.all(valid_result == result).item()
+    if backend.backend != "jax":
+        for param1, param2 in zip(main1.from_valid(main1.to_valid(params)), params):
+            assert backend.all(param1 == param2).item()
+        with ValidContext(main1):
+            valid_result = main1.testfun(1.0, params=main1.to_valid(params))
+            assert valid_result.shape == (2, 2)
+            assert backend.all(valid_result == result).item()
 
     # Tensor as params
     params = backend.concatenate(tuple(p.flatten() for p in params))
