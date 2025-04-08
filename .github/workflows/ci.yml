@@ -71,8 +71,11 @@ jobs:
 
       - name: Test with pytest
         run: |
-          export CASKADE_BACKEND=${{ matrix.backend }}
+          echo "Running tests for backend: ${{ matrix.backend }}"
           pytest -vvv --cov=${{ env.PROJECT_NAME }} --cov-report=xml --cov-report=term tests/
+        shell: bash
+        env:
+          CASKADE_BACKEND: ${{ matrix.backend }}
 
       - name: Upload coverage reports to Codecov with GitHub Action
         if:
