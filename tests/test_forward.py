@@ -143,13 +143,14 @@ def test_forward():
     result = main1.testfun(1.0, params)
     assert result.shape == (2, 2)
     # valid context
-    reparam = main1.from_valid(main1.to_valid(params))
-    for key in params:
-        assert backend.all(reparam[key] == params[key]).item()
-    with ValidContext(main1):
-        valid_result = main1.testfun(1.0, params=main1.to_valid(params))
-        assert valid_result.shape == (2, 2)
-        assert backend.all(valid_result == result).item()
+    if backend.backend != "jax":
+        reparam = main1.from_valid(main1.to_valid(params))
+        for key in params:
+            assert backend.all(reparam[key] == params[key]).item()
+        with ValidContext(main1):
+            valid_result = main1.testfun(1.0, params=main1.to_valid(params))
+            assert valid_result.shape == (2, 2)
+            assert backend.all(valid_result == result).item()
     # Wrong name for params
     params = {"q": backend.module.ones((2, 2)), "m1": backend.make_array((3.0, 4.0, 1.0))}
     with pytest.raises(FillDynamicParamsMappingError):

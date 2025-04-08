@@ -193,7 +193,7 @@ class Module(Node):
                         param.dynamic_value = val
                     else:
                         param._value = val
-                except (RuntimeError, IndexError, ValueError):
+                except (RuntimeError, IndexError, ValueError, TypeError):
                     raise FillDynamicParamsArrayError(self.name, params, dynamic_params)
 
                 pos += size
