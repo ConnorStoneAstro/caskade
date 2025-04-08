@@ -24,6 +24,8 @@ class Backend:
     def backend(self, backend):
         if backend is None:
             self._backend = os.getenv("CASKADE_BACKEND", "torch")
+        else:
+            self._backend = backend
         self.module = self._load_backend(self._backend)
 
     def _load_backend(self, backend):
