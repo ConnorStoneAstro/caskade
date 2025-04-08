@@ -46,6 +46,9 @@ dev = [
     "graphviz>=0.17,<1",
     "h5py>=3.11,<4",
 ]
+torch = ["torch"]
+jax = ["jax", "jaxlib"]
+numpy = ["numpy"]
 
 [tool.hatch.metadata.hooks.requirements_txt]
 files = ["requirements.txt"]

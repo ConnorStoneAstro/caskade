@@ -1,5 +1,5 @@
-from caskade import Module, Param, forward, ActiveContext, OverrideParam
-import torch
+from caskade import Module, Param, forward, ActiveContext, OverrideParam, backend
+import numpy as np
 
 
 def test_active_context():
@@ -16,9 +16,12 @@ def test_active_context():
             return a + b + c
 
     testsim = TestSim()
-
-    params1 = torch.tensor([2.0, 3.0])
-    params2 = torch.tensor([4.0, 5.0])
+    if backend.backend == "object":
+        params1 = np.array([2.0, 3.0])
+        params2 = np.array([4.0, 5.0])
+    else:
+        params1 = backend.make_array([2.0, 3.0])
+        params2 = backend.make_array([4.0, 5.0])
     with ActiveContext(testsim):
         assert testsim.active
         assert testsim.a.active
@@ -39,6 +42,9 @@ def test_active_context():
 
 def test_override_param():
 
+    if backend.backend == "object":
+        return
+
     class TestSim(Module):
         def __init__(self):
             super().__init__()
@@ -46,7 +52,7 @@ def test_override_param():
             self.b = Param("b", lambda p: p["a"].value)
             self.b.link(self.a)
             self.c = Param("c", None)
-            self.a_vals = (torch.tensor(1.0), torch.tensor(2.0))
+            self.a_vals = (backend.make_array(1.0), backend.make_array(2.0))
 
         @forward
         def testsubfunc(self, a, b, c):
@@ -55,7 +61,7 @@ def test_override_param():
         @forward
         def testfunc(self):
             d = self.testsubfunc()
-            d = d + self.testsubfunc(a=torch.tensor(4.0))
+            d = d + self.testsubfunc(a=backend.make_array(4.0))
             with OverrideParam(self.a, self.a_vals[0]):
                 d = d + self.b.value
             with OverrideParam(self.a, self.a_vals[1]):
@@ -63,5 +69,5 @@ def test_override_param():
             return d
 
     testsim = TestSim()
-    assert testsim.testfunc(torch.tensor([5.0])).item() == 27.0
+    assert testsim.testfunc(backend.make_array([5.0])).item() == 27.0
     assert testsim.a.value.item() == 3.0

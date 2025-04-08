@@ -2,17 +2,19 @@ from typing import Sequence, Mapping, Optional, Union, Any
 from math import prod
 
 from torch import Tensor
-import torch
+from numpy import ndarray
 
+from .backend import backend, ArrayLike
 from .base import Node
 from .param import Param
 from .collection import NodeTuple, NodeList
 from .errors import (
     ActiveStateError,
     ParamConfigurationError,
-    FillDynamicParamsTensorError,
+    FillDynamicParamsArrayError,
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
+    BackendError,
 )
 
 
@@ -143,7 +145,7 @@ class Module(Node):
                     n.to_static()
 
     def _fill_values(
-        self, params: Union[Tensor, Sequence, Mapping], local=False, dynamic_values=False
+        self, params: Union[ArrayLike, Sequence, Mapping], local=False, dynamic_values=False
     ):
         """
         Fill the dynamic parameters of the module with the input values from
@@ -151,19 +153,19 @@ class Module(Node):
 
         Parameters
         ----------
-        params: (Union[Tensor, Sequence, Mapping])
+        params: (Union[ArrayLike, Sequence, Mapping])
             The input values to fill the dynamic parameters with. The input can
-            be a Tensor, a Sequence, or a Mapping. If the input is a Tensor, the
-            values are filled in order of the dynamic parameters. `params`
-            should be a flattened tensor with all parameters concatenated in the
-            order of the dynamic parameters. If `len(params.shape)>1` then all
-            dimensions but the last one are considered batch dimensions. If the
-            input is a Sequence, the values are filled in order of the dynamic
-            parameters. If the input is a Mapping, the values are filled by
-            matching the keys of the Mapping to the names of the dynamic
-            parameters. Note that the system does not check for missing keys in
-            the dictionary, but you will get an error eventually if a value is
-            missing.
+            be an ArrayLike, a Sequence, or a Mapping. If the input is
+            array-like, the values are filled in order of the dynamic
+            parameters. `params` should be a flattened array-like object with
+            all parameters concatenated in the order of the dynamic parameters.
+            If `len(params.shape)>1` then all dimensions but the last one are
+            considered batch dimensions. If the input is a Sequence, the values
+            are filled in order of the dynamic parameters. If the input is a
+            Mapping, the values are filled by matching the keys of the Mapping
+            to the names of the dynamic parameters. Note that the system does
+            not check for missing keys in the dictionary, but you will get an
+            error eventually if a value is missing.
         """
 
         dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
@@ -173,7 +175,7 @@ class Module(Node):
         if self.valid_context and not local:
             params = self.from_valid(params)
 
-        if isinstance(params, Tensor):
+        if isinstance(params, backend.array_type) and backend.backend != "object":
             # check for batch dimension
             batch = len(params.shape) > 1
             B = tuple(params.shape[:-1]) if batch else ()
@@ -181,7 +183,7 @@ class Module(Node):
             for param in dynamic_params:
                 if not isinstance(param.shape, tuple):
                     raise ParamConfigurationError(
-                        f"Param {param.name} has no shape. dynamic parameters must have a shape to use Tensor input."
+                        f"Param {param.name} has no shape. dynamic parameters must have a shape to use {backend.array_type.__name__} input."
                     )
                 # Handle scalar parameters
                 size = max(1, prod(param.shape))
@@ -192,11 +194,11 @@ class Module(Node):
                     else:
                         param._value = val
                 except (RuntimeError, IndexError):
-                    raise FillDynamicParamsTensorError(self.name, params, dynamic_params)
+                    raise FillDynamicParamsArrayError(self.name, params, dynamic_params)
 
                 pos += size
             if pos != params.shape[-1]:
-                raise FillDynamicParamsTensorError(self.name, params, dynamic_params)
+                raise FillDynamicParamsArrayError(self.name, params, dynamic_params)
         elif isinstance(params, Sequence):
             if len(params) == len(dynamic_params):
                 for param, value in zip(dynamic_params, params):
@@ -231,30 +233,32 @@ class Module(Node):
                             self.name, self.children, self.dynamic_modules, missing_param=param
                         )
         else:
+            if isinstance(params, (Tensor, ndarray)) and backend.backend == "object":
+                raise BackendError("Cannot use ArrayLike operations when backend is 'object'")
             raise TypeError(
-                f"Input params type {type(params)} not supported. Should be Tensor, Sequence, or Mapping."
+                f"Input params type {type(params)} not supported. Should be {backend.array_type.__name__}, Sequence, or Mapping."
             )
 
-    def fill_params(self, params: Union[Tensor, Sequence, Mapping], local=False):
+    def fill_params(self, params: Union[ArrayLike, Sequence, Mapping], local=False):
         """
         Fill the dynamic parameters of the module with the input values from
         params.
 
         Parameters
         ----------
-        params: (Union[Tensor, Sequence, Mapping])
+        params: (Union[ArrayLike, Sequence, Mapping])
             The input values to fill the dynamic parameters with. The input can
-            be a Tensor, a Sequence, or a Mapping. If the input is a Tensor, the
-            values are filled in order of the dynamic parameters. `params`
-            should be a flattened tensor with all parameters concatenated in the
-            order of the dynamic parameters. If `len(params.shape)>1` then all
-            dimensions but the last one are considered batch dimensions. If the
-            input is a Sequence, the values are filled in order of the dynamic
-            parameters. If the input is a Mapping, the values are filled by
-            matching the keys of the Mapping to the names of the dynamic
-            parameters. Note that the system does not check for missing keys in
-            the dictionary, but you will get an error eventually if a value is
-            missing.
+            be an ArrayLike, a Sequence, or a Mapping. If the input is
+            array-like, the values are filled in order of the dynamic
+            parameters. `params` should be a flattened array-like object with
+            all parameters concatenated in the order of the dynamic parameters.
+            If `len(params.shape)>1` then all dimensions but the last one are
+            considered batch dimensions. If the input is a Sequence, the values
+            are filled in order of the dynamic parameters. If the input is a
+            Mapping, the values are filled by matching the keys of the Mapping
+            to the names of the dynamic parameters. Note that the system does
+            not check for missing keys in the dictionary, but you will get an
+            error eventually if a value is missing.
         """
         if not self.active:
             raise ActiveStateError(f"Module {self.name} must be active to fill params")
@@ -271,7 +275,7 @@ class Module(Node):
         for param in self.dynamic_params + self.pointer_params:
             param._value = None
 
-    def fill_kwargs(self, keys: tuple[str]) -> dict[str, Tensor]:
+    def fill_kwargs(self, keys: tuple[str]) -> dict[str, ArrayLike]:
         """
         Fill the kwargs for an ``@forward`` method with the values of the dynamic
         parameters. The requested keys are matched to names of ``Param`` objects
@@ -283,14 +287,14 @@ class Module(Node):
                 kwargs[key] = self[key].value
         return kwargs
 
-    def fill_dynamic_values(self, params: Union[Tensor, Sequence, Mapping], local=False):
+    def fill_dynamic_values(self, params: Union[ArrayLike, Sequence, Mapping], local=False):
         """Fill the dynamic values of the module with the input values from params."""
         if self.active:
             raise ActiveStateError(f"Cannot fill dynamic values when Module {self.name} is active")
 
         self._fill_values(params, local=local, dynamic_values=True)
 
-    def _check_dynamic_values(self, params_type: str = "Tensor"):
+    def _check_dynamic_values(self, params_type: str = "ArrayLike"):
         """Check if all dynamic values are set."""
         if not self.all_dynamic_value:
             bad_params = []
@@ -301,24 +305,26 @@ class Module(Node):
                 f"{self.name} Param(s) {bad_params} have no dynamic value, so the params {params_type} cannot be built. Set the `dynamic_value` attribute to use this feature."
             )
 
-    def build_params_tensor(self) -> Tensor:
-        """Return an input Tensor for this module's @forward methods by filling with dynamic values."""
+    def build_params_array(self) -> ArrayLike:
+        """Return an input array-like object for this module's @forward methods by filling with dynamic values."""
 
-        self._check_dynamic_values("Tensor")
+        if backend.backend == "object":
+            raise BackendError("Cannot use ArrayLike operations when backend is 'object'")
+        self._check_dynamic_values("ArrayLike")
         x = []
         for param in self.dynamic_params:
-            x.append(param.value.detach().flatten())
+            x.append(backend.copy(param.value).flatten())
         if len(x) == 0:
-            return torch.tensor([])
-        return torch.cat(x)
+            return backend.make_array([])
+        return backend.concatenate(x)
 
-    def build_params_list(self) -> list[Tensor]:
+    def build_params_list(self) -> list[ArrayLike]:
         """Return an input list for this module's @forward methods by filling with dynamic values."""
 
         self._check_dynamic_values("List")
         x = []
         for param in self.dynamic_params:
-            x.append(param.value.detach())
+            x.append(backend.copy(param.value))
         return x
 
     def _recursive_build_params_dict(self, unique_params: set):
@@ -332,7 +338,7 @@ class Module(Node):
                 params[link] = child._recursive_build_params_dict(unique_params=unique_params)
         return params
 
-    def build_params_dict(self) -> dict[str, Tensor]:
+    def build_params_dict(self) -> dict[str, ArrayLike]:
         """Return an input dict for this module's @forward methods by filling with dynamic values."""
 
         self._check_dynamic_values("Dict")
@@ -340,11 +346,14 @@ class Module(Node):
         x = self._recursive_build_params_dict(unique_params=unique_params)
         return x
 
-    def to_valid(self, params: Union[Tensor, Sequence, Mapping], local=False):
+    def to_valid(self, params: Union[ArrayLike, Sequence, Mapping], local=False):
         """Convert input params to valid params."""
+        if backend.backend == "object":
+            return params
+
         dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
-        if isinstance(params, Tensor):
-            valid_params = torch.zeros_like(params)
+        if isinstance(params, backend.array_type):
+            valid_params = backend.zeros_like(params)
             batch = len(params.shape) > 1
             B = tuple(params.shape[:-1]) if batch else ()
             pos = 0
@@ -380,17 +389,19 @@ class Module(Node):
                     )
         else:
             raise TypeError(
-                f"Input params type {type(params)} not supported. Should be Tensor, Sequence, or Mapping."
+                f"Input params type {type(params)} not supported. Should be {backend.array_type.__name__}, Sequence, or Mapping."
             )
         return valid_params
 
-    def from_valid(self, valid_params: Union[Tensor, Sequence, Mapping], local=False):
+    def from_valid(self, valid_params: Union[ArrayLike, Sequence, Mapping], local=False):
         """Convert valid params to input params."""
+        if backend.backend == "object":
+            return valid_params
 
         dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
 
-        if isinstance(valid_params, Tensor):
-            params = torch.zeros_like(valid_params)
+        if isinstance(valid_params, backend.array_type):
+            params = backend.zeros_like(valid_params)
             batch = len(valid_params.shape) > 1
             B = tuple(params.shape[:-1]) if batch else ()
             pos = 0
@@ -426,7 +437,7 @@ class Module(Node):
                     )
         else:
             raise TypeError(
-                f"Input params type {type(valid_params)} not supported. Should be Tensor, Sequence or Mapping."
+                f"Input params type {type(valid_params)} not supported. Should be {backend.array_type.__name__}, Sequence or Mapping."
             )
         return params
 

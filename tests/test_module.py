@@ -7,6 +7,7 @@ from caskade import (
     ParamConfigurationError,
     InvalidValueWarning,
     forward,
+    backend,
 )
 
 import pytest
@@ -80,7 +81,9 @@ def test_shared_param():
             return self.m1.test() + self.m2.test()
 
     c1 = CombineModules("c1", m1, m2)
-    assert c1.big_test([torch.tensor(1.0)]).item() == 4.0, "Shared parameter not working"
+    if backend.backend == "object":
+        return
+    assert c1.big_test([backend.make_array(1.0)]).item() == 4.0, "Shared parameter not working"
 
 
 @pytest.mark.filterwarnings("ignore")
@@ -97,7 +100,7 @@ def test_dynamic_value():
         @forward
         def testfun(self, x, a=None, b=None, c=None):
             y = self.m1(live_c=c + x)
-            return (a + b).prod() + y
+            return backend.module.prod(a + b) + y
 
     class TestSubSim(Module):
         def __init__(self, d=None, e=None, f=None):
@@ -108,16 +111,18 @@ def test_dynamic_value():
 
         @forward
         def __call__(self, d=None, e=None, live_c=None):
-            return d + e + live_c.sum()
+            return d + e + backend.sum(live_c)
 
     sub1 = TestSubSim(d=2.0, e=2.5, f=None)
     main1 = TestSim(a=1.0, b_shape=(2,), c=4.0, m1=sub1)
 
     assert not main1.all_dynamic_value
-    main1.b = torch.tensor([1.0, 2.0])
+    main1.b = backend.make_array([1.0, 2.0])
+    if backend.backend == "object":
+        return
     # Try to get auto params when not all dynamic values available
     with pytest.raises(ParamConfigurationError):
-        p00 = main1.build_params_tensor()
+        p00 = main1.build_params_array()
     with pytest.raises(ParamConfigurationError):
         p00 = main1.build_params_list()
     with pytest.raises(ParamConfigurationError):
@@ -133,45 +138,45 @@ def test_dynamic_value():
     assert main1.c._value is None
 
     # Auto tensor
-    p0 = main1.build_params_tensor()
-    x = torch.tensor([0.1, 0.2])
+    p0 = main1.build_params_array()
+    x = backend.make_array([0.1, 0.2])
     assert p0.shape == (3,)
-    assert torch.allclose(main1.testfun(x, p0), torch.tensor(18.8))
-    assert torch.allclose(main1.testfun(x, p0), main1.testfun(x=x))
+    assert backend.module.allclose(main1.testfun(x, p0), backend.make_array(18.8))
+    assert backend.module.allclose(main1.testfun(x, p0), main1.testfun(x=x))
     p02 = p0 * 2
     main1.fill_dynamic_values(p02)
-    assert torch.allclose(main1.testfun(x=x), torch.tensor(28.8))
+    assert backend.module.allclose(main1.testfun(x=x), backend.make_array(28.8))
     main1.fill_dynamic_values(p0)
 
     # Auto list
     p0 = main1.build_params_list()
-    x = torch.tensor([0.1, 0.2])
+    x = backend.make_array([0.1, 0.2])
     assert len(p0) == 3
-    assert torch.allclose(main1.testfun(x, p0), torch.tensor(18.8))
-    assert torch.allclose(main1.testfun(x, p0), main1.testfun(x=x))
+    assert backend.module.allclose(main1.testfun(x, p0), backend.make_array(18.8))
+    assert backend.module.allclose(main1.testfun(x, p0), main1.testfun(x=x))
     p02 = [p * 2 for p in p0]
     main1.fill_dynamic_values(p02)
-    assert torch.allclose(main1.testfun(x=x), torch.tensor(28.8))
+    assert backend.module.allclose(main1.testfun(x=x), backend.make_array(28.8))
     main1.fill_dynamic_values(p0)
 
     # Auto dict
     p0 = main1.build_params_dict()
-    x = torch.tensor([0.1, 0.2])
+    x = backend.make_array([0.1, 0.2])
     print(p0)
     assert len(p0) == 2
     assert p0["c"].item() == 4.0
     assert p0["m1"]["d"] == 2.0
     assert p0["m1"]["f"] == 3.0
     print(main1.m1.d.dynamic)
-    assert torch.allclose(main1.testfun(x, p0), torch.tensor(18.8))
-    assert torch.allclose(main1.testfun(x, p0), main1.testfun(x=x))
+    assert backend.module.allclose(main1.testfun(x, p0), backend.make_array(18.8))
+    assert backend.module.allclose(main1.testfun(x, p0), main1.testfun(x=x))
     p02 = {}
     p02["c"] = p0["c"] * 2
     p02["m1"] = {}
     p02["m1"]["d"] = p0["m1"]["d"] * 2
     p02["m1"]["f"] = p0["m1"]["f"] * 2
     main1.fill_dynamic_values(p02)
-    assert torch.allclose(main1.testfun(x=x), torch.tensor(28.8))
+    assert backend.module.allclose(main1.testfun(x=x), backend.make_array(28.8))
 
     # Check active state error
     with pytest.raises(ActiveStateError):
@@ -187,7 +192,7 @@ def test_dynamic_value():
     main1.c.to_static()
     main1.m1.d.to_static()
     main1.m1.f.to_static()
-    p0 = main1.build_params_tensor()
+    p0 = main1.build_params_array()
     assert p0.shape == (0,)
     p0 = main1.build_params_list()
     assert len(p0) == 0

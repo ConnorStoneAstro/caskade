@@ -1,4 +1,4 @@
-from caskade import Node, test, GraphError, NodeConfigurationError, ActiveContext
+from caskade import Node, test, GraphError, NodeConfigurationError
 
 import pytest
 

@@ -1,6 +1,8 @@
 from math import prod
 from textwrap import dedent
 
+from .backend import backend
+
 
 class CaskadeException(Exception):
     """Base class for all exceptions in ``caskade``."""
@@ -8,6 +10,10 @@ class CaskadeException(Exception):
 
 class GraphError(CaskadeException):
     """Class for graph exceptions in ``caskade``."""
+
+
+class BackendError(CaskadeException):
+    """Class for exceptions related to the backend in ``caskade``."""
 
 
 class LinkToAttributeError(GraphError):
@@ -34,14 +40,14 @@ class FillDynamicParamsError(CaskadeException):
     """Class for exceptions related to filling dynamic parameters in ``caskade``."""
 
 
-class FillDynamicParamsTensorError(FillDynamicParamsError):
-    """Class for exceptions related to filling dynamic parameters with a tensor in ``caskade``."""
+class FillDynamicParamsArrayError(FillDynamicParamsError):
+    """Class for exceptions related to filling dynamic parameters with ArrayLike objects in ``caskade``."""
 
     def __init__(self, name, input_params, dynamic_params):
         fullnumel = sum(max(1, prod(p.shape)) for p in dynamic_params)
         message = dedent(
             f"""
-            For flattened Tensor input, the (last) dim of the Tensor should
+            For flattened {backend.array_type.__name__} input, the (last) dim of the {backend.array_type.__name__} should
             equal the sum of all flattened dynamic params ({fullnumel}).
             Input params shape {input_params.shape} does not match dynamic
             params shape of: {name}. 

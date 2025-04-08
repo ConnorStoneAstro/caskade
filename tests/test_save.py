@@ -1,4 +1,4 @@
-from caskade import Module, Param, GraphError, SaveStateWarning
+from caskade import Module, Param, GraphError, SaveStateWarning, backend
 import numpy as np
 import gc
 
@@ -62,6 +62,8 @@ def _make_files_and_test():
         main.append_state("test_save_notappend.h5")
 
     # Save and append
+    if backend.backend == "object":
+        return
     with pytest.warns(SaveStateWarning):
         main.m1.p1.meta.very_bad_meta = np.array(["hello", "wor\0ld"], dtype=object)
         main.save_state("test_save_append.h5", appendable=True)
@@ -119,8 +121,9 @@ def test_save_append_load():
     # Load not appendable
     _load_not_appendable_and_test()
 
-    # Load appendable
-    _load_appendable_and_test()
+    if backend.backend != "object":
+        # Load appendable
+        _load_appendable_and_test()
 
     # different graph
     _change_graph_fail_test()

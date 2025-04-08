@@ -7,8 +7,9 @@ from caskade import (
     ValidContext,
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
-    FillDynamicParamsTensorError,
+    FillDynamicParamsArrayError,
     ParamConfigurationError,
+    backend,
 )
 
 import pytest
@@ -38,7 +39,7 @@ def test_forward():
 
         @forward
         def __call__(self, d=None, e=None, live_c=None):
-            return d + e + live_c.sum()
+            return d + e + backend.sum(live_c)
 
     sub1 = TestSubSim()
     main1 = TestSim(2.0, (2, 2), None, sub1)
@@ -52,8 +53,16 @@ def test_forward():
     with pytest.raises(ValueError):
         main1.testfun()
 
+    if backend.backend == "object":
+        return
+
     # List as params
-    params = [torch.ones((2, 2)), torch.tensor(3.0), torch.tensor(4.0), torch.tensor(1.0)]
+    params = [
+        backend.module.ones((2, 2)),
+        backend.make_array(3.0),
+        backend.make_array(4.0),
+        backend.make_array(1.0),
+    ]
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
     result = main1.testfun(1.0, params)
@@ -81,7 +90,7 @@ def test_forward():
         main1.from_valid(badparams)
 
     # List by children
-    params = [torch.ones((2, 2)).flatten(), torch.tensor([3.0, 4.0, 1.0])]
+    params = [backend.module.ones((2, 2)).flatten(), backend.make_array([3.0, 4.0, 1.0])]
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
     result = main1.testfun(1.0, params)
@@ -105,13 +114,13 @@ def test_forward():
     with ValidContext(main1):
         valid_result = main1.testfun(1.0, params=main1.to_valid(params))
         assert valid_result.shape == (2, 2)
-        assert torch.all(valid_result == result).item()
+        assert backend.all(valid_result == result).item()
     # Wrong number of params, too few
-    with pytest.raises(FillDynamicParamsTensorError):
+    with pytest.raises(FillDynamicParamsArrayError):
         result = main1.testfun(1.0, params[:-3])
     # Wrong number of params, too many
-    with pytest.raises(FillDynamicParamsTensorError):
-        result = main1.testfun(1.0, torch.cat((params, params)))
+    with pytest.raises(FillDynamicParamsArrayError):
+        result = main1.testfun(1.0, backend.concatenate((params, params)))
 
     # Batched tensor as params
     params = params.repeat(3, 1).unsqueeze(1)
@@ -127,7 +136,7 @@ def test_forward():
         assert torch.all(valid_result == result).item()
 
     # Dict as params, sub element is tensor
-    params = {"b": torch.ones((2, 2)), "m1": torch.tensor((3.0, 4.0, 1.0))}
+    params = {"b": backend.module.ones((2, 2)), "m1": backend.make_array((3.0, 4.0, 1.0))}
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
     result = main1.testfun(1.0, params)
@@ -135,13 +144,13 @@ def test_forward():
     # valid context
     reparam = main1.from_valid(main1.to_valid(params))
     for key in params:
-        assert torch.all(reparam[key] == params[key]).item()
+        assert backend.all(reparam[key] == params[key]).item()
     with ValidContext(main1):
         valid_result = main1.testfun(1.0, params=main1.to_valid(params))
         assert valid_result.shape == (2, 2)
-        assert torch.all(valid_result == result).item()
+        assert backend.all(valid_result == result).item()
     # Wrong name for params
-    params = {"q": torch.ones((2, 2)), "m1": torch.tensor((3.0, 4.0, 1.0))}
+    params = {"q": backend.module.ones((2, 2)), "m1": backend.make_array((3.0, 4.0, 1.0))}
     with pytest.raises(FillDynamicParamsMappingError):
         result = main1.testfun(1.0, params=params)
     with pytest.raises(FillDynamicParamsMappingError):
@@ -151,8 +160,8 @@ def test_forward():
 
     # Dict as params, sub element is list
     params = {
-        "b": torch.ones((2, 2)),
-        "m1": [torch.tensor(3.0), torch.tensor(4.0), torch.tensor(1.0)],
+        "b": backend.module.ones((2, 2)),
+        "m1": [backend.make_array(3.0), backend.make_array(4.0), backend.make_array(1.0)],
     }
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
@@ -162,12 +171,16 @@ def test_forward():
     with ValidContext(main1):
         valid_result = main1.testfun(1.0, params=main1.to_valid(params))
         assert valid_result.shape == (2, 2)
-        assert torch.all(valid_result == result).item()
+        assert backend.all(valid_result == result).item()
 
     # Dict as params, sub element is dict
     params = {
-        "b": torch.ones((2, 2)),
-        "m1": {"d": torch.tensor(3.0), "e": torch.tensor(4.0), "f": torch.tensor(1.0)},
+        "b": backend.module.ones((2, 2)),
+        "m1": {
+            "d": backend.make_array(3.0),
+            "e": backend.make_array(4.0),
+            "f": backend.make_array(1.0),
+        },
     }
     result = main1.testfun(1.0, params=params)
     assert result.shape == (2, 2)
@@ -177,20 +190,23 @@ def test_forward():
     with ValidContext(main1):
         valid_result = main1.testfun(1.0, params=main1.to_valid(params))
         assert valid_result.shape == (2, 2)
-        assert torch.all(valid_result == result).item()
+        assert backend.all(valid_result == result).item()
     # Missing param
     params = {
-        "b": torch.ones((2, 2)),
-        "m1": {"d": torch.tensor(3.0), "e": torch.tensor(4.0)},  # , "f": torch.tensor(1.0)
+        "b": backend.module.ones((2, 2)),
+        "m1": {
+            "d": backend.make_array(3.0),
+            "e": backend.make_array(4.0),
+        },  # , "f": backend.make_array(1.0)
     }
     with pytest.raises(FillDynamicParamsMappingError):
         result = main1.testfun(1.0, params=params)
 
     # All params static
-    main1.b = torch.ones((2, 2))
-    sub1.d = torch.tensor(3.0)
-    sub1.e = torch.tensor(4.0)
-    sub1.f = torch.tensor(1.0)
+    main1.b = backend.module.ones((2, 2))
+    sub1.d = backend.make_array(3.0)
+    sub1.e = backend.make_array(4.0)
+    sub1.f = backend.make_array(1.0)
     result = main1.testfun(1.0)
     assert result.shape == (2, 2)
     result = main1.testfun(1.0, [])
@@ -201,8 +217,8 @@ def test_forward():
     main1.b.dynamic_value = None
     main1.b.shape = None
     with pytest.raises(ParamConfigurationError):
-        main1.testfun(1.0, params=torch.ones(4))
-    result = main1.testfun(1.0, params=[torch.ones((2, 2))])
+        main1.testfun(1.0, params=backend.module.ones(4))
+    result = main1.testfun(1.0, params=[backend.module.ones((2, 2))])
     assert result.shape == (2, 2)
 
     # wrong parameter type
