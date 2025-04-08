@@ -73,6 +73,8 @@ jobs:
         run: |
           echo "Running tests for backend: ${{ matrix.backend }}"
           coverage run --source=${{ env.PROJECT_NAME }} -m pytest tests/
+          ls -a
+          cat .coverage
 #          pytest -vvv --cov=${{ env.PROJECT_NAME }} --cov-report=xml --cov-report=term tests/
         shell: bash
         env:
@@ -85,7 +87,9 @@ jobs:
           echo "Running extra coverage report for object checks"
           coverage run --append --source=${{ env.PROJECT_NAME }} -m pytest tests/
           ls -a
-          coverage combine
+          cat .coverage
+          coverage report -m
+#          coverage combine
           coverage xml
           coverage report -m
         shell: bash
