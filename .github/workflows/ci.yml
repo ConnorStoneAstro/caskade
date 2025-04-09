@@ -92,7 +92,8 @@ jobs:
         if:
             ${{ matrix.python-version == '3.10' && matrix.os == 'ubuntu-latest' && matrix.backend == 'torch' }}
         run: |
-          echo "Running extra coverage report for object checks"
+          echo "Running extra coverage report for jax checks"
+          pip install jax jaxlib
           coverage run --append --source=${{ env.PROJECT_NAME }} -m pytest tests/
         shell: bash
         env:
@@ -101,7 +102,7 @@ jobs:
         if:
             ${{ matrix.python-version == '3.10' && matrix.os == 'ubuntu-latest' && matrix.backend == 'torch' }}
         run: |
-          echo "Running extra coverage report for object checks"
+          echo "Running extra coverage report for numpy checks"
           coverage run --append --source=${{ env.PROJECT_NAME }} -m pytest tests/
           ls -a
           cat .coverage
