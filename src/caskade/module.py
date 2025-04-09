@@ -162,7 +162,7 @@ class Module(Node):
                 and node[key].dynamic
                 and not isinstance(params[key], dict)
             ):
-                node[key]._fill_values(params[key], local=False, dynamic_values=dynamic_values)
+                node[key]._fill_values(params[key], local=True, dynamic_values=dynamic_values)
             elif key in node.children and isinstance(node[key], Node) and node[key].dynamic:
                 self._fill_dict(node[key], params[key], dynamic_values=dynamic_values)
             else:

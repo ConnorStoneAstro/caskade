@@ -238,13 +238,29 @@ def test_module_and_collection():
     S.p = Param("p")
     N = NodeTuple((Param("c"), S), name="N")
     M.lp = NodeTuple((Param("a"), Param("b"), Param("c"), S, N), name="lp")
+    D = Module("D")
+    S.d = D
+    D.p = Param("p")
+    D.p2 = Param("p2")
 
-    params = {"p": 1.0, "lp": {"a": 2.0, "b": 3.0, "c": 4.0, "S": {"p": 5.0}, "N": {"c": 6.0}}}
+    params = {
+        "p": 1.0,
+        "lp": {
+            "a": 2.0,
+            "b": 3.0,
+            "c": 4.0,
+            "S": {"p": 5.0, "d": {"p": 5.5, "p2": 5.75}},
+            "N": {"c": 6.0},
+        },
+    }
 
     with ActiveContext(M):
         M.fill_params(params)
 
-    params = {"p": 1.0, "lp": {"a": 2.0, "b": 3.0, "c": 4.0, "S": [5.0], "N": {"c": 6.0}}}
+    params = {
+        "p": 1.0,
+        "lp": {"a": 2.0, "b": 3.0, "c": 4.0, "S": [[5.0], {"p": 5.5, "p2": 5.75}], "N": {"c": 6.0}},
+    }
 
     with ActiveContext(M):
         M.fill_params(params)
