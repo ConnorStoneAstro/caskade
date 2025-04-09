@@ -1,6 +1,6 @@
 import torch
 
-from caskade import Module, Param, forward
+from caskade import Module, Param, forward, backend
 
 
 def test_full_integration():
@@ -15,7 +15,7 @@ def test_full_integration():
 
         @forward
         def testfun(self, x, b=None, c=None):
-            c.value = b + x
+            # c = b + x
             y = self.m1()
             return x + self.a + b + y
 
@@ -36,9 +36,11 @@ def test_full_integration():
     main1.c = main1.b
     sub1.f = main1.c
 
-    main1.to(dtype=torch.float32)
+    if backend.backend == "object":
+        return
+    main1.to(dtype=backend.module.float32)
 
-    b_value = torch.tensor(3.0)
+    b_value = backend.make_array(3.0)
     res = main1.testfun(1.0, params=[b_value])
     assert res.item() == 13.0
 
@@ -90,12 +92,12 @@ def test_full_integration_v2():
 
     util = MyUtilitySim("util")
     #                      u for MyUtilitySim
-    params = [torch.tensor(1.0)]
+    params = [backend.make_array(1.0)]
     actions = []
     for i in range(3):
         actions.append(MyActionSim(f"action_{i}", util))
         #                     a for MyActionSim, b for MyActionSim
-        params = params + [torch.tensor(i), torch.tensor(i + 1)]
+        params = params + [backend.make_array(i), backend.make_array(i + 1)]
 
     main = MyMainSim("main", util, actions)
 
@@ -104,8 +106,10 @@ def test_full_integration_v2():
     main.d_param.link("c", main.c_param)
 
     #                      c for MyMainSim
-    params = params + [torch.tensor(3.0)]
+    params = params + [backend.make_array(3.0)]
 
+    if backend.backend == "object":
+        return
     assert main.mymainfunction(1.0, params).item() == 558.0
 
     graph = main.graphviz()

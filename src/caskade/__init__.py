@@ -1,22 +1,24 @@
 from ._version import version as VERSION  # noqa
 
 from .base import Node
+from .backend import backend, ArrayLike
 from .context import ActiveContext, ValidContext, OverrideParam
 from .decorators import forward
 from .module import Module
 from .param import Param, dynamic
-from .collection import NodeList, NodeTuple
+from .collection import NodeCollection, NodeList, NodeTuple
 from .tests import test
 from .errors import (
     CaskadeException,
     GraphError,
+    BackendError,
     LinkToAttributeError,
     NodeConfigurationError,
     ParamConfigurationError,
     ParamTypeError,
     ActiveStateError,
     FillDynamicParamsError,
-    FillDynamicParamsTensorError,
+    FillDynamicParamsArrayError,
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
 )
@@ -28,9 +30,12 @@ __author__ = "Connor Stone and Alexandre Adam"
 
 __all__ = (
     "Node",
+    "backend",
+    "ArrayLike",
     "Module",
     "Param",
     "dynamic",
+    "NodeCollection",
     "NodeList",
     "NodeTuple",
     "ActiveContext",
@@ -40,13 +45,14 @@ __all__ = (
     "test",
     "CaskadeException",
     "GraphError",
+    "BackendError",
     "LinkToAttributeError",
     "NodeConfigurationError",
     "ParamConfigurationError",
     "ParamTypeError",
     "ActiveStateError",
     "FillDynamicParamsError",
-    "FillDynamicParamsTensorError",
+    "FillDynamicParamsArrayError",
     "FillDynamicParamsSequenceError",
     "FillDynamicParamsMappingError",
     "CaskadeWarning",

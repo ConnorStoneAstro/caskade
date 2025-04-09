@@ -1,5 +1,7 @@
 from textwrap import dedent
 
+from .backend import backend
+
 
 class CaskadeWarning(Warning):
     """Base warning for ``caskade``."""
@@ -11,7 +13,7 @@ class InvalidValueWarning(CaskadeWarning):
     def __init__(self, name, value, valid):
         message = dedent(
             f"""        
-            Value {value.detach().cpu().tolist()} for parameter "{name}" is outside the valid range ({valid[0].detach().cpu().tolist() if valid[0] is not None else "-inf"}, {valid[1].detach().cpu().tolist() if valid[1] is not None else "inf"}).
+            Value {backend.tolist(value)} for parameter "{name}" is outside the valid range ({backend.tolist(valid[0]) if valid[0] is not None else "-inf"}, {backend.tolist(valid[1]) if valid[1] is not None else "inf"}).
             Likely to cause errors or unexpected behavior!"""
         )
         super().__init__(message)

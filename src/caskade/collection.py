@@ -1,7 +1,45 @@
 from .base import Node
 
 
-class NodeTuple(tuple, Node):
+class NodeCollection(Node):
+    def to_dynamic(self, **kwargs):
+        for node in self:
+            if hasattr(node, "to_dynamic"):
+                node.to_dynamic(**kwargs)
+
+    def to_static(self, **kwargs):
+        for node in self:
+            if hasattr(node, "to_static"):
+                node.to_static(**kwargs)
+
+    def copy(self):
+        raise NotImplementedError
+
+    def deepcopy(self):
+        raise NotImplementedError
+
+    @property
+    def dynamic(self):
+        return any(node.dynamic for node in self)
+
+    @property
+    def static(self):
+        return not self.dynamic
+
+    def __mul__(self, other):
+        raise NotImplementedError
+
+    def __eq__(self, other):
+        return Node.__eq__(self, other)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.name})[{len(self)}]"
+
+    def __hash__(self):
+        return Node.__hash__(self)
+
+
+class NodeTuple(NodeCollection, tuple):
     graphviz_types = {"ntuple": {"style": "solid", "color": "black", "shape": "tab"}}
 
     def __init__(self, iterable=None, name=None):
@@ -14,36 +52,17 @@ class NodeTuple(tuple, Node):
                 raise TypeError(f"NodeTuple elements must be Node objects, not {type(node)}")
             self.link(node)
 
-    def to_dynamic(self, **kwargs):
-        for node in self:
-            if hasattr(node, "to_dynamic"):
-                node.to_dynamic(**kwargs)
-
-    def to_static(self, **kwargs):
-        for node in self:
-            if hasattr(node, "to_static"):
-                node.to_static(**kwargs)
-
     def __getitem__(self, key):
         if isinstance(key, str):
             return Node.__getitem__(self, key)
         return tuple.__getitem__(self, key)
 
-    def copy(self):
-        raise NotImplementedError
-
-    def deepcopy(self):
-        raise NotImplementedError
-
     def __add__(self, other):
         res = super().__add__(other)
         return NodeTuple(res)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.name})[{len(self)}]"
 
-
-class NodeList(list, Node):
+class NodeList(NodeCollection, list):
     graphviz_types = {"nlist": {"style": "solid", "color": "black", "shape": "folder"}}
 
     def __init__(self, iterable=(), name=None):
@@ -52,16 +71,6 @@ class NodeList(list, Node):
         self._type = "nlist"
 
         self._link_nodes()
-
-    def to_dynamic(self, **kwargs):
-        for node in self:
-            if hasattr(node, "to_dynamic"):
-                node.to_dynamic(**kwargs)
-
-    def to_static(self, **kwargs):
-        for node in self:
-            if hasattr(node, "to_static"):
-                node.to_static(**kwargs)
 
     def _unlink_nodes(self):
         for node in self:
@@ -93,12 +102,6 @@ class NodeList(list, Node):
         super().clear()
         self._link_nodes()
 
-    def copy(self):
-        raise NotImplementedError
-
-    def deepcopy(self):
-        raise NotImplementedError
-
     def pop(self, index=-1):
         self._unlink_nodes()
         node = super().pop(index)
@@ -114,7 +117,7 @@ class NodeList(list, Node):
         if isinstance(key, str):
             return Node.__getitem__(self, key)
         if isinstance(key, slice):
-            return NodeList(super().__getitem__(key), name=self.name)
+            return NodeList(list.__getitem__(self, key), name=self.name)
         return list.__getitem__(self, key)
 
     def __setitem__(self, key, value):
@@ -137,17 +140,5 @@ class NodeList(list, Node):
         self._link_nodes()
         return ret
 
-    def __mul__(self, other):
-        raise NotImplementedError
-
     def __imul__(self, other):
         raise NotImplementedError
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.name})[{len(self)}]"
-
-    def __eq__(self, other):
-        return Node.__eq__(self, other)
-
-    def __hash__(self):
-        return Node.__hash__(self)

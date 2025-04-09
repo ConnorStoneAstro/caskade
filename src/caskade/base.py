@@ -1,7 +1,8 @@
 from typing import Optional, Union, Any
 from warnings import warn
 
-from .errors import GraphError, NodeConfigurationError, LinkToAttributeError
+from .backend import backend
+from .errors import GraphError, NodeConfigurationError, LinkToAttributeError, BackendError
 from .warnings import SaveStateWarning
 
 
@@ -178,7 +179,7 @@ class Node:
 
     def to(self, device=None, dtype=None):
         """
-        Moves and/or casts the PyTorch values of the ``Node``.
+        Moves and/or casts the values of the ``Node`` to a particular device and/or dtype.
 
         Parameters
         ----------
@@ -218,6 +219,9 @@ class Node:
 
     def save_state(self, saveto: str, appendable: bool = False, save_meta: bool = True):
         """Save the state of the node and its children."""
+        if appendable and backend.backend == "object":
+            raise BackendError("Cannot make appendable HDF5 files with the 'object' backend")
+
         if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
             import h5py  # noqa
 
@@ -253,6 +257,9 @@ class Node:
 
     def append_state(self, saveto: str):
         """Append the state of the node and its children to an existing HDF5 file."""
+        if backend.backend == "object":
+            raise BackendError("Cannot append to HDF5 files with the 'object' backend")
+
         if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
             import h5py  # noqa
 

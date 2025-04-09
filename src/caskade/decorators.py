@@ -2,6 +2,7 @@ import inspect
 import functools
 from contextlib import ExitStack
 
+from .backend import backend
 from .context import ActiveContext, OverrideParam
 from .param import Param
 
@@ -74,7 +75,7 @@ def forward(method):
             params = args[-1]
             args = args[:-1]
         elif self.all_dynamic_value:
-            params = [p.value.detach() for p in self.dynamic_params]
+            params = [backend.detach(p.value) for p in self.dynamic_params]
         else:
             raise ValueError(
                 f"Params must be provided for a top level @forward method. Either by keyword 'method(params=params)' or as the last positional argument 'method(a, b, c, params)'"
