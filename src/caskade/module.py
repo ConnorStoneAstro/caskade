@@ -7,7 +7,7 @@ from numpy import ndarray
 from .backend import backend, ArrayLike
 from .base import Node
 from .param import Param
-from .collection import NodeTuple, NodeList
+from .collection import NodeCollection, NodeTuple, NodeList
 from .errors import (
     ActiveStateError,
     ParamConfigurationError,
@@ -97,6 +97,10 @@ class Module(Node):
         """Return True if the module has dynamic parameters"""
         return len(self.local_dynamic_params) > 0
 
+    @property
+    def static(self):
+        return not self.dynamic
+
     def to_dynamic(self, local_only=True, ignore_pointer=True, **kwargs):
         """Change all parameters to dynamic parameters. If the parameter has a
         value, this will be stored in the ``dynamic_value`` attribute.
@@ -143,6 +147,28 @@ class Module(Node):
             for n in self.topological_ordering(with_isinstance=Param):
                 if not (ignore_pointer and n.pointer):
                     n.to_static()
+
+    def _fill_dict(self, node, params, dynamic_values=False):
+
+        for key in params:
+            if key in node.children and isinstance(node[key], Param) and node[key].dynamic:
+                if dynamic_values:
+                    node[key].dynamic_value = params[key]
+                else:
+                    node[key]._value = params[key]
+            elif (
+                key in node.children
+                and isinstance(node[key], Module)
+                and node[key].dynamic
+                and not isinstance(params[key], dict)
+            ):
+                node[key]._fill_values(params[key], local=False, dynamic_values=dynamic_values)
+            elif key in node.children and isinstance(node[key], Node) and node[key].dynamic:
+                self._fill_dict(node[key], params[key], dynamic_values=dynamic_values)
+            else:
+                raise FillDynamicParamsMappingError(
+                    self.name, self.children, self.dynamic_modules, missing_key=key
+                )
 
     def _fill_values(
         self, params: Union[ArrayLike, Sequence, Mapping], local=False, dynamic_values=False
@@ -214,27 +240,20 @@ class Module(Node):
                     self.name, params, dynamic_params, self.dynamic_modules
                 )
         elif isinstance(params, Mapping):
-            for key in params:
-                if key in self.children and isinstance(self[key], Module) and self[key].dynamic:
-                    self[key]._fill_values(params[key], local=True, dynamic_values=dynamic_values)
-                elif key in self.children and isinstance(self[key], Param) and self[key].dynamic:
-                    if dynamic_values:
-                        self[key].dynamic_value = params[key]
-                    else:
-                        self[key]._value = params[key]
-                else:
+            self._fill_dict(self, params, dynamic_values=dynamic_values)
+            if local:
+                return
+            for param in dynamic_params:
+                if param.value is None:
                     raise FillDynamicParamsMappingError(
-                        self.name, self.children, self.dynamic_modules, missing_key=key
+                        self.name, self.children, self.dynamic_modules, missing_param=param
                     )
-            if not local:
-                for param in dynamic_params:
-                    if param.value is None:
-                        raise FillDynamicParamsMappingError(
-                            self.name, self.children, self.dynamic_modules, missing_param=param
-                        )
         else:
-            if isinstance(params, (Tensor, ndarray)) and backend.backend == "object":
-                raise BackendError("Cannot use ArrayLike operations when backend is 'object'")
+            try:
+                if params.dtype is not None and backend.backend == "object":
+                    raise BackendError("Cannot use ArrayLike operations when backend is 'object'")
+            except:
+                pass
             raise TypeError(
                 f"Input params type {type(params)} not supported. Should be {backend.array_type.__name__}, Sequence, or Mapping."
             )

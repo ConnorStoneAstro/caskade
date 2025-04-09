@@ -89,8 +89,8 @@ class FillDynamicParamsMappingError(FillDynamicParamsError):
                 All registered dynamic modules: 
                 {', '.join(repr(m) for m in dynamic_modules)}
 
-                Registered dynamic children:
-                {', '.join(repr(c) for c in children.values() if c.dynamic)}"""
+                Registered children:
+                {', '.join(repr(c) for c in children.values())}"""
             )
         else:
             message = dedent(
@@ -103,7 +103,7 @@ class FillDynamicParamsMappingError(FillDynamicParamsError):
                 Registered dynamic modules: 
                 {', '.join(repr(m) for m in dynamic_modules)}
 
-                Registered dynamic children:
-                {', '.join(repr(c) for c in children.values() if c.dynamic)}"""
+                Registered children:
+                {', '.join(repr(c) for c in children.values())}"""
             )
         super().__init__(message)

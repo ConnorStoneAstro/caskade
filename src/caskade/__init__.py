@@ -6,7 +6,7 @@ from .context import ActiveContext, ValidContext, OverrideParam
 from .decorators import forward
 from .module import Module
 from .param import Param, dynamic
-from .collection import NodeList, NodeTuple
+from .collection import NodeCollection, NodeList, NodeTuple
 from .tests import test
 from .errors import (
     CaskadeException,
@@ -35,6 +35,7 @@ __all__ = (
     "Module",
     "Param",
     "dynamic",
+    "NodeCollection",
     "NodeList",
     "NodeTuple",
     "ActiveContext",
