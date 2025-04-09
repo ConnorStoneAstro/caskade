@@ -372,18 +372,23 @@ class Module(Node):
 
         dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
         if isinstance(params, backend.array_type):
-            valid_params = backend.zeros_like(params)
+            valid_params = []  # backend.zeros_like(params)
             batch = len(params.shape) > 1
             B = tuple(params.shape[:-1]) if batch else ()
             pos = 0
             for param in dynamic_params:
                 size = max(1, prod(param.shape))  # Handle scalar parameters
                 return_shape = params[..., pos : pos + size].shape
-                valid_params[..., pos : pos + size] = backend.view(
-                    param.to_valid(backend.view(params[..., pos : pos + size], B + param.shape)),
-                    return_shape,
+                valid_params.append(
+                    backend.view(
+                        param.to_valid(
+                            backend.view(params[..., pos : pos + size], B + param.shape)
+                        ),
+                        return_shape,
+                    )
                 )
                 pos += size
+            valid_params = backend.concatenate(valid_params, axis=-1)
         elif isinstance(params, Sequence):
             valid_params = []
             if len(params) == len(dynamic_params):
@@ -421,20 +426,23 @@ class Module(Node):
         dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
 
         if isinstance(valid_params, backend.array_type):
-            params = backend.zeros_like(valid_params)
+            params = []  # backend.zeros_like(valid_params)
             batch = len(valid_params.shape) > 1
-            B = tuple(params.shape[:-1]) if batch else ()
+            B = tuple(valid_params.shape[:-1]) if batch else ()
             pos = 0
             for param in dynamic_params:
                 size = max(1, prod(param.shape))
                 return_shape = valid_params[..., pos : pos + size].shape
-                params[..., pos : pos + size] = backend.view(
-                    param.from_valid(
-                        backend.view(valid_params[..., pos : pos + size], B + param.shape)
-                    ),
-                    return_shape,
+                params.append(
+                    backend.view(
+                        param.from_valid(
+                            backend.view(valid_params[..., pos : pos + size], B + param.shape)
+                        ),
+                        return_shape,
+                    )
                 )
                 pos += size
+            params = backend.concatenate(params, axis=-1)
         elif isinstance(valid_params, Sequence):
             params = []
             if len(valid_params) == len(dynamic_params):

@@ -23,10 +23,9 @@ class Backend:
     @backend.setter
     def backend(self, backend):
         if backend is None:
-            self._backend = os.getenv("CASKADE_BACKEND", "torch")
-        else:
-            self._backend = backend
-        self.module = self._load_backend(self._backend)
+            backend = os.getenv("CASKADE_BACKEND", "torch")
+        self.module = self._load_backend(backend)
+        self._backend = backend
 
     def _load_backend(self, backend):
         if backend == "torch":
@@ -52,7 +51,6 @@ class Backend:
         self.detach = self._detach_torch
         self.tolist = self._tolist_torch
         self.view = self._view_torch
-        self.zeros_like = self._zeros_like_torch
         self.as_array = self._as_array_torch
         self.to = self._to_torch
         self.to_numpy = self._to_numpy_torch
@@ -66,7 +64,6 @@ class Backend:
         self.detach = self._detach_jax
         self.tolist = self._tolist_jax
         self.view = self._view_jax
-        self.zeros_like = self._zeros_like_jax
         self.as_array = self._as_array_jax
         self.to = self._to_jax
         self.to_numpy = self._to_numpy_jax
@@ -80,7 +77,6 @@ class Backend:
         self.detach = self._detach_numpy
         self.tolist = self._tolist_numpy
         self.view = self._view_numpy
-        self.zeros_like = self._zeros_like_numpy
         self.as_array = self._as_array_numpy
         self.to = self._to_numpy
         self.to_numpy = self._to_numpy_numpy
@@ -90,11 +86,10 @@ class Backend:
         self.make_array = self._make_array_object
         self._array_type = self._array_type_object
         self.concatenate = None
-        self.copy = self._copy_object
-        self.detach = self._detach_object
+        self.copy = None
+        self.detach = None
         self.tolist = None
         self.view = None
-        self.zeros_like = None
         self.as_array = self._as_array_object
         self.to = None
         self.to_numpy = self._to_numpy_object
@@ -145,9 +140,6 @@ class Backend:
     def _copy_numpy(self, array):
         return self.module.copy(array)
 
-    def _copy_object(self, array):
-        return copy(array)
-
     def _detach_torch(self, array):
         return array.detach()
 
@@ -155,9 +147,6 @@ class Backend:
         return array
 
     def _detach_numpy(self, array):
-        return array
-
-    def _detach_object(self, array):
         return array
 
     def _tolist_torch(self, array):
@@ -177,15 +166,6 @@ class Backend:
 
     def _view_numpy(self, array, shape):
         return array.reshape(shape)
-
-    def _zeros_like_torch(self, array):
-        return self.module.zeros_like(array)
-
-    def _zeros_like_jax(self, array):
-        return self.module.zeros_like(array)
-
-    def _zeros_like_numpy(self, array):
-        return self.module.zeros_like(array)
 
     def _as_array_torch(self, array, dtype=None, device=None):
         return self.module.as_tensor(array, dtype=dtype, device=device)
