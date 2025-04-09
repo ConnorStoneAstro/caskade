@@ -45,7 +45,13 @@ dev = [
     "pre-commit>=3.6,<4",
     "graphviz>=0.17,<1",
     "h5py>=3.11,<4",
+    "jax",
+    "jaxlib",
 ]
+torch = ["torch"]
+jax = ["jax", "jaxlib"]
+numpy = ["numpy"]
+object = []
 
 [tool.hatch.metadata.hooks.requirements_txt]
 files = ["requirements.txt"]

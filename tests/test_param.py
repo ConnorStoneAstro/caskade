@@ -1,5 +1,4 @@
 import pytest
-import torch
 
 from caskade import (
     Param,
@@ -10,6 +9,7 @@ from caskade import (
     InvalidValueWarning,
     LinkToAttributeError,
     dynamic,
+    backend,
 )
 
 
@@ -24,14 +24,20 @@ def test_param_creation():
     # Name and value
     p2 = Param("test", 1.0)
     assert p2.name == "test"
+    if backend.backend == "object":
+        with pytest.raises(ParamTypeError):
+            p2.shape = (1, 2, 3)
+        assert p2.shape is None
+        p2 = p2.to()
+        return
     assert p2.value.item() == 1.0
-    p3 = Param("test", torch.ones((1, 2, 3)))
-    p33 = Param("test", dynamic_value=torch.ones((1, 2, 3)))
-    assert torch.all(p3.value == p33.value)
-    p33v2 = Param("test", dynamic(torch.ones((3, 2, 1))))
+    p3 = Param("test", backend.module.ones((1, 2, 3)))
+    p33 = Param("test", dynamic_value=backend.module.ones((1, 2, 3)))
+    assert backend.all(p3.value == p33.value)
+    p33v2 = Param("test", dynamic(backend.module.ones((3, 2, 1))))
     assert p33v2.dynamic
     assert p33v2.value.shape == (3, 2, 1)
-    p33v3 = Param("test", dynamic_value=dynamic(torch.ones((3, 2, 1))))
+    p33v3 = Param("test", dynamic_value=dynamic(backend.module.ones((3, 2, 1))))
     assert p33v3.dynamic
     assert p33v3.value.shape == (3, 2, 1)
 
@@ -121,12 +127,15 @@ def test_param_creation():
 
 
 def test_param_to():
+    if backend.backend == "object":
+        return
+
     # static
     p = Param("test", 1.0, valid=(0, 2))
-    p = p.to(dtype=torch.float64, device="cpu")
+    p = p.to(dtype=backend.module.float64, device="cpu")
     # dynamic value
     p = Param("test", dynamic_value=1.0, valid=(0, 2))
-    p = p.to(dtype=torch.float64, device="cpu")
+    p = p.to(dtype=backend.module.float64, device="cpu")
 
 
 def test_value_setter():
@@ -138,6 +147,8 @@ def test_value_setter():
     # static
     p.value = 1.0
     assert p._type == "static"
+    if backend.backend == "object":
+        return
     assert p.value.item() == 1.0
 
     p = Param("testshape", shape=(2,))
@@ -171,6 +182,8 @@ def test_to_dynamic_static():
     p.value = 2.0
     p.to_dynamic()  # from static
     assert p.dynamic
+    if backend.backend == "object":
+        return
     assert p.value.item() == 2.0
     p.value = lambda p: p["other"].value * 2
     p.to_dynamic()  # from pointer, fails
@@ -209,42 +222,45 @@ def test_units():
 
 def test_valid():
     p = Param("test", valid=None)
-    v = torch.tensor(0.5)
+    if backend.backend == "object":
+        return
+
+    v = backend.make_array(0.5)
     assert p.to_valid(v) == v, "valid value should not change"
     assert p.from_valid(v) == v, "valid value should not change"
 
     p.valid = (0, None)
     assert p.to_valid(v) != v, "valid value should change"
     assert p.from_valid(v) != v, "valid value should change"
-    assert torch.all(
-        p.from_valid(torch.linspace(-1e4, 1e4, 101)) >= 0
+    assert backend.all(
+        p.from_valid(backend.module.linspace(-1e4, 1e4, 101)) >= 0
     ), "from_valid should map to valid range"
 
     p.valid = (None, 0)
     assert p.to_valid(v) != v, "valid value should change"
     assert p.from_valid(v) != v, "valid value should change"
-    assert torch.all(
-        p.from_valid(torch.linspace(-1e4, 1e4, 101)) <= 0
+    assert backend.all(
+        p.from_valid(backend.module.linspace(-1e4, 1e4, 101)) <= 0
     ), "from_valid should map to valid range"
 
     p.valid = (0, 1)
     assert p.to_valid(v) != v, "valid value should change"
     assert p.from_valid(v) != v, "valid value should change"
-    assert torch.all(
-        p.from_valid(torch.linspace(-1e4, 1e4, 101)) >= 0
+    assert backend.all(
+        p.from_valid(backend.module.linspace(-1e4, 1e4, 101)) >= 0
     ), "from_valid should map to valid range"
-    assert torch.all(
-        p.from_valid(torch.linspace(-1e4, 1e4, 101)) <= 1
+    assert backend.all(
+        p.from_valid(backend.module.linspace(-1e4, 1e4, 101)) <= 1
     ), "from_valid should map to valid range"
 
     p.cyclic = True
     assert p.to_valid(v) == v, "valid cyclic value should not change"
     assert p.from_valid(v) == v, "valid cyclic value should not change"
-    assert torch.all(
-        p.from_valid(torch.linspace(-1e4, 1e4, 101)) >= 0
+    assert backend.all(
+        p.from_valid(backend.module.linspace(-1e4, 1e4, 101)) >= 0
     ), "from_valid should map to valid range"
-    assert torch.all(
-        p.from_valid(torch.linspace(-1e4, 1e4, 101)) <= 1
+    assert backend.all(
+        p.from_valid(backend.module.linspace(-1e4, 1e4, 101)) <= 1
     ), "from_valid should map to valid range"
 
     p.value = 0.5
@@ -262,6 +278,8 @@ def test_valid():
         p.valid = (0, 1, 2)
     with pytest.raises(ParamConfigurationError):
         p.valid = [0, 1]
+
+    print(p.valid)
     with pytest.warns(InvalidValueWarning):
         p.value = -1
     with pytest.warns(InvalidValueWarning):

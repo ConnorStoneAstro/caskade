@@ -1,11 +1,11 @@
-from typing import Optional, Union, Callable
+from typing import Optional, Union, Callable, Any
 from warnings import warn
 import traceback
 from dataclasses import dataclass
 
-import torch
-from torch import Tensor, pi
+from torch import pi
 
+from .backend import backend, ArrayLike
 from .base import Node
 from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError
 from .warnings import InvalidValueWarning
@@ -31,7 +31,7 @@ class dynamic:
         print(t.a.dynamic) # True
     """
 
-    value: Union[Tensor, float, int] = None
+    value: Any = None
 
 
 class Param(Node):
@@ -39,7 +39,7 @@ class Param(Node):
     Node to represent a parameter in the graph.
 
     The ``Param`` object is used to represent a parameter in the graph. During
-    runtime this will represent a tensor value which can be used in various
+    runtime this will represent a value which can be used in various
     calculations. The ``Param`` object can be set to a constant value (``static``);
     ``None`` meaning the value is to be provided at runtime (``dynamic``); another
     ``Param`` object meaning it will take on that  value at runtime (``pointer``);
@@ -61,19 +61,19 @@ class Param(Node):
     ----------
     name: (str)
         The name of the parameter.
-    value: (Optional[Union[Tensor, float, int]], optional)
+    value: (Optional[Union[ArrayLike, float, int]], optional)
         The value of the parameter. Defaults to None meaning dynamic.
     shape: (Optional[tuple[int, ...]], optional)
         The shape of the parameter. Defaults to () meaning scalar.
     cyclic: (bool, optional)
         Whether the parameter is cyclic, such as a rotation from 0 to 2pi.
         Defaults to False.
-    valid: (Optional[tuple[Union[Tensor, float, int, None]]], optional)
+    valid: (Optional[tuple[Union[ArrayLike, float, int, None]]], optional)
         The valid range of the parameter. Defaults to None meaning all of -inf
         to inf is valid.
     units: (Optional[str], optional)
         The units of the parameter. Defaults to None.
-    dynamic_value: (Optional[Union[Tensor, float, int]], optional)
+    dynamic_value: (Optional[Union[ArrayLike, float, int]], optional)
         Allows the parameter to store a value while still dynamic (think of it
         as a default value).
     """
@@ -88,12 +88,12 @@ class Param(Node):
     def __init__(
         self,
         name: str,
-        value: Optional[Union[Tensor, float, int]] = None,
+        value: Optional[Union[ArrayLike, float, int]] = None,
         shape: Optional[tuple[int, ...]] = (),
         cyclic: bool = False,
-        valid: Optional[tuple[Union[Tensor, float, int, None]]] = None,
+        valid: Optional[tuple[Union[ArrayLike, float, int, None]]] = None,
         units: Optional[str] = None,
-        dynamic_value: Optional[Union[Tensor, float, int]] = None,
+        dynamic_value: Optional[Union[ArrayLike, float, int]] = None,
     ):
         super().__init__(name=name)
         if value is not None and dynamic_value is not None:
@@ -103,20 +103,28 @@ class Param(Node):
             value = None
         elif isinstance(dynamic_value, dynamic):
             dynamic_value = dynamic_value.value
-        elif value is None and dynamic_value is None:
+        elif value is None and dynamic_value is None and backend.backend != "object":
             if shape is None:
                 raise ParamConfigurationError("Either value or shape must be provided")
             if not isinstance(shape, (tuple, list)):
                 raise ParamConfigurationError("Shape must be a tuple")
             self.shape = tuple(shape)
-        elif not isinstance(value, (Param, Callable)) and value is not None:
-            value = torch.as_tensor(value)
+        elif (
+            not isinstance(value, (Param, Callable))
+            and value is not None
+            and backend.backend != "object"
+        ):
+            value = backend.as_array(value)
             if not (shape == () or shape is None or shape == value.shape):
                 raise ParamConfigurationError(
                     f"Shape {shape} does not match value shape {value.shape}"
                 )
-        elif not isinstance(dynamic_value, (Param, Callable)) and dynamic_value is not None:
-            dynamic_value = torch.as_tensor(dynamic_value)
+        elif (
+            not isinstance(dynamic_value, (Param, Callable))
+            and dynamic_value is not None
+            and backend.backend != "object"
+        ):
+            dynamic_value = backend.as_array(dynamic_value)
             if not (shape == () or shape is None or shape == dynamic_value.shape):
                 raise ParamConfigurationError(
                     f"Shape {shape} does not match dynamic value shape {dynamic_value.shape}"
@@ -194,18 +202,22 @@ class Param(Node):
 
     @property
     def shape(self) -> tuple:
+        if backend.backend == "object":
+            return None
         if self.pointer and self.value is not None:
             return self.value.shape
         return self._shape
 
     @shape.setter
     def shape(self, shape):
+        if backend.backend == "object":
+            raise ParamTypeError("Cannot set shape of parameter with backend 'object'")
         if self.pointer:
             raise ParamTypeError(f"Cannot set shape of parameter {self.name} with type 'pointer'")
         self._shape = shape
 
     @property
-    def dynamic_value(self) -> Union[Tensor, None]:
+    def dynamic_value(self) -> Union[ArrayLike, None]:
         return self._dynamic_value
 
     @dynamic_value.setter
@@ -233,8 +245,8 @@ class Param(Node):
         # Set to dynamic value
         self._type = "dynamic value"
         self._pointer_func = None
-        value = torch.as_tensor(value)
-        self.shape = value.shape
+        value = backend.as_array(value)
+        self._shape = value.shape if backend.backend != "object" else None
         self._dynamic_value = value
         self._value = None
         try:
@@ -245,7 +257,7 @@ class Param(Node):
         self.update_graph()
 
     @property
-    def value(self) -> Union[Tensor, None]:
+    def value(self) -> Union[ArrayLike, None]:
         if self.pointer and self._value is None:
             if self.active:
                 self._value = self._pointer_func(self)
@@ -288,8 +300,8 @@ class Param(Node):
             self._dynamic_value = None
         else:
             self._type = "static"
-            value = torch.as_tensor(value)
-            self.shape = value.shape
+            value = backend.as_array(value)
+            self._shape = value.shape if backend.backend != "object" else None
             self._value = value
             self._dynamic_value = None
             try:
@@ -310,15 +322,17 @@ class Param(Node):
         dtype: (Optional[torch.dtype], optional)
             The desired data type. Defaults to None.
         """
+        if backend.backend == "object":
+            return self
         super().to(device=device, dtype=dtype)
         if self.static:
-            self._value = self._value.to(device=device, dtype=dtype)
+            self._value = backend.to(self._value, device=device, dtype=dtype)
         if self._dynamic_value is not None:
-            self._dynamic_value = self._dynamic_value.to(device=device, dtype=dtype)
+            self._dynamic_value = backend.to(self._dynamic_value, device=device, dtype=dtype)
         if self.valid[0] is not None:
-            self.valid = (self.valid[0].to(device=device, dtype=dtype), self.valid[1])
+            self.valid = (backend.to(self.valid[0], device=device, dtype=dtype), self.valid[1])
         if self.valid[1] is not None:
-            self.valid = (self.valid[0], self.valid[1].to(device=device, dtype=dtype))
+            self.valid = (self.valid[0], backend.to(self.valid[1], device=device, dtype=dtype))
 
         return self
 
@@ -340,9 +354,9 @@ class Param(Node):
             if self.value is None:
                 value = "None"
             elif appendable:
-                value = self.value.unsqueeze(0).detach().cpu().numpy()
+                value = backend.to_numpy(self.value.reshape(1, *self.value.shape))
             else:
-                value = self.value.detach().cpu().numpy()
+                value = backend.to_numpy(self.value)
             if appendable:
                 self._h5group.create_dataset(
                     "value",
@@ -359,9 +373,9 @@ class Param(Node):
             self._h5group["value"].attrs["appendable"] = appendable
             self._h5group["value"].attrs["cyclic"] = self.cyclic
             if self.valid[0] is not None:
-                self._h5group["value"].attrs["valid_left"] = self.valid[0].detach().cpu().numpy()
+                self._h5group["value"].attrs["valid_left"] = backend.to_numpy(self.valid[0])
             if self.valid[1] is not None:
-                self._h5group["value"].attrs["valid_right"] = self.valid[1].detach().cpu().numpy()
+                self._h5group["value"].attrs["valid_right"] = backend.to_numpy(self.valid[1])
             self._h5group["value"].attrs["units"] = self.units if self.units is not None else "None"
 
     def _check_append_state_hdf5(self, h5group):
@@ -413,7 +427,12 @@ class Param(Node):
         return self._valid
 
     @valid.setter
-    def valid(self, valid: tuple[Union[Tensor, float, int, None]]):
+    def valid(self, valid: tuple[Union[ArrayLike, float, int, None]]):
+
+        if backend.backend == "object":
+            self._valid = (None, None)
+            return
+
         if valid is None:
             valid = (None, None)
 
@@ -436,8 +455,8 @@ class Param(Node):
                 )
             self.to_valid = self._to_valid_rightvalid
             self.from_valid = self._from_valid_rightvalid
-            valid = (None, torch.as_tensor(valid[1]))
-            if self.value is not None and torch.any(self.value > valid[1]):
+            valid = (None, backend.as_array(valid[1]))
+            if self.value is not None and backend.any(self.value > valid[1]):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         elif valid[1] is None:
             if self.cyclic:
@@ -446,8 +465,8 @@ class Param(Node):
                 )
             self.to_valid = self._to_valid_leftvalid
             self.from_valid = self._from_valid_leftvalid
-            valid = (torch.as_tensor(valid[0]), None)
-            if self.value is not None and torch.any(self.value < valid[0]):
+            valid = (backend.as_array(valid[0]), None)
+            if self.value is not None and backend.any(self.value < valid[0]):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         else:
             if self.cyclic:
@@ -456,15 +475,15 @@ class Param(Node):
             else:
                 self.to_valid = self._to_valid_fullvalid
                 self.from_valid = self._from_valid_fullvalid
-            valid = (torch.as_tensor(valid[0]), torch.as_tensor(valid[1]))
-            if torch.any(valid[0] >= valid[1]):
+            valid = (backend.as_array(valid[0]), backend.as_array(valid[1]))
+            if backend.any(valid[0] >= valid[1]):
                 raise ParamConfigurationError(
                     f"Valid range (valid[1] - valid[0]) must be positive ({self.name})"
                 )
             if (
                 self.value is not None
                 and not self.cyclic
-                and (torch.any(self.value < valid[0]) or torch.any(self.value > valid[1]))
+                and (backend.any(self.value < valid[0]) or backend.any(self.value > valid[1]))
             ):
                 warn(InvalidValueWarning(self.name, self.value, valid))
 
@@ -479,7 +498,7 @@ class Param(Node):
 
     def _to_valid_fullvalid(self, value):
         value = self._to_valid_base(value)
-        return torch.tan((value - self.valid[0]) * pi / (self.valid[1] - self.valid[0]) - pi / 2)
+        return backend.tan((value - self.valid[0]) * pi / (self.valid[1] - self.valid[0]) - pi / 2)
 
     def _to_valid_cyclic(self, value):
         value = self._to_valid_base(value)
@@ -502,7 +521,9 @@ class Param(Node):
 
     def _from_valid_fullvalid(self, value):
         value = self._from_valid_base(value)
-        value = (torch.atan(value) + pi / 2) * (self.valid[1] - self.valid[0]) / pi + self.valid[0]
+        value = (backend.atan(value) + pi / 2) * (self.valid[1] - self.valid[0]) / pi + self.valid[
+            0
+        ]
         return value
 
     def _from_valid_cyclic(self, value):
@@ -512,12 +533,12 @@ class Param(Node):
 
     def _from_valid_leftvalid(self, value):
         value = self._from_valid_base(value)
-        value = (value + self.valid[0] + ((value - self.valid[0]) ** 2 + 4).sqrt()) / 2
+        value = (value + self.valid[0] + backend.sqrt((value - self.valid[0]) ** 2 + 4)) / 2
         return value
 
     def _from_valid_rightvalid(self, value):
         value = self._from_valid_base(value)
-        value = (value + self.valid[1] - ((value - self.valid[1]) ** 2 + 4).sqrt()) / 2
+        value = (value + self.valid[1] - backend.sqrt((value - self.valid[1]) ** 2 + 4)) / 2
         return value
 
     def __repr__(self):
