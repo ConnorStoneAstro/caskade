@@ -357,7 +357,7 @@ class Module(Node):
                 params[link] = child._recursive_build_params_dict(unique_params=unique_params)
         return params
 
-    def build_params_dict(self) -> dict[str, ArrayLike]:
+    def build_params_dict(self) -> dict[str, Union[dict, ArrayLike]]:
         """Return an input dict for this module's @forward methods by filling with dynamic values."""
 
         self._check_dynamic_values("Dict")
