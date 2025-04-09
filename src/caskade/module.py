@@ -90,12 +90,12 @@ class Module(Node):
         super().update_graph()
 
     @property
-    def dynamic(self):
-        """Return True if the module has dynamic parameters"""
+    def dynamic(self) -> bool:
+        """Return True if the module has dynamic parameters as direct children."""
         return len(self.local_dynamic_params) > 0
 
     @property
-    def static(self):
+    def static(self) -> bool:
         return not self.dynamic
 
     def to_dynamic(self, local_only=True, ignore_pointer=True, **kwargs):
@@ -362,7 +362,9 @@ class Module(Node):
         x = self._recursive_build_params_dict(unique_params=unique_params)
         return x
 
-    def to_valid(self, params: Union[ArrayLike, Sequence, Mapping], local=False):
+    def to_valid(
+        self, params: Union[ArrayLike, Sequence, Mapping], local=False
+    ) -> Union[ArrayLike, Sequence, Mapping]:
         """Convert input params to valid params."""
         if backend.backend == "object":
             return params
@@ -415,7 +417,9 @@ class Module(Node):
             )
         return valid_params
 
-    def from_valid(self, valid_params: Union[ArrayLike, Sequence, Mapping], local=False):
+    def from_valid(
+        self, valid_params: Union[ArrayLike, Sequence, Mapping], local=False
+    ) -> Union[ArrayLike, Sequence, Mapping]:
         """Convert valid params to input params."""
         if backend.backend == "object":
             return valid_params
