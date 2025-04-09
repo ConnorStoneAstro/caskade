@@ -252,7 +252,7 @@ class Module(Node):
             try:
                 if params.dtype is not None and backend.backend == "object":
                     raise BackendError("Cannot use ArrayLike operations when backend is 'object'")
-            except:
+            except AttributeError:
                 pass
             raise TypeError(
                 f"Input params type {type(params)} not supported. Should be {backend.array_type.__name__}, Sequence, or Mapping."
