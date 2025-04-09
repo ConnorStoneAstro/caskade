@@ -3,7 +3,9 @@ import numpy as np
 from caskade import (
     Module,
     Param,
+    NodeTuple,
     ActiveStateError,
+    ActiveContext,
     ParamConfigurationError,
     InvalidValueWarning,
     forward,
@@ -226,3 +228,27 @@ def test_dynamic_value():
     assert main1.c.static
     assert main1.m1.d.static
     assert main1.m1.f.pointer
+
+
+def test_module_and_collection():
+
+    M = Module("M")
+    M.p = Param("p")
+    S = Module("S")
+    S.p = Param("p")
+    N = NodeTuple((Param("c"), S), name="N")
+    M.lp = NodeTuple((Param("a"), Param("b"), Param("c"), S, N), name="lp")
+
+    params = {"p": 1.0, "lp": {"a": 2.0, "b": 3.0, "c": 4.0, "S": {"p": 5.0}, "N": {"c": 6.0}}}
+
+    with ActiveContext(M):
+        M.fill_params(params)
+
+    params = {"p": 1.0, "lp": {"a": 2.0, "b": 3.0, "c": 4.0, "S": [5.0], "N": {"c": 6.0}}}
+
+    with ActiveContext(M):
+        M.fill_params(params)
+
+    assert not M.static
+    assert N.dynamic
+    assert not N.static
