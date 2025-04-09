@@ -1,13 +1,10 @@
 from typing import Sequence, Mapping, Optional, Union, Any
 from math import prod
 
-from torch import Tensor
-from numpy import ndarray
-
 from .backend import backend, ArrayLike
 from .base import Node
 from .param import Param
-from .collection import NodeCollection, NodeTuple, NodeList
+from .collection import NodeTuple, NodeList
 from .errors import (
     ActiveStateError,
     ParamConfigurationError,
