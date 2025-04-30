@@ -1,4 +1,5 @@
 import pytest
+import numpy as np
 
 from caskade import (
     Param,
@@ -136,6 +137,11 @@ def test_param_to():
     # dynamic value
     p = Param("test", dynamic_value=1.0, valid=(0, 2))
     p = p.to(dtype=backend.module.float64, device="cpu")
+
+
+def test_check_npvalue():
+    p = Param("test", [1.0, 2.0, 3.0, 4.0])
+    assert np.all(np.array([1.0, 2.0, 3.0, 4.0]) == p.npvalue)
 
 
 def test_value_setter():

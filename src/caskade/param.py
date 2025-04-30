@@ -3,7 +3,7 @@ from warnings import warn
 import traceback
 from dataclasses import dataclass
 
-from torch import pi
+from numpy import ndarray, pi
 
 from .backend import backend, ArrayLike
 from .base import Node
@@ -201,7 +201,7 @@ class Param(Node):
         self.value = self.dynamic_value
 
     @property
-    def shape(self) -> tuple:
+    def shape(self) -> Optional[tuple[int, ...]]:
         if backend.backend == "object":
             return None
         if self.pointer and self.value is not None:
@@ -311,7 +311,11 @@ class Param(Node):
 
         self.update_graph()
 
-    def to(self, device=None, dtype=None):
+    @property
+    def npvalue(self) -> ndarray:
+        return backend.to_numpy(self.value)
+
+    def to(self, device=None, dtype=None) -> "Param":
         """
         Moves and/or casts the values of the parameter.
 
@@ -337,7 +341,7 @@ class Param(Node):
         return self
 
     @property
-    def cyclic(self):
+    def cyclic(self) -> bool:
         return self._cyclic
 
     @cyclic.setter
@@ -423,7 +427,7 @@ class Param(Node):
         self.cyclic = h5group["value"].attrs["cyclic"]
 
     @property
-    def valid(self):
+    def valid(self) -> tuple[Optional[ArrayLike], Optional[ArrayLike]]:
         return self._valid
 
     @valid.setter
@@ -489,57 +493,57 @@ class Param(Node):
 
         self._valid = valid
 
-    def _to_valid_base(self, value):
+    def _to_valid_base(self, value: ArrayLike) -> ArrayLike:
         if self.pointer:
             raise ParamTypeError(
                 f"Cannot apply valid transformation to pointer parameter ({self.name})"
             )
         return value
 
-    def _to_valid_fullvalid(self, value):
+    def _to_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
         value = self._to_valid_base(value)
         return backend.tan((value - self.valid[0]) * pi / (self.valid[1] - self.valid[0]) - pi / 2)
 
-    def _to_valid_cyclic(self, value):
+    def _to_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
         value = self._to_valid_base(value)
         return (value - self.valid[0]) % (self.valid[1] - self.valid[0]) + self.valid[0]
 
-    def _to_valid_leftvalid(self, value):
+    def _to_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
         value = self._to_valid_base(value)
         return value - 1.0 / (value - self.valid[0])
 
-    def _to_valid_rightvalid(self, value):
+    def _to_valid_rightvalid(self, value: ArrayLike) -> ArrayLike:
         value = self._to_valid_base(value)
         return value + 1.0 / (self.valid[1] - value)
 
-    def _from_valid_base(self, value):
+    def _from_valid_base(self, value: ArrayLike) -> ArrayLike:
         if self.pointer:
             raise ParamTypeError(
                 f"Cannot apply valid transformation to pointer parameter ({self.name})"
             )
         return value
 
-    def _from_valid_fullvalid(self, value):
+    def _from_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
         value = self._from_valid_base(value)
         value = (backend.atan(value) + pi / 2) * (self.valid[1] - self.valid[0]) / pi + self.valid[
             0
         ]
         return value
 
-    def _from_valid_cyclic(self, value):
+    def _from_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
         value = self._from_valid_base(value)
         value = (value - self.valid[0]) % (self.valid[1] - self.valid[0]) + self.valid[0]
         return value
 
-    def _from_valid_leftvalid(self, value):
+    def _from_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
         value = self._from_valid_base(value)
         value = (value + self.valid[0] + backend.sqrt((value - self.valid[0]) ** 2 + 4)) / 2
         return value
 
-    def _from_valid_rightvalid(self, value):
+    def _from_valid_rightvalid(self, value: ArrayLike) -> ArrayLike:
         value = self._from_valid_base(value)
         value = (value + self.valid[1] - backend.sqrt((value - self.valid[1]) ** 2 + 4)) / 2
         return value
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.name
