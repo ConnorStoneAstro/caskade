@@ -201,7 +201,7 @@ class Param(Node):
         self.value = self.dynamic_value
 
     @property
-    def shape(self) -> tuple[int, ...] | None:
+    def shape(self) -> Optional[tuple[int, ...]]:
         if backend.backend == "object":
             return None
         if self.pointer and self.value is not None:
