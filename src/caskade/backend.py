@@ -197,7 +197,7 @@ class Backend:
         return array
 
     def _to_numpy_object(self, array):
-        return array
+        return np.array(array)
 
     def any(self, array):
         return self.module.any(array)

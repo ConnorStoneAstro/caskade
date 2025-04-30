@@ -201,7 +201,7 @@ class Param(Node):
         self.value = self.dynamic_value
 
     @property
-    def shape(self) -> tuple[int]:
+    def shape(self) -> tuple[int, ...] | None:
         if backend.backend == "object":
             return None
         if self.pointer and self.value is not None:
@@ -427,7 +427,7 @@ class Param(Node):
         self.cyclic = h5group["value"].attrs["cyclic"]
 
     @property
-    def valid(self) -> tuple[Union[ArrayLike, None], Union[ArrayLike, None]]:
+    def valid(self) -> tuple[Optional[ArrayLike], Optional[ArrayLike]]:
         return self._valid
 
     @valid.setter
