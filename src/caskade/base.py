@@ -306,7 +306,7 @@ class Node:
                 "Only HDF5 files ('.h5') are currently supported for loading state"
             )
 
-    def graphviz(self, top_down=True, saveto=None) -> "graphviz.Digraph":
+    def graphviz(self, top_down: bool = True, saveto: Optional[str] = None) -> "graphviz.Digraph":
         """Return a graphviz object representing the graph below the current
         node in the DAG.
 
@@ -315,6 +315,9 @@ class Node:
         top_down: (bool, optional)
             Whether to draw the graph top-down (current node at top) or
             bottom-up (current node at bottom). Defaults to True.
+        saveto: (Optional[str], optional)
+            If provided, save the graph to this file. The file extension
+            determines the format (e.g. '.pdf', '.png'). Defaults to None.
         """
         import graphviz  # noqa
 
