@@ -64,6 +64,16 @@ jobs:
         run: |
           python -m pip install pytest-github-actions-annotate-failures
 
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y graphviz
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            brew install graphviz
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            choco install graphviz -y
+            echo "C:\\Program Files\\Graphviz\\bin" >> $GITHUB_PATH
+          fi
+
       - name: Install caskade
         run: |
           pip install -e ".[dev,${{ matrix.backend }}]"
