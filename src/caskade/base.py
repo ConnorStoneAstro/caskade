@@ -1,3 +1,4 @@
+import os
 from typing import Optional, Union, Any
 from warnings import warn
 
@@ -305,7 +306,7 @@ class Node:
                 "Only HDF5 files ('.h5') are currently supported for loading state"
             )
 
-    def graphviz(self, top_down=True) -> "graphviz.Digraph":
+    def graphviz(self, top_down=True, saveto=None) -> "graphviz.Digraph":
         """Return a graphviz object representing the graph below the current
         node in the DAG.
 
@@ -335,6 +336,9 @@ class Node:
 
         dot = graphviz.Digraph(strict=True)
         add_node(self, dot)
+        if saveto is not None:
+            filename, ext = os.path.splitext(saveto)
+            dot.render(graphviz.escape(filename), format=ext.lstrip("."))
         return dot
 
     def graph_dict(self) -> dict[str, dict]:
