@@ -336,10 +336,10 @@ class Node:
 
         dot = graphviz.Digraph(strict=True)
         add_node(self, dot)
-        if saveto is None:
-            return dot
-        filename, ext = os.path.splitext(saveto)
-        dot.render(graphviz.escape(filename), cleanup=True, format=ext.lstrip("."))
+        if saveto is not None:
+            filename, ext = os.path.splitext(saveto)
+            dot.render(graphviz.escape(filename), format=ext.lstrip("."))
+        return dot
 
     def graph_dict(self) -> dict[str, dict]:
         """Return a dictionary representation of the graph below the current
