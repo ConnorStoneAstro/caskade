@@ -69,7 +69,6 @@ jobs:
           pip install -e ".[dev,${{ matrix.backend }}]"
           pip show ${{ env.PROJECT_NAME }}
           export JAX_ENABLE_X64=True
-          sudo apt-get install graphviz
         shell: bash
 
       - name: Test with pytest
