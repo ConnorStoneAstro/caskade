@@ -1,3 +1,5 @@
+import os
+
 from caskade import Node, test, GraphError, NodeConfigurationError
 
 import pytest
@@ -145,6 +147,10 @@ def test_active(linkbyname, graphviz_order):
 
     graph = node1.graphviz(graphviz_order)
     assert graph is not None, "should return a graphviz object"
+
+    node1.graphviz(graphviz_order, "testgraph.png")
+    assert os.path.exists("testgraph.png")
+    os.remove("testgraph.png")
 
 
 def test_test():
