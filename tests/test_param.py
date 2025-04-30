@@ -139,7 +139,7 @@ def test_param_to():
     p = p.to(dtype=backend.module.float64, device="cpu")
 
 
-def check_npvalue():
+def test_check_npvalue():
     p = Param("test", [1.0, 2.0, 3.0, 4.0])
     assert np.all(np.array([1.0, 2.0, 3.0, 4.0]) == p.npvalue)
 
