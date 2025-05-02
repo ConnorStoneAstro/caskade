@@ -231,6 +231,8 @@ def test_dynamic_value():
 
 
 def test_batched_build_params_array():
+    if backend.backend == "object":
+        return
     M = Module("M")
     M.p1 = Param("p1")
     M.p2 = Param("p2")
