@@ -230,6 +230,33 @@ def test_dynamic_value():
     assert main1.m1.f.pointer
 
 
+def test_batched_build_params_array():
+    M = Module("M")
+    M.p1 = Param("p1")
+    M.p2 = Param("p2")
+
+    M.p1.dynamic_value = [1.0, 2.0]
+    M.p1.shape = ()
+    M.p2.dynamic_value = [3.0, 4.0]
+    M.p2.shape = ()
+
+    a = M.build_params_array()
+    assert a.shape == (2, 2)
+
+    with pytest.raises(ParamConfigurationError):
+        M.p1.dynamic_value = [1.0, 2.0]
+        M.p1.shape = (2,)
+        M.p2.dynamic_value = [3.0, 4.0]
+        M.p2.shape = ()
+        M.build_params_array()
+    with pytest.raises(ParamConfigurationError):
+        M.p1.dynamic_value = [1.0, 2.0]
+        M.p1.shape = ()
+        M.p2.dynamic_value = [1.0, 2.0]
+        M.p2.shape = (2,)
+        M.build_params_array()
+
+
 def test_module_and_collection():
 
     M = Module("M")

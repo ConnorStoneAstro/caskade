@@ -328,11 +328,28 @@ class Module(Node):
             raise BackendError("Cannot use ArrayLike operations when backend is 'object'")
         self._check_dynamic_values("ArrayLike")
         x = []
+        is_batched = None
         for param in self.dynamic_params:
-            x.append(backend.copy(param.value).flatten())
+            if len(param.value.shape) - len(param.shape) == 1:  # is batched
+                B, *_ = param.value.shape
+                x.append(backend.copy(param.value).reshape(B, -1))
+                if is_batched is None:
+                    is_batched = True
+                elif not is_batched:
+                    raise ParamConfigurationError(
+                        "Cannot mix batched and non-batched parameters when building params array!"
+                    )
+            else:
+                x.append(backend.copy(param.value).flatten())
+                if is_batched is None:
+                    is_batched = False
+                elif is_batched:
+                    raise ParamConfigurationError(
+                        "Cannot mix batched and non-batched parameters when building params array!"
+                    )
         if len(x) == 0:
             return backend.make_array([])
-        return backend.concatenate(x)
+        return backend.concatenate(x, axis=-1)
 
     def build_params_list(self) -> list[ArrayLike]:
         """Return an input list for this module's @forward methods by filling with dynamic values."""
