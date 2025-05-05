@@ -74,6 +74,7 @@ class Module(Node):
         self.local_dynamic_params = {}
         self._type = "module"
         self.valid_context = False
+        self.permit_partial_params = False
 
     def update_graph(self):
         """Maintain a tuple of dynamic and live parameters at all points lower
@@ -220,10 +221,10 @@ class Module(Node):
                     raise FillDynamicParamsArrayError(self.name, params, dynamic_params)
 
                 pos += size
-            if pos != params.shape[-1]:
+            if pos != params.shape[-1] and not self.permit_partial_params:
                 raise FillDynamicParamsArrayError(self.name, params, dynamic_params)
         elif isinstance(params, Sequence):
-            if len(params) == len(dynamic_params):
+            if len(params) == len(dynamic_params) or self.permit_partial_params:
                 for param, value in zip(dynamic_params, params):
                     if dynamic_values:
                         param.dynamic_value = value
@@ -238,7 +239,7 @@ class Module(Node):
                 )
         elif isinstance(params, Mapping):
             self._fill_dict(self, params, dynamic_values=dynamic_values)
-            if local:
+            if local or self.permit_partial_params:
                 return
             for param in dynamic_params:
                 if param.value is None:
@@ -312,7 +313,7 @@ class Module(Node):
 
     def _check_dynamic_values(self, params_type: str = "ArrayLike"):
         """Check if all dynamic values are set."""
-        if not self.all_dynamic_value:
+        if not self.all_dynamic_value and not self.permit_partial_params:
             bad_params = []
             for param in self.dynamic_params:
                 if "value" not in param._type:

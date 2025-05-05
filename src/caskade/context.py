@@ -73,3 +73,16 @@ class OverrideParam:
         # Reset the param and pointer values as they were before the override
         for node, value in self.old_values:
             node._value = value
+
+
+class PermitPartialParams:
+
+    def __init__(self, module: Module):
+        self.module = module
+
+    def __enter__(self):
+        self.old_permit_partial_params = self.module.permit_partial_params
+        self.module.permit_partial_params = True
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.module.permit_partial_params = self.old_permit_partial_params
