@@ -221,6 +221,8 @@ class Module(Node):
                     raise FillDynamicParamsArrayError(self.name, params, dynamic_params)
 
                 pos += size
+                if pos == params.shape[-1] and self.permit_partial_params:
+                    break
             if pos != params.shape[-1] and not self.permit_partial_params:
                 raise FillDynamicParamsArrayError(self.name, params, dynamic_params)
         elif isinstance(params, Sequence):

@@ -1,5 +1,15 @@
-from caskade import Module, Param, forward, ActiveContext, OverrideParam, backend
+from caskade import (
+    Module,
+    Param,
+    forward,
+    ActiveContext,
+    OverrideParam,
+    backend,
+    PermitPartialParams,
+)
 import numpy as np
+import torch
+import pytest
 
 
 def test_active_context():
@@ -69,3 +79,38 @@ def test_override_param():
     testsim = TestSim()
     assert testsim.testfunc(backend.make_array([5.0])).item() == 27.0
     assert testsim.a.value.item() == 3.0
+
+
+def test_partial_params():
+    if backend.backend == "object":
+        return
+
+    class TestSim(Module):
+        def __init__(self):
+            super().__init__()
+            self.a = Param("a", 1.0)
+            self.b = Param("b", 2.0)
+            self.c = Param("c", None)
+
+        @forward
+        def testfunc1(self, a, b):
+            return a + b
+
+        @forward
+        def testfunc2(self, a, b, c):
+            return a + b + c
+
+    testsim = TestSim()
+
+    with PermitPartialParams(testsim):
+        assert testsim.testfunc1().item() == 3.0
+        assert testsim.testfunc2([3.0]).item() == 6.0
+
+    with pytest.raises(ValueError):
+        testsim.testfunc2()
+
+    testsim.b = None
+    with PermitPartialParams(testsim):
+        assert testsim.testfunc1([2.0]).item() == 3.0
+        assert testsim.testfunc1(torch.tensor([2.0])).item() == 3.0
+        assert testsim.testfunc1({"b": 2.0}).item() == 3.0

@@ -2,7 +2,7 @@ from ._version import version as VERSION  # noqa
 
 from .base import Node
 from .backend import backend, ArrayLike
-from .context import ActiveContext, ValidContext, OverrideParam
+from .context import ActiveContext, ValidContext, OverrideParam, PermitPartialParams
 from .decorators import forward
 from .module import Module
 from .param import Param, dynamic
@@ -41,6 +41,7 @@ __all__ = (
     "ActiveContext",
     "ValidContext",
     "OverrideParam",
+    "PermitPartialParams",
     "forward",
     "test",
     "CaskadeException",
