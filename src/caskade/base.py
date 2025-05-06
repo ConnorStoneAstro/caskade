@@ -341,7 +341,7 @@ class Node:
         add_node(self, dot)
         if saveto is not None:
             filename, ext = os.path.splitext(saveto)
-            dot.render(graphviz.escape(filename), format=ext.lstrip("."))
+            dot.render(graphviz.escape(filename), format=ext.lstrip("."), cleanup=True)
         return dot
 
     def graph_dict(self) -> dict[str, dict]:
