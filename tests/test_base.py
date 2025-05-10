@@ -62,6 +62,19 @@ def test_link():
     assert node2._parents == set()
     assert node1._parents == set()
 
+    node4 = Node("node4", link=node2)
+    assert node4.node2 == node2
+
+    node5 = Node("node5", link=[node1, node2])
+    assert node5.node1 == node1
+    assert node5.node2 == node2
+
+    node6 = Node("node6")
+    node6.link(["subnode1", "subnode2"], [node1, node2])
+    print(node6)
+    assert node6.subnode1 == node1
+    assert node6.subnode2 == node2
+
 
 def test_topological_ordering():
     node1 = Node("node1")
