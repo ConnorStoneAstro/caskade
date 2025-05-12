@@ -74,6 +74,9 @@ def test_link():
     print(node6)
     assert node6.subnode1 == node1
     assert node6.subnode2 == node2
+    node6.unlink(["subnode1", "subnode2"])
+    with pytest.raises(AttributeError):
+        node6.subnode1
 
 
 def test_topological_ordering():

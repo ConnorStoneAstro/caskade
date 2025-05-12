@@ -148,13 +148,17 @@ class Node:
         del self._children[key]
         self.update_graph()
 
-    def unlink(self, key: Union[str, "Node"]):
+    def unlink(self, key: Union[str, "Node", list, tuple]):
         """Unlink the current ``Node`` object from another ``Node`` object which is a child."""
         if isinstance(key, Node):
             for node in self.children:
                 if self.children[node] is key:
                     key = node
                     break
+        elif isinstance(key, (tuple, list)):
+            for k in key:
+                self.unlink(k)
+            return
         self.__delattr__(key)
 
     def topological_ordering(
