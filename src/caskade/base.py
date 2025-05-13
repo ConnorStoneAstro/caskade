@@ -40,7 +40,11 @@ class Node:
 
     graphviz_types = {"node": {"style": "solid", "color": "black", "shape": "circle"}}
 
-    def __init__(self, name: Optional[str] = None):
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        link: Optional[Union["Node", tuple["Node"]]] = None,
+    ):
         if name is None:
             name = self.__class__.__name__
         if not isinstance(name, str):
@@ -53,6 +57,8 @@ class Node:
         self._active = False
         self._type = "node"
         self.meta = meta()
+        if link is not None:
+            self.link(link)
 
     @property
     def name(self) -> str:
@@ -91,7 +97,7 @@ class Node:
         child._parents.add(self)
         self.update_graph()
 
-    def link(self, key: Union[str, "Node"], child: Optional["Node"] = None):
+    def link(self, key: Union[str, tuple, "Node"], child: Optional[Union["Node", tuple]] = None):
         """Link the current ``Node`` object to another ``Node`` object as a child.
 
         Parameters
@@ -117,6 +123,18 @@ class Node:
             n1.link(n2)
             n1.unlink(n2)
         """
+        if (
+            isinstance(key, (tuple, list))
+            and not isinstance(key, Node)
+            and (child is None or not isinstance(child, Node))
+        ):
+            if child is None:
+                for k in key:
+                    self.link(k)
+            else:
+                for k, c in zip(key, child):
+                    self.link(k, c)
+            return
         if child is None:
             child = key
             key = child.name
@@ -130,13 +148,17 @@ class Node:
         del self._children[key]
         self.update_graph()
 
-    def unlink(self, key: Union[str, "Node"]):
+    def unlink(self, key: Union[str, "Node", list, tuple]):
         """Unlink the current ``Node`` object from another ``Node`` object which is a child."""
         if isinstance(key, Node):
             for node in self.children:
                 if self.children[node] is key:
                     key = node
                     break
+        elif isinstance(key, (tuple, list)):
+            for k in key:
+                self.unlink(k)
+            return
         self.__delattr__(key)
 
     def topological_ordering(
