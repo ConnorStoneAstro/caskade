@@ -1,3 +1,9 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/ConnorStoneAstro/caskade/blob/main/media/caskade_logo_dark.png?raw=true">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/ConnorStoneAstro/caskade/blob/main/media/caskade_logo_white.png?raw=true">
+  <img alt="caskade logo" src="media/caskade_logo_white.png" width="70%">
+</picture>
+
 # caskade
 
 [![CI](https://github.com/ConnorStoneAstro/caskade/actions/workflows/ci.yml/badge.svg)](https://github.com/ConnorStoneAstro/caskade/actions/workflows/ci.yml)
