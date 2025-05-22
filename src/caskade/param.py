@@ -94,6 +94,8 @@ class Param(Node):
         valid: Optional[tuple[Union[ArrayLike, float, int, None]]] = None,
         units: Optional[str] = None,
         dynamic_value: Optional[Union[ArrayLike, float, int]] = None,
+        dtype: Optional[str] = None,
+        device: Optional[str] = None,
     ):
         super().__init__(name=name)
         if value is not None and dynamic_value is not None:
@@ -114,7 +116,7 @@ class Param(Node):
             and value is not None
             and backend.backend != "object"
         ):
-            value = backend.as_array(value)
+            value = backend.as_array(value, dtype=dtype, device=device)
             if not (shape == () or shape is None or shape == value.shape):
                 raise ParamConfigurationError(
                     f"Shape {shape} does not match value shape {value.shape}"
@@ -124,12 +126,14 @@ class Param(Node):
             and dynamic_value is not None
             and backend.backend != "object"
         ):
-            dynamic_value = backend.as_array(dynamic_value)
+            dynamic_value = backend.as_array(dynamic_value, dtype=dtype, device=device)
             if not (shape == () or shape is None or shape == dynamic_value.shape):
                 raise ParamConfigurationError(
                     f"Shape {shape} does not match dynamic value shape {dynamic_value.shape}"
                 )
         self._type = "null"
+        self.dtype = dtype
+        self.device = device
         self.value = value
         if not hasattr(self, "_dynamic_value"):
             self.dynamic_value = dynamic_value
@@ -245,7 +249,12 @@ class Param(Node):
         # Set to dynamic value
         self._type = "dynamic value"
         self._pointer_func = None
-        value = backend.as_array(value)
+        value = backend.as_array(value, dtype=self.dtype, device=self.device)
+        try:
+            self.dtype = value.dtype
+            self.device = value.device
+        except AttributeError:
+            pass
         self._shape = value.shape if backend.backend != "object" else None
         self._dynamic_value = value
         self._value = None
@@ -300,7 +309,12 @@ class Param(Node):
             self._dynamic_value = None
         else:
             self._type = "static"
-            value = backend.as_array(value)
+            value = backend.as_array(value, dtype=self.dtype, device=self.device)
+            try:
+                self.dtype = value.dtype
+                self.device = value.device
+            except AttributeError:
+                pass
             self._shape = value.shape if backend.backend != "object" else None
             self._value = value
             self._dynamic_value = None
@@ -328,6 +342,10 @@ class Param(Node):
         """
         if backend.backend == "object":
             return self
+        if device is not None:
+            self.device = device
+        if dtype is not None:
+            self.dtype = dtype
         super().to(device=device, dtype=dtype)
         if self.static:
             self._value = backend.to(self._value, device=device, dtype=dtype)
@@ -459,7 +477,7 @@ class Param(Node):
                 )
             self.to_valid = self._to_valid_rightvalid
             self.from_valid = self._from_valid_rightvalid
-            valid = (None, backend.as_array(valid[1]))
+            valid = (None, backend.as_array(valid[1], dtype=self.dtype, device=self.device))
             if self.value is not None and backend.any(self.value > valid[1]):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         elif valid[1] is None:
@@ -469,7 +487,7 @@ class Param(Node):
                 )
             self.to_valid = self._to_valid_leftvalid
             self.from_valid = self._from_valid_leftvalid
-            valid = (backend.as_array(valid[0]), None)
+            valid = (backend.as_array(valid[0], dtype=self.dtype, device=self.device), None)
             if self.value is not None and backend.any(self.value < valid[0]):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         else:
@@ -479,7 +497,10 @@ class Param(Node):
             else:
                 self.to_valid = self._to_valid_fullvalid
                 self.from_valid = self._from_valid_fullvalid
-            valid = (backend.as_array(valid[0]), backend.as_array(valid[1]))
+            valid = (
+                backend.as_array(valid[0], dtype=self.dtype, device=self.device),
+                backend.as_array(valid[1], dtype=self.dtype, device=self.device),
+            )
             if backend.any(valid[0] >= valid[1]):
                 raise ParamConfigurationError(
                     f"Valid range (valid[1] - valid[0]) must be positive ({self.name})"
