@@ -352,8 +352,8 @@ class Param(Node):
         except AttributeError:
             pass
 
-    def _save_state_hdf5(self, h5group, appendable: bool = False):
-        super()._save_state_hdf5(h5group, appendable=appendable)
+    def _save_state_hdf5(self, h5group, appendable: bool = False, _done_save: set = None):
+        super()._save_state_hdf5(h5group, appendable=appendable, _done_save=_done_save)
         if "value" not in self._h5group:
             if self.value is None:
                 value = "None"
@@ -401,8 +401,8 @@ class Param(Node):
                 h5group["value"].resize((h5group["value"].shape[0] + 1,) + tuple(self.shape))
                 h5group["value"][-1] = self.value
 
-    def _load_state_hdf5(self, h5group, index: int = -1):
-        super()._load_state_hdf5(h5group, index=index)
+    def _load_state_hdf5(self, h5group, index: int = -1, _done_load: set = None):
+        super()._load_state_hdf5(h5group, index=index, _done_load=_done_load)
         self.cyclic = False
         self.valid = None
         if not self.pointer:
