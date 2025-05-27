@@ -10,7 +10,7 @@ import pytest
 def _build_test_module(blank=False):
     main = Module("main")
     main.meta.extra_info = "This is some extra info"
-    main.saveattrs.append("meta.extra_info")
+    main.saveattrs.add("meta.extra_info")
     m1 = Module("m1")
     m2 = Module("m2")
     m3 = Module("m3")
@@ -24,7 +24,7 @@ def _build_test_module(blank=False):
     p1 = Param("p1", None if blank else 1.0, valid=(0.0, 2.0), units="arcsec")
     p2 = Param("p2", None if blank else (2.0, 2.5), shape=(2,), valid=(None, (5, 6)))
     p2.basic_data = np.array([1, 2, 3])
-    p2.saveattrs.append("basic_data")
+    p2.saveattrs.add("basic_data")
     p3 = Param(
         "p3",
         None if blank else np.ones((2, 3, 4)),
@@ -53,7 +53,7 @@ def _make_files_and_test(usefileobject=False):
     # Save not appendable
     with pytest.warns(SaveStateWarning):
         main.m1.meta.bad_meta = None
-        main.m1.saveattrs.append("meta.bad_meta")
+        main.m1.saveattrs.add("meta.bad_meta")
         if usefileobject:
             with h5py.File("test_save_notappend.h5", "w") as f:
                 main.save_state(f, appendable=False)
@@ -80,7 +80,7 @@ def _make_files_and_test(usefileobject=False):
     # Save and append
     with pytest.warns(SaveStateWarning):
         main.m1.p1.very_bad_meta = np.array(["hello", "wor\0ld"], dtype=object)
-        main.m1.p1.saveattrs.append("very_bad_meta")
+        main.m1.p1.saveattrs.add("very_bad_meta")
         if usefileobject:
             with h5py.File("test_save_append.h5", "w") as f:
                 main.save_state(f, appendable=True)
@@ -103,7 +103,7 @@ def _load_not_appendable_and_test(usefileobject=False):
     gc.collect()
     main = _build_test_module(blank=True)
     main.meta.extra_info = "The wrong extra info"
-    main.saveattrs.append("meta.extra_info")
+    main.saveattrs.add("meta.extra_info")
     if usefileobject:
         with h5py.File("test_save_notappend.h5", "r") as f:
             main.load_state(f)

@@ -72,7 +72,7 @@ class Node:
         self._active = False
         self._type = "node"
         self.meta = meta()
-        self.saveattrs = []
+        self.saveattrs = set()
         if link is not None:
             self.link(link)
 
@@ -263,13 +263,15 @@ class Node:
 
         The "state" of a node is considered to be the value of its params,
         however it is also possible to save other attributes of the node by
-        adding them to the `Node.saveattrs` list. The HDF5 file will be created
-        with the same structure as the graph, even if there are multiple paths
-        to the same node. For example if N1 has children N2 and N3, and both N2
-        and N3 have the child N4, the HDF5 file will reflect this. It will be
-        possible to find the N4 params under both 'N1/N2/N4' and 'N1/N3/N4' if
-        inspecting the HDF5 file manually. Specifically, if N4 has the param P1
-        then you could access its value like this:
+        adding them to the `Node.saveattrs` set. Simply call
+        `Node.saveattrs.add('attribute')` and then `Node.attribute` will be
+        saved if possible. The HDF5 file will be created with the same structure
+        as the graph, even if there are multiple paths to the same node. For
+        example if N1 has children N2 and N3, and both N2 and N3 have the child
+        N4, the HDF5 file will reflect this. It will be possible to find the N4
+        params under both 'N1/N2/N4' and 'N1/N3/N4' if inspecting the HDF5 file
+        manually. Specifically, if N4 has the param P1 then you could access its
+        value like this:
 
         .. code-block:: python
             with h5py.File("myfile.h5", "r") as h5file:
@@ -286,8 +288,8 @@ class Node:
         ----------
         saveto: (Union[str, File])
             The file to save the state to. If a string, it should be the path to
-            an HDF5 file (ending in '.h5' or '.hdf5'). If a File object, it should
-            be an open HDF5 file.
+            an HDF5 file (ending in '.h5' or '.hdf5'). If a File object, it
+            should be an open HDF5 file.
         appendable: (bool, optional)
             Whether to save the state in an appendable format. If True, the
             values will have an extra dimension for the number of samples.
