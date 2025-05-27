@@ -284,6 +284,10 @@ class Node:
         dimension. If appendable was false then the value will simply equal the
         param value.
 
+        Note
+        ----
+        You need the optional `h5py` package installed to use this method.
+
         Parameters
         ----------
         saveto: (Union[str, File])
