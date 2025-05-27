@@ -1,10 +1,25 @@
 import os
 from typing import Optional, Union, Any
 from warnings import warn
+from operator import attrgetter
+
+try:
+    import h5py
+except ImportError:
+    h5py = None
 
 from .backend import backend
 from .errors import GraphError, NodeConfigurationError, LinkToAttributeError, BackendError
 from .warnings import SaveStateWarning
+
+
+def attrsetter(obj, attr, value):
+    """Set an attribute on an object."""
+    if "." in attr:
+        parts = attr.split(".", 1)
+        attrsetter(getattr(obj, parts[0]), parts[1], value)
+    else:
+        setattr(obj, attr, value)
 
 
 class meta:
@@ -57,6 +72,7 @@ class Node:
         self._active = False
         self._type = "node"
         self.meta = meta()
+        self.saveattrs = []
         if link is not None:
             self.link(link)
 
@@ -217,47 +233,92 @@ class Node:
 
         return self
 
-    def _save_state_hdf5(self, h5group, appendable: bool = False, save_meta: bool = True):
+    def _save_state_hdf5(self, h5group, appendable: bool = False, _done_save: set = None):
         """Save the state of the node and its children to HDF5."""
-        if save_meta:
-            for meta_key, meta_value in self.meta.__dict__.items():
-                if meta_key in h5group.attrs:  # already saved
+        if id(self) not in _done_save:
+            for attr in self.saveattrs:
+                if attr in h5group.attrs:  # already saved
                     continue
+                value = attrgetter(attr)(self)
                 try:
-                    h5group.attrs[meta_key] = meta_value
+                    h5group.attrs[attr] = value
                 except TypeError:
                     warn(
                         SaveStateWarning(
-                            f"Meta value '{meta_key}' of type {type(meta_value)} cannot be saved to HDF5"
+                            f"attribute '{attr}' of type {type(value)} cannot be saved to HDF5"
                         )
                     )
                 except Exception as e:
-                    warn(SaveStateWarning(f"Unable to save meta value '{meta_key}' due to: {e}"))
+                    warn(SaveStateWarning(f"Unable to save attribute '{attr}' due to: {e}"))
+            _done_save.add(id(self))
         for key, child in self.children.items():
             if not hasattr(child, "_h5group"):
                 child._h5group = h5group.create_group(key)
             elif key not in h5group:
                 h5group[key] = child._h5group
-            child._save_state_hdf5(h5group[key], appendable=appendable)
+            child._save_state_hdf5(h5group[key], appendable=appendable, _done_save=_done_save)
 
-    def save_state(self, saveto: str, appendable: bool = False, save_meta: bool = True):
-        """Save the state of the node and its children."""
+    def save_state(self, saveto: Union[str, "File"], appendable: bool = False):
+        """
+        Save the state of the node and its children, currently only works for
+        HDF5 file types (.h5 and .hdf5).
+
+        The "state" of a node is considered to be the value of its params,
+        however it is also possible to save other attributes of the node by
+        adding them to the `Node.saveattrs` list. The HDF5 file will be created
+        with the same structure as the graph, even if there are multiple paths
+        to the same node. For example if N1 has children N2 and N3, and both N2
+        and N3 have the child N4, the HDF5 file will reflect this. It will be
+        possible to find the N4 params under both 'N1/N2/N4' and 'N1/N3/N4' if
+        inspecting the HDF5 file manually. Specifically, if N4 has the param P1
+        then you could access its value like this:
+
+        .. code-block:: python
+            with h5py.File("myfile.h5", "r") as h5file:
+                value = h5file["N1/N2/N4/P1/value"][()]
+                # or
+                value = h5file["N1/N3/N4/P1/value"][()]
+
+        If the save had been set as appendable, then the value will have an
+        extra dimension for the number of samples, this will always be the first
+        dimension. If appendable was false then the value will simply equal the
+        param value.
+
+        Parameters
+        ----------
+        saveto: (Union[str, File])
+            The file to save the state to. If a string, it should be the path to
+            an HDF5 file (ending in '.h5' or '.hdf5'). If a File object, it should
+            be an open HDF5 file.
+        appendable: (bool, optional)
+            Whether to save the state in an appendable format. If True, the
+            values will have an extra dimension for the number of samples.
+            Defaults to False.
+
+        """
         if appendable and backend.backend == "object":
             raise BackendError("Cannot make appendable HDF5 files with the 'object' backend")
 
-        if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
-            import h5py  # noqa
+        if isinstance(saveto, str):
+            if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
+                with h5py.File(saveto, "w") as h5file:
+                    self._h5group = h5file.create_group(self.name)
+                    self._save_state_hdf5(
+                        h5file[self.name], appendable=appendable, _done_save=set()
+                    )
 
-            with h5py.File(saveto, "w") as h5file:
-                self._h5group = h5file.create_group(self.name)
-                self._save_state_hdf5(h5file[self.name], appendable=appendable, save_meta=save_meta)
+                for node in self.topological_ordering():
+                    del node._h5group
+            else:
+                raise NotImplementedError(
+                    "Only HDF5 files ('.h5') are currently supported for saving state"
+                )
+        else:  # assume saveto is an HDF5 File object
+            self._h5group = saveto.create_group(self.name)
+            self._save_state_hdf5(saveto[self.name], appendable=appendable, _done_save=set())
 
             for node in self.topological_ordering():
                 del node._h5group
-        else:
-            raise NotImplementedError(
-                "Only HDF5 files ('.h5') are currently supported for saving state"
-            )
 
     def _check_append_state_hdf5(self, h5group):
         """Check the state and HDF5 file have the same structure."""
@@ -278,24 +339,29 @@ class Node:
         for key, child in self.children.items():
             child._append_state_hdf5(h5group[key])
 
-    def append_state(self, saveto: str):
+    def append_state(self, saveto: Union[str, "File"]):
         """Append the state of the node and its children to an existing HDF5 file."""
         if backend.backend == "object":
             raise BackendError("Cannot append to HDF5 files with the 'object' backend")
 
-        if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
-            import h5py  # noqa
+        if isinstance(saveto, str):
+            if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
+                with h5py.File(saveto, "a") as h5file:
+                    self._check_append_state_hdf5(h5file[self.name])
+                    self._append_state_hdf5(h5file[self.name])
 
-            with h5py.File(saveto, "a") as h5file:
-                self._check_append_state_hdf5(h5file[self.name])
-                self._append_state_hdf5(h5file[self.name])
+                for node in self.topological_ordering():
+                    node._append_state_cleanup()
+            else:
+                raise NotImplementedError(
+                    "Only HDF5 files ('.h5') are currently supported for saving state"
+                )
+        else:  # assume saveto is an HDF5 File object
+            self._check_append_state_hdf5(saveto[self.name])
+            self._append_state_hdf5(saveto[self.name])
 
             for node in self.topological_ordering():
                 node._append_state_cleanup()
-        else:
-            raise NotImplementedError(
-                "Only HDF5 files ('.h5') are currently supported for saving state"
-            )
 
     def _check_load_state_hdf5(self, h5group):
         """Check the state and HDF5 file have the same structure."""
@@ -307,26 +373,30 @@ class Node:
                     f"Child '{child.name}' (identified by key '{key}') not found in HDF5 group '{h5group.name}'. Structure of graph changed from last save."
                 )
 
-    def _load_state_hdf5(self, h5group, index: int = -1, load_meta: bool = True):
+    def _load_state_hdf5(self, h5group, index: int = -1, _done_load: set = None):
         """Load the state of the node and its children from HDF5."""
-        if load_meta:
-            for meta_key in h5group.attrs:
-                setattr(self.meta, meta_key, h5group.attrs[meta_key])
+
+        if id(self) not in _done_load:
+            for attr in h5group.attrs:
+                attrsetter(self, attr, h5group.attrs[attr])
+            _done_load.add(id(self))
         for key, child in self.children.items():
-            child._load_state_hdf5(h5group[key], index=index)
+            child._load_state_hdf5(h5group[key], index=index, _done_load=_done_load)
 
-    def load_state(self, loadfrom: str, index: int = -1, load_meta: bool = True):
+    def load_state(self, loadfrom: Union[str, "File"], index: int = -1):
         """Load the state of the node and its children."""
-        if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
-            import h5py  # noqa
-
-            with h5py.File(loadfrom, "r") as h5file:
-                self._check_load_state_hdf5(h5file[self.name])
-                self._load_state_hdf5(h5file[self.name], index=index, load_meta=load_meta)
-        else:
-            raise NotImplementedError(
-                "Only HDF5 files ('.h5') are currently supported for loading state"
-            )
+        if isinstance(loadfrom, str):
+            if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
+                with h5py.File(loadfrom, "r") as h5file:
+                    self._check_load_state_hdf5(h5file[self.name])
+                    self._load_state_hdf5(h5file[self.name], index=index, _done_load=set())
+            else:
+                raise NotImplementedError(
+                    "Only HDF5 files ('.h5') are currently supported for loading state"
+                )
+        else:  # assume loadfrom is an HDF5 File object
+            self._check_load_state_hdf5(loadfrom[self.name])
+            self._load_state_hdf5(loadfrom[self.name], index=index, _done_load=set())
 
     def graphviz(self, top_down: bool = True, saveto: Optional[str] = None) -> "graphviz.Digraph":
         """Return a graphviz object representing the graph below the current
