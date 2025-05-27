@@ -237,8 +237,6 @@ class Node:
         """Save the state of the node and its children to HDF5."""
         if id(self) not in _done_save:
             for attr in self.saveattrs:
-                if attr in h5group.attrs:  # already saved
-                    continue
                 value = attrgetter(attr)(self)
                 try:
                     h5group.attrs[attr] = value
