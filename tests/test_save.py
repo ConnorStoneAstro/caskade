@@ -2,7 +2,8 @@ from caskade import Module, Param, GraphError, SaveStateWarning, backend, Backen
 import numpy as np
 import gc
 import h5py
-
+import sys
+from unittest import mock
 import pytest
 
 
@@ -87,9 +88,15 @@ def _make_files_and_test(usefileobject=False):
             main.save_state("test_save_append.h5", appendable=True)
     main.m1.p1.value = 2.0
     main.m1.p2.value = (3.0, 3.5)
-    main.append_state("test_save_append.h5")
-    assert not hasattr(main.m1.p2, "appended")
-    main.append_state("test_save_append.h5")
+    if usefileobject:
+        with h5py.File("test_save_append.h5", "a") as f:
+            main.append_state(f)
+            assert not hasattr(main.m1.p2, "appended")
+            main.append_state(f)
+    else:
+        main.append_state("test_save_append.h5")
+        assert not hasattr(main.m1.p2, "appended")
+        main.append_state("test_save_append.h5")
 
 
 def _load_not_appendable_and_test(usefileobject=False):
@@ -156,3 +163,14 @@ def test_save_append_load(usefileobject):
 
     # different graph
     _change_graph_fail_test()
+
+
+def test_missing_h5py():
+    with mock.patch.dict(sys.modules, {"h5py": None}):
+        import importlib
+
+        # Reload the module to re-trigger the import logic
+        module = importlib.import_module("caskade.base")
+        importlib.reload(module)
+
+        assert module.h5py is None
