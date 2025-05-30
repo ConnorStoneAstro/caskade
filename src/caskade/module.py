@@ -8,6 +8,7 @@ from .collection import NodeTuple, NodeList
 from .errors import (
     ActiveStateError,
     ParamConfigurationError,
+    FillDynamicParamsError,
     FillDynamicParamsArrayError,
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
@@ -300,7 +301,13 @@ class Module(Node):
         kwargs = {}
         for key in keys:
             if key in self.children and isinstance(self[key], Param):
-                kwargs[key] = self[key].value
+                val = self.children[key].value
+                if val is None:
+                    raise FillDynamicParamsError(
+                        f"Param {key} in Module {self.name} has no value. "
+                        "Ensure that the parameter is set before calling the forward method or provided with the params."
+                    )
+                kwargs[key] = val
         return kwargs
 
     def fill_dynamic_values(self, params: Union[ArrayLike, Sequence, Mapping], local=False):

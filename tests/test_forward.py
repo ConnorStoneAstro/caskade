@@ -3,6 +3,7 @@ from caskade import (
     Param,
     forward,
     ValidContext,
+    FillDynamicParamsError,
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
     FillDynamicParamsArrayError,
@@ -48,7 +49,7 @@ def test_forward():
     assert graph is not None, "should return a graphviz object"
 
     # Dont provide params
-    with pytest.raises(ValueError):
+    with pytest.raises(FillDynamicParamsError):
         main1.testfun()
 
     if backend.backend == "object":
