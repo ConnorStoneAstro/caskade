@@ -178,7 +178,7 @@ def test_forward():
         "m1": {
             "d": backend.make_array(3.0),
             "e": backend.make_array(4.0),
-            "f": backend.make_array(1.0),
+            # "f": backend.make_array(1.0), # missing but not needed
         },
     }
     result = main1.testfun(1.0, params=params)
@@ -192,13 +192,14 @@ def test_forward():
         assert backend.all(valid_result == result).item()
     # Missing param
     params = {
-        "b": backend.module.ones((2, 2)),
+        # "b": backend.module.ones((2, 2)),
         "m1": {
             "d": backend.make_array(3.0),
             "e": backend.make_array(4.0),
-        },  # , "f": backend.make_array(1.0)
+            "f": backend.make_array(1.0),
+        },
     }
-    with pytest.raises(FillDynamicParamsMappingError):
+    with pytest.raises(FillDynamicParamsError):
         result = main1.testfun(1.0, params=params)
 
     # All params static
