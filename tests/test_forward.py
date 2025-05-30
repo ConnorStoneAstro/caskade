@@ -73,6 +73,8 @@ def test_forward():
         assert valid_result.shape == (2, 2)
         assert backend.all(valid_result == result).item()
     # Wrong number of params, too few
+    with pytest.raises(FillDynamicParamsError):
+        result = main1.testfun(1.0, params=[])
     with pytest.raises(FillDynamicParamsSequenceError):
         result = main1.testfun(1.0, params=params[:3])
     with pytest.raises(FillDynamicParamsSequenceError):
@@ -115,6 +117,8 @@ def test_forward():
         assert valid_result.shape == (2, 2)
         assert backend.all(valid_result == result).item()
     # Wrong number of params, too few
+    with pytest.raises(FillDynamicParamsError):
+        result = main1.testfun(1.0, backend.as_array([]))
     with pytest.raises(FillDynamicParamsArrayError):
         result = main1.testfun(1.0, params[:-3])
     # Wrong number of params, too many
