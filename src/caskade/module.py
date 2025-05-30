@@ -193,8 +193,6 @@ class Module(Node):
         """
 
         dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
-        if len(dynamic_params) == 0 and not dynamic_values:
-            return
 
         if self.valid_context and not local:
             params = self.from_valid(params)
@@ -239,13 +237,6 @@ class Module(Node):
                 )
         elif isinstance(params, Mapping):
             self._fill_dict(self, params, dynamic_values=dynamic_values)
-            if local:
-                return
-            for param in dynamic_params:
-                if param.value is None:
-                    raise FillDynamicParamsMappingError(
-                        self.name, self.children, self.dynamic_modules, missing_param=param
-                    )
         else:
             try:
                 if params.dtype is not None and backend.backend == "object":
