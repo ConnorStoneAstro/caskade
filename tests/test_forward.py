@@ -3,6 +3,7 @@ from caskade import (
     Param,
     forward,
     ValidContext,
+    FillDynamicParamsError,
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
     FillDynamicParamsArrayError,
@@ -48,7 +49,7 @@ def test_forward():
     assert graph is not None, "should return a graphviz object"
 
     # Dont provide params
-    with pytest.raises(ValueError):
+    with pytest.raises(FillDynamicParamsError):
         main1.testfun()
 
     if backend.backend == "object":
@@ -72,6 +73,8 @@ def test_forward():
         assert valid_result.shape == (2, 2)
         assert backend.all(valid_result == result).item()
     # Wrong number of params, too few
+    with pytest.raises(FillDynamicParamsError):
+        result = main1.testfun(1.0, params=[])
     with pytest.raises(FillDynamicParamsSequenceError):
         result = main1.testfun(1.0, params=params[:3])
     with pytest.raises(FillDynamicParamsSequenceError):
@@ -114,6 +117,8 @@ def test_forward():
         assert valid_result.shape == (2, 2)
         assert backend.all(valid_result == result).item()
     # Wrong number of params, too few
+    with pytest.raises(FillDynamicParamsError):
+        result = main1.testfun(1.0, backend.as_array([]))
     with pytest.raises(FillDynamicParamsArrayError):
         result = main1.testfun(1.0, params[:-3])
     # Wrong number of params, too many
@@ -177,7 +182,7 @@ def test_forward():
         "m1": {
             "d": backend.make_array(3.0),
             "e": backend.make_array(4.0),
-            "f": backend.make_array(1.0),
+            # "f": backend.make_array(1.0), # missing but not needed
         },
     }
     result = main1.testfun(1.0, params=params)
@@ -191,13 +196,14 @@ def test_forward():
         assert backend.all(valid_result == result).item()
     # Missing param
     params = {
-        "b": backend.module.ones((2, 2)),
+        # "b": backend.module.ones((2, 2)),
         "m1": {
             "d": backend.make_array(3.0),
             "e": backend.make_array(4.0),
-        },  # , "f": backend.make_array(1.0)
+            "f": backend.make_array(1.0),
+        },
     }
-    with pytest.raises(FillDynamicParamsMappingError):
+    with pytest.raises(FillDynamicParamsError):
         result = main1.testfun(1.0, params=params)
 
     # All params static

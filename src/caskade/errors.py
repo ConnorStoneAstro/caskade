@@ -81,29 +81,14 @@ class FillDynamicParamsMappingError(FillDynamicParamsError):
     """Class for exceptions related to filling dynamic parameters with a mapping (dict) in ``caskade``."""
 
     def __init__(self, name, children, dynamic_modules, missing_key=None, missing_param=None):
-        if missing_key is not None:
-            message = dedent(
-                f"""
-                Input params key "{missing_key}" not found in children of: {name}. 
-                
-                All registered dynamic modules: 
-                {', '.join(repr(m) for m in dynamic_modules)}
+        message = dedent(
+            f"""
+            Input params key "{missing_key}" not found in children of: {name}. 
+            
+            All registered dynamic modules: 
+            {', '.join(repr(m) for m in dynamic_modules)}
 
-                Registered children:
-                {', '.join(repr(c) for c in children.values())}"""
-            )
-        else:
-            message = dedent(
-                f"""
-                Dynamic param "{missing_param.name}" not filled with given input params dict passed to {name}.
-
-                Dynamic param parent(s):
-                {', '.join(repr(p) for p in missing_param.parents)}
-                
-                Registered dynamic modules: 
-                {', '.join(repr(m) for m in dynamic_modules)}
-
-                Registered children:
-                {', '.join(repr(c) for c in children.values())}"""
-            )
+            Registered children:
+            {', '.join(repr(c) for c in children.values())}"""
+        )
         super().__init__(message)

@@ -69,30 +69,33 @@ def forward(method):
         # Extract params from the arguments
         if "params" in kwargs:
             params = kwargs.pop("params")
+            with ActiveContext(self):
+                self.fill_params(params)
+                kwargs = {**self.fill_kwargs(method_params), **kwargs}
+                return method(self, *args, **kwargs)
         elif len(self.dynamic_params) == 0:
-            params = {}
+            with ActiveContext(self):
+                kwargs = {**self.fill_kwargs(method_params), **kwargs}
+                try:
+                    sig.bind(self, *args, **kwargs)
+                    empty_params = False
+                except TypeError:  # user supplied empty params as last arg
+                    empty_params = True
+
+                if empty_params:
+                    return method(self, *args[:-1], **kwargs)
+                else:
+                    return method(self, *args, **kwargs)
         elif args:
             params = args[-1]
             args = args[:-1]
-        elif self.all_dynamic_value:
-            params = [backend.detach(p.value) for p in self.dynamic_params]
+            with ActiveContext(self):
+                self.fill_params(params)
+                kwargs = {**self.fill_kwargs(method_params), **kwargs}
+                return method(self, *args, **kwargs)
         else:
-            raise ValueError(
-                f"Params must be provided for a top level @forward method. Either by keyword 'method(params=params)' or as the last positional argument 'method(a, b, c, params)'"
-            )
-
-        with ActiveContext(self):
-            self.fill_params(params)
-            kwargs = {**self.fill_kwargs(method_params), **kwargs}
-            try:
-                sig.bind(self, *args, **kwargs)
-                empty_params = False
-            except TypeError:  # user supplied empty params as last arg
-                empty_params = True
-
-            if empty_params:
-                return method(self, *args[:-1], **kwargs)
-            else:
+            with ActiveContext(self):
+                kwargs = {**self.fill_kwargs(method_params), **kwargs}
                 return method(self, *args, **kwargs)
 
     return wrapped
