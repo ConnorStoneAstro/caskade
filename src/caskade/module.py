@@ -198,6 +198,8 @@ class Module(Node):
             params = self.from_valid(params)
 
         if isinstance(params, backend.array_type) and backend.backend != "object":
+            if params.shape[-1] == 0:
+                return  # No parameters to fill
             # check for batch dimension
             batch = len(params.shape) > 1
             B = tuple(params.shape[:-1]) if batch else ()
@@ -222,7 +224,9 @@ class Module(Node):
             if pos != params.shape[-1]:
                 raise FillDynamicParamsArrayError(self.name, params, dynamic_params)
         elif isinstance(params, Sequence):
-            if len(params) == len(dynamic_params):
+            if len(params) == 0:
+                return
+            elif len(params) == len(dynamic_params):
                 for param, value in zip(dynamic_params, params):
                     if dynamic_values:
                         param.dynamic_value = value
