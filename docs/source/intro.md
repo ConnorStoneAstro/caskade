@@ -15,6 +15,14 @@ argument passing for complex nested simulators.
 pip install caskade
 ```
 
+if you want to use `caskade` with `jax` then run:
+
+```bash
+pip install caskade[jax]
+```
+
+Alternately, just pip install `jax`/`jaxlib` separately as they are the only extra requirements.
+
 ## Usage
 
 Make a `Module` object which may have some `Param`s. Define a `forward` method
@@ -57,6 +65,13 @@ relationships. All of the complexity of the nested structure and argument
 passing is abstracted away so that at the top one need only pass a list of
 tensors for each parameter, a single large 1d tensor, or a dictionary with the
 same structure as the graph.
+
+### Use different backends
+
+`caskade` can be run with different backends for `torch`, `numpy`, and `jax`.
+See the [Beginners Guide
+tutorial](https://caskade.readthedocs.io/en/latest/notebooks/BeginnersGuide.html)
+to learn more!
 
 ## Documentation
 

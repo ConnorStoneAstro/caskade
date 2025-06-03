@@ -2,14 +2,11 @@ import inspect
 import functools
 from contextlib import ExitStack
 
+from .backend import backend
 from .context import ActiveContext, OverrideParam
+from .param import Param
 
 __all__ = ("forward",)
-
-
-def _get_arguments(method):
-    sig = inspect.signature(method)
-    return tuple(sig.parameters.keys())
 
 
 def forward(method):
@@ -47,7 +44,8 @@ def forward(method):
     """
 
     # Get arguments from function signature
-    method_params = _get_arguments(method)
+    sig = inspect.signature(method)
+    method_params = tuple(sig.parameters.keys())
 
     @functools.wraps(method)
     def wrapped(self, *args, **kwargs):
@@ -55,8 +53,10 @@ def forward(method):
             with ExitStack() as stack:
                 # User override of parameters for single function call
                 used_kwargs = []
-                for kwarg, kval in kwargs.items():
-                    for cname, cval in self.children.items():
+                for cname, cval in self.children.items():
+                    if not isinstance(cval, Param):
+                        continue
+                    for kwarg, kval in kwargs.items():
                         if kwarg == cname:
                             stack.enter_context(OverrideParam(cval, kval))
                             used_kwargs.append(kwarg)
@@ -67,21 +67,35 @@ def forward(method):
                 return method(self, *args, **kwargs)
 
         # Extract params from the arguments
-        if len(self.dynamic_params) == 0:
-            params = {}
-        elif "params" in kwargs:
+        if "params" in kwargs:
             params = kwargs.pop("params")
+            with ActiveContext(self):
+                self.fill_params(params)
+                kwargs = {**self.fill_kwargs(method_params), **kwargs}
+                return method(self, *args, **kwargs)
+        elif len(self.dynamic_params) == 0:
+            with ActiveContext(self):
+                kwargs = {**self.fill_kwargs(method_params), **kwargs}
+                try:
+                    sig.bind(self, *args, **kwargs)
+                    empty_params = False
+                except TypeError:  # user supplied empty params as last arg
+                    empty_params = True
+
+                if empty_params:
+                    return method(self, *args[:-1], **kwargs)
+                else:
+                    return method(self, *args, **kwargs)
         elif args:
             params = args[-1]
             args = args[:-1]
+            with ActiveContext(self):
+                self.fill_params(params)
+                kwargs = {**self.fill_kwargs(method_params), **kwargs}
+                return method(self, *args, **kwargs)
         else:
-            raise ValueError(
-                f"Params must be provided for a top level @forward method. Either by keyword 'method(params=params)' or as the last positional argument 'method(a, b, c, params)'"
-            )
-
-        with ActiveContext(self):
-            self.fill_params(params)
-            kwargs = {**self.fill_kwargs(method_params), **kwargs}
-            return method(self, *args, **kwargs)
+            with ActiveContext(self):
+                kwargs = {**self.fill_kwargs(method_params), **kwargs}
+                return method(self, *args, **kwargs)
 
     return wrapped

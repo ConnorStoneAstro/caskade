@@ -1,3 +1,9 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/ConnorStoneAstro/caskade/blob/main/media/caskade_logo_dark.png?raw=true">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/ConnorStoneAstro/caskade/blob/main/media/caskade_logo_white.png?raw=true">
+  <img alt="caskade logo" src="media/caskade_logo_white.png" width="70%">
+</picture>
+
 # caskade
 
 [![CI](https://github.com/ConnorStoneAstro/caskade/actions/workflows/ci.yml/badge.svg)](https://github.com/ConnorStoneAstro/caskade/actions/workflows/ci.yml)
@@ -14,6 +20,14 @@ argument passing for complex nested simulators.
 ``` bash
 pip install caskade
 ```
+
+if you want to use `caskade` with `jax` then run:
+
+```bash
+pip install caskade[jax]
+```
+
+Alternately, just pip install `jax`/`jaxlib` separately as they are the only extra requirements.
 
 ## Usage
 
@@ -57,6 +71,13 @@ relationships. All of the complexity of the nested structure and argument
 passing is abstracted away so that at the top one need only pass a list of
 tensors for each parameter, a single large 1d tensor, or a dictionary with the
 same structure as the graph.
+
+### Use different backends
+
+`caskade` can be run with different backends for `torch`, `numpy`, and `jax`.
+See the [Beginners Guide
+tutorial](https://caskade.readthedocs.io/en/latest/notebooks/BeginnersGuide.html)
+to learn more!
 
 ## Documentation
 

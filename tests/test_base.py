@@ -1,3 +1,5 @@
+import os
+
 from caskade import Node, test, GraphError, NodeConfigurationError
 
 import pytest
@@ -27,12 +29,19 @@ def test_link():
     node1.link("subnode", node2)
 
     # Already linked
-    with pytest.raises(GraphError):
-        node1.link("subnode", node2)
+    node1.link("subnode", node2)
+    assert len(node1._children) == 1
 
     # Double link
     with pytest.raises(GraphError):
         node1.link("subnode2", node2)
+
+    node1.active = True
+    with pytest.raises(GraphError):
+        node1.link("subnode3", node2)
+    with pytest.raises(GraphError):
+        node1.unlink("subnode")
+    node1.active = False
 
     # Make a cycle
     node3 = Node("node3")
@@ -52,6 +61,22 @@ def test_link():
     assert "subnode" not in node1._children
     assert node2._parents == set()
     assert node1._parents == set()
+
+    node4 = Node("node4", link=node2)
+    assert node4.node2 == node2
+
+    node5 = Node("node5", link=[node1, node2])
+    assert node5.node1 == node1
+    assert node5.node2 == node2
+
+    node6 = Node("node6")
+    node6.link(["subnode1", "subnode2"], [node1, node2])
+    print(node6)
+    assert node6.subnode1 == node1
+    assert node6.subnode2 == node2
+    node6.unlink(["subnode1", "subnode2"])
+    with pytest.raises(AttributeError):
+        node6.subnode1
 
 
 def test_topological_ordering():
@@ -138,6 +163,10 @@ def test_active(linkbyname, graphviz_order):
 
     graph = node1.graphviz(graphviz_order)
     assert graph is not None, "should return a graphviz object"
+
+    node1.graphviz(graphviz_order, "testgraph.png")
+    assert os.path.exists("testgraph.png")
+    os.remove("testgraph.png")
 
 
 def test_test():
