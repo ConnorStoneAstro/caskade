@@ -1,5 +1,5 @@
 ---
-title: 'caskade: building Pythonic scientific models'
+title: 'caskade: building Pythonic scientific simulators'
 tags:
   - Python
   - astronomy
@@ -9,7 +9,6 @@ authors:
   - name: Connor Stone
     orcid: 0000-0002-9086-6398
     corresponding: true
-    equal-contrib: true
     affiliation: "1, 2, 3"
   - name: Alexandre Adam
     orcid: 0000-0001-8806-7936
@@ -44,117 +43,94 @@ affiliations:
     index: 6
   - name: Work done while at UdeM, Ciela, and Mila
     index: a
-date: 17 Januray 2025
+date: 2 June 2025
 bibliography: paper.bib
 
 ---
 
 # Summary
 
-Scientific code is now often written in Python due to its readability,
-flexibility, and large package inventory. Many scientists are self taught in
-programming and produce code that is difficult to read, scale, and maintain
-causing a large amount of technical debt in the community. Here we present a
-formalism for developing scientific simulators, and a package `caskade` which
-utilizes this formalism to support highly flexible parameter representation.
+Scientific simulators and pipelines form the core of many research projects.
+Most scientists writing such code are primarily self-taught and tend to produce
+software that scales poorly and is difficult to follow, colloquially known as
+"spaghetti code". A significant reason for these development challenges is the
+ever evolving nature of a research project as goals change and progressively
+more realism is added to a simulator. Chief among these is the need to manage
+parameters for the model and ensuring they pass correctly from input to the
+downstream functions that use them. Over time some parameters may need to be
+fixed, share values, share complex relations, take multiple values, change
+unit/coordinate systems, and more. Refactoring code to manually enforce these
+dynamic relationships is time consuming and error prone. Further, one must also
+often write wrappers to interface with other codes that expect alternate
+parameter formats. We dub this the "args problem" as managing arguments to a
+simulator often requires considerable refactoring for what should be small
+changes. Here we present a fully featured solution to the args problem:
+`caskade`, which represents any scientific simulator as a directed acyclic graph
+(DAG).
 
-# Statement of need
+# Features
 
-Python is widely used in the scientific community to develop analysis code that
-can perform inference, handle complex calculations, and build flexible
-simulators. Previously no unified framework existed for developing such codes and
-a number of common problems needed to be solved many times in different teams.
-Most simulators used in complicated calculations and inference have some number of
-parameters which must be managed throughout the simulator. Common problems
-encountered when developing scientific simulators include passing parameters
-through the simulation, selectively fixing/freeing inference parameters,
-post-hoc reparametrizations, and linking parameters. Similarly, once a simulator
-has been constructed, one often needs to write tedious wrappers and
-modifications to interface with other scientific analysis codes. 
+The core features of `caskade` are the `Module` base class, `Param`
+registration, and `forward` decorator. To construct a `caskade` simulator, one
+subclasses `Module` then add some number of `Param` objects as attributes of the
+class, finally any number of functions may be decorated with `forward` and any
+parameters that have been registered with `Param` objects will be managed
+automatically. 
 
-Any simulator may be understood as a directed acyclic graph (DAG) of individual
-calculations, though no framework previously existed for formalizing this
-conception. `caskade` presents a highly generalized format for constructing
-scientific simulators which promotes good coding practices and abstracts the
-passing of parameters through the DAG model.
+When any class method is decorated by `@forward`, one need only provide the
+non-`Param` arguments (if any), `caskade` will manage the `Param` values. Any
+parameter may be transformed between "static" and "dynamic" where static has a
+fixed value and dynamic must be provided at call time. The dynamic parameters
+are those that would be sampled or optimized using external packages like emcee
+[@emcee], scipy.optimize [@scipy], Pyro [@pyro], dynesty [@dynesty], torch.Optim [@pytorch], etc.
+`caksade` will automatically unravel all parameters into a single 1D vector for
+easy interfacing with these external packages. Individual parameters, whole
+modules, or whole simulators may be switched between static and dynamic.
+Parameters from multiple models may be synced. New parameters may be added
+dynamically to allow for coordinate/unit transformations. An entire simulator
+may even be turned from a function of many parameters into a function of time
+without modifying the underlying simulator by adding a time parameter. 
 
-Originally developed for `caustics` [Stone2024], the `caskade` system is now
-used in multiple scientific analysis codes.
+![Example `caksade` DAG representation of a gravitational lensing simulator. Ovals represent Modules, boxes represent parameters, arrow boxes represent parameters which are functionally dependent on another parameter, and arrows show the direction of the graph flow for parameters passed at the top level.\label{fig:graph}](media/model_graph.png)
 
-# `caskade` Formalism
+Many more creative uses of the dynamic parameter management system have been
+tested, with positive results. Note that `caksade` simply manages how parameters
+enter class methods and so the user has complete freedom to design the internals
+of the simulator. In fact one could write thin wrapper classes over existing
+code bases to quickly allow access to `caskade` parameter management. Our
+suggested design flow is to build out a functional programming base for the
+package, then use `caksade` classes as wrappers for the functional base to
+design a convenient user interface. This design encourages modular development
+and is supportive of users who wish to expand functionality at different levels
+(core functionality, or interface level). The `caustics` package [@Stone2024]
+implements this code design to great effect, \autoref{fig:graph} shows an
+example `caskade` graph[^1]. In this graph the redshift parameters of each lens
+are linked to ensure consistent evaluation despite the functional backed having
+no explicit enforcement of this.
 
-`caskade` promotes an object oriented approach to simulator construction.
-Parameters that may be involved in inference are represented as `Param` objects
-which are held by `Module`s. Analysis code is modularized and organized in
-`Module` objects, which are Python classes that inherit from the
-`caskade.Module` class. Methods of a `Module` that use `Param` values are
-decorated with `@forward` to automatically collect and distribute the values.
+[^1]: visual generated by `graphviz` [@graphviz]
 
-To see this in action, let us consider the case of a star image model to
-represent a star in an astronomical image.
+`caskade` has grown beyond its initial development goal of supporting `caustics`
+and now includes many parameter related convenience features. There is a utility
+to save sampling chains for a simulator into HDF5 format and it is possible to
+load the state of the simulator back to a given point. It is now possible to use
+`caskade` with `numpy` [@numpy], `jax` [@jax], or `pytorch` [@pytorch] numerical
+backends. Parameters may be extracted, or provided as a 1D array, a list, or a
+dictionary. One may store metadata alongside parameters. Many more convenience
+features make for a seamless experience. One critical aspect of `caskade` is
+that it is rigorously tested to ensure reliability. We maintain 100% unit
+testing coverage over the entire code base, and provide highly informative error
+messages to users. These features give users confidence to push the limits of
+their simulators and iterate quickly while doing so.
 
-```python
-class AstroObject(Module):
-    def __init__(self):
-        self.x0 = Param("x0")
-        self.y0 = Param("y0")
+# Acknowledgements
 
-    @forward
-    def center_coords(self, x, y, x0, y0):
-        return x - x0, y - y0
-
-class Star(AstroObject):
-    def __init__(self):
-        self.sigma = Param("sigma")
-        self.brightness = Param("brightness")
-
-    @forward
-    def image(self, x, y, sigma, brightness):
-        x, y = self.center_coords(x, y)
-        return brightness * torch.exp(-0.5 * (x**2 + y**2) / sigma**2)
-```
-
-See how the `Module` inheritance is used to give the simulators the `caskade`
-capabilities. Notice that the `Star` class can use the `center_coords` method
-without needing to pass any `Param`s like the `x0` and `y0` that are needed for
-the method. One can now create a `Star` instance and call the `image` method to
-sample an image of a Gaussian.
-
-```python
-coords = torch.linspace(-1,1,100)
-X, Y = torch.meshgrid(coords, coords, "xy")
-mystar = Star()
-#                      x0   y0    brightness
-params = torch.tensor([0.1, -0.2, 1.0])
-mystar.sigma = 0.3
-image = mystar.image(X, Y, params)
-```
-
-Notice that we pass all the registered `Param` values when calling the
-`Star.image` method; the `@forward` decorator collects and organizes them such
-that the values go to the correct places. The `sigma` parameter is fixed to
-`0.3` and so does not need to be passed at the call to the `image` method. One
-may now make simulators for other astronomical objects like galaxies. By
-conforming to the above coding pattern the analysis will remain scalable and
-flexible. If one now wishes to make `mystar` move across the sky as a function
-of time, one would traditionally need to rewrite some elements of the code,
-however with `caskade` this may be accomplished straightforwardly.
-
-```python
-t = Param("t")
-mystar.x0 = lambda p: -2 * p["t"].value
-mystar.x0.link(t)
-mystar.y0 = lambda p: 0.5 * p["t"].value
-mystar.y0.link(t)
-#                      t    brightness
-params = torch.tensor([1.5, 1.0])
-image = mystar.image(X, Y, params)
-```
-
-Now instead of providing `x0` and `y0` in the `params` tensor, one provides the
-time `t` and the position will be automatically computed using the provided
-functions. Many more capabilities of `caskade` make tuning, scaling, and
-maintaining scientific code far easier. As a further benefit, all `caskade`
-simulators can interface with each other as larger simulators with all
-parameters passing as expected. Thus one may join an "ecosystem" of powerful
-Pythonic scientific code.
+This research was enabled by a generous donation by Eric and Wendy Schmidt with
+the recommendation of the Schmidt Futures Foundation. CS acknowledges the
+support of a NSERC Postdoctoral Fellowship and a CITA National Fellowship. This
+research was enabled in part by support provided by Calcul Québec and the
+Digital Research Alliance of Canada. The work of A.A. was partially funded by
+NSERC CGS D scholarships. Y.H. and L.P. acknowledge support from the National
+Sciences and Engineering Council of Canada grants RGPIN-2020-05073 and 05102,
+the Fonds de recherche du Québec grants 2022-NC-301305 and 300397, and the
+Canada Research Chairs Program. 
