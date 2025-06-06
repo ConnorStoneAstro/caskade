@@ -51,61 +51,63 @@ bibliography: paper.bib
 # Summary
 
 Scientific simulators and pipelines form the core of many research projects.
-Most scientists writing such code are primarily self-taught and tend to produce
-software that scales poorly and is difficult to follow, colloquially known as
-"spaghetti code". A significant reason for these development challenges is the
-ever evolving nature of a research project as goals change and progressively
-more realism is added to a simulator. Chief among these is the need to manage
-parameters for the model and ensuring they pass correctly from input to
-downstream. Over time, some parameters may need to be fixed, share values, share
-complex relations, take multiple values, change unit/coordinate systems, and
-more. Refactoring code to manually enforce these dynamic relationships is time
-consuming and error prone. Further, one must also often write wrappers to
-interface with other codes that expect alternate parameter formats. We dub this
-the "args problem" as managing arguments to a simulator often requires
-considerable refactoring for what should be small changes. Here we present a
-fully featured solution to the args problem: `caskade`, which represents any
-scientific simulator as a directed acyclic graph (DAG).
+Writing high quality, modular code allows for efficiently scaling a project, but
+this can be challenging in a research context. Research project goals and
+solutions to those goals are constantly in flux, often requiring many
+refactoring rounds to meet these changes. The result can be a progressively more
+unwieldy interconnected code; we dub this, "the args problem" in scientific
+simulator construction. Here we present a system, `caskade`, which allows users
+to focus on modular components of a simulator, these are small and testable to
+ensure robustness. With `caskade` one can turn these modular components into
+abstracted blocks that stack to form a powerful simulator. This is inspired by
+the `PyTorch` framework `nn.Module` which allows for near effortless
+construction of machine learning models. We generalize the object oriented
+framework to apply to almost any scientific forward model, simulator, analysis
+pipeline, and so on; `caskade` manages the flow of parameters through these
+models.
 
 # Features
 
-The core features of `caskade` are the `Module` base class, `Param`
-parameter, and `forward` decorator. To construct a `caskade` simulator, one
-subclasses `Module` then adds some number of `Param` objects as attributes of the
-class, finally any number of functions may be decorated with `@forward` and any
-parameters that have been registered with `Param` will be managed
-automatically. 
+The core features of `caskade` are the `Module` base class, `Param` parameter,
+and `forward` decorator. To construct a `caskade` simulator, one subclasses
+`Module` then adds some number of `Param` objects as attributes of the class,
+finally any number of class methods may be decorated with `@forward`. As modules
+are combined into a larger simulator, `caskade` builds a directed acyclic graph
+(DAG) representation. This allows it to automatically manage the flow (cascade)
+of parameters through the simulator and encode arbitrary relationships between
+them. 
 
-When any class method is decorated by `@forward`, one need only provide the
-non-`Param` arguments (if any), `caskade` will manage the `Param` values. Any
+For the `Param` values managed by `caskade`, a number of features are available
+which are designed to be useful in inference and analysis contexts. Any
 parameter may be transformed between "static" and "dynamic" where static has a
-fixed value and dynamic is provided at call time. The dynamic parameters
-are those that would be sampled or optimized using external packages like emcee
+fixed value and dynamic is provided at call time. The dynamic parameters are
+those that would be sampled or optimized using external packages like emcee
 [@emcee], scipy.optimize [@scipy], Pyro [@pyro], dynesty [@dynesty], torch.Optim
-[@pytorch], etc. `caksade` will automatically unravel all parameters into a
-single 1D vector for easy interfacing with these external packages. Individual
-parameters, whole modules, or whole simulators may be switched between static
-and dynamic. Parameters from multiple models may be synced. New parameters may
-be added dynamically to allow for coordinate/unit transformations. An entire
-simulator may even be turned from a function of many parameters into a function
-of time without modifying the underlying simulator by adding a time parameter. 
+[@pytorch], etc. `caksade` can automatically unravel and concatenate all
+parameters into a single 1D vector for easy interfacing with these external
+packages. Individual parameters, whole modules, or whole simulators may be
+switched between static and dynamic. Parameters may be synced with arbitrary
+functional relationships between them. New parameters may be added dynamically
+to allow for sophisticated transformations. For example, an entire simulator may
+be turned into a function of time without modifying the underlying simulator by
+adding a time parameter and linking appropriately. 
 
-![Example `caksade` DAG representation of a gravitational lensing simulator. Ovals represent Modules, boxes represent parameters, arrow boxes represent parameters which are functionally dependent on another parameter, and arrows show the direction of the graph flow for parameters passed at the top level.\label{fig:graph}](media/model_graph.png)
+![Example `caksade` DAG representation of a gravitational lensing simulator. Ovals represent Modules, boxes represent parameters, arrow boxes represent parameters which are functionally dependent on another parameter, and thin arrows show the direction of the graph flow for parameters passed at the top level.\label{fig:graph}](media/model_graph.png)
 
 Many more creative uses of the dynamic parameter management system have been
 tested, with positive results. Note that `caksade` simply manages how parameters
 enter class methods and so the user has complete freedom to design the internals
-of the simulator. In fact one could write thin wrapper classes over existing
-code bases to quickly allow access to `caskade` parameter management. Our
+of the simulator. In fact one could write thin wrapper classes over an existing
+code base to quickly allow access to `caskade` parameter management. Our
 suggested design flow is to build out a functional programming base for the
-package, then use `caksade` classes as wrappers for the functional base to
-design a convenient user interface. This design encourages modular development
-and is supportive of users who wish to expand functionality at different levels
-(core functionality, or interface level). The `caustics` package [@Stone2024]
+package, then use `Module`s as wrappers for the functional base to design a
+convenient user interface. This design encourages modular development and is
+supportive of users who wish to expand functionality at different levels (core
+functionality or interface level). The `caustics` package [@Stone2024]
 implements this code design to great effect. \autoref{fig:graph} shows an
-example `caskade` graph[^1]. In this graph the redshift parameters of each lens
-are linked to ensure consistent evaluation despite the functional backed having
-no explicit enforcement of this.
+example `caskade` graph[^1] from `caustics`. In this graph the redshift
+parameters of each lens are linked to ensure consistent evaluation despite the
+functional backed having no explicit enforcement of this.
 
 [^1]: visual generated by `graphviz` [@graphviz]
 
@@ -113,7 +115,7 @@ no explicit enforcement of this.
 and now includes many parameter related convenience features. There is a utility
 to save sampling chains for a simulator into HDF5 format and it is possible to
 load the state of the simulator back to a given point. It is now possible to use
-`caskade` with `numpy` [@numpy], `jax` [@jax], or `pytorch` [@pytorch] numerical
+`caskade` with `NumPy` [@numpy], `JAX` [@jax], or `PyTorch` [@pytorch] numerical
 backends. Parameters may be extracted/provided as a 1D array, a list, or a
 dictionary. One may store metadata alongside parameters. Many more convenience
 features make for a seamless experience. One critical aspect of `caskade` is
