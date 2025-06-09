@@ -75,7 +75,10 @@ finally any number of class methods may be decorated with `@forward`. As modules
 are combined into a larger simulator, `caskade` builds a directed acyclic graph
 (DAG) representation. This allows it to automatically manage the flow (cascade)
 of parameters through the simulator and encode arbitrary relationships between
-them. 
+them. In some ways `caskade` is reminiscent of `Hydra` [@hydra], however `Hydra`
+efficiently builds configuration files for arbitrary applications while
+`caskade` focuses on numerical parameters and scientific inference. The two may
+even be used in tandem.
 
 For the `Param` values managed by `caskade`, a number of features are available
 which are designed to be useful in inference and analysis contexts. Any
