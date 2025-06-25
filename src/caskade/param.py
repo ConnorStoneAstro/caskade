@@ -2,6 +2,7 @@ from typing import Optional, Union, Callable, Any
 from warnings import warn
 import traceback
 from dataclasses import dataclass
+from math import prod
 
 from numpy import ndarray, pi
 
@@ -544,6 +545,18 @@ class Param(Node):
         value = self._from_valid_base(value)
         value = (value + self.valid[1] - backend.sqrt((value - self.valid[1]) ** 2 + 4)) / 2
         return value
+
+    @property
+    def node_str(self) -> str:
+        """
+        Returns a string representation of the node for graph visualization.
+        """
+        if self.static or self._type == "dynamic value":
+            if max(1, prod(self.value.shape)) == 1:
+                return f"{self.name}|{self._type}: {self.npvalue:.3g}"
+            else:
+                return f"{self.name}|{self._type}: {tuple(self.npvalue.shape)}"
+        return f"{self.name}|{self._type}"
 
     def __repr__(self) -> str:
         return self.name
