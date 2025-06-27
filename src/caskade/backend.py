@@ -47,7 +47,6 @@ class Backend:
         self._array_type = self._array_type_torch
         self.concatenate = self._concatenate_torch
         self.copy = self._copy_torch
-        self.detach = self._detach_torch
         self.tolist = self._tolist_torch
         self.view = self._view_torch
         self.as_array = self._as_array_torch
@@ -60,7 +59,6 @@ class Backend:
         self._array_type = self._array_type_jax
         self.concatenate = self._concatenate_jax
         self.copy = self._copy_jax
-        self.detach = self._detach_jax
         self.tolist = self._tolist_jax
         self.view = self._view_jax
         self.as_array = self._as_array_jax
@@ -73,7 +71,6 @@ class Backend:
         self._array_type = self._array_type_numpy
         self.concatenate = self._concatenate_numpy
         self.copy = self._copy_numpy
-        self.detach = self._detach_numpy
         self.tolist = self._tolist_numpy
         self.view = self._view_numpy
         self.as_array = self._as_array_numpy
@@ -138,15 +135,6 @@ class Backend:
 
     def _copy_numpy(self, array):
         return self.module.copy(array)
-
-    def _detach_torch(self, array):
-        return array.detach()
-
-    def _detach_jax(self, array):
-        return array
-
-    def _detach_numpy(self, array):
-        return array
 
     def _tolist_torch(self, array):
         return array.detach().cpu().tolist()

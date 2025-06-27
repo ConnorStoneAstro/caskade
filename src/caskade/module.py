@@ -8,6 +8,7 @@ from .collection import NodeTuple, NodeList
 from .errors import (
     ActiveStateError,
     ParamConfigurationError,
+    FillDynamicParamsError,
     FillDynamicParamsArrayError,
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
@@ -192,13 +193,13 @@ class Module(Node):
         """
 
         dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
-        if len(dynamic_params) == 0 and not dynamic_values:
-            return
 
         if self.valid_context and not local:
             params = self.from_valid(params)
 
         if isinstance(params, backend.array_type) and backend.backend != "object":
+            if params.shape[-1] == 0:
+                return  # No parameters to fill
             # check for batch dimension
             batch = len(params.shape) > 1
             B = tuple(params.shape[:-1]) if batch else ()
@@ -223,7 +224,9 @@ class Module(Node):
             if pos != params.shape[-1]:
                 raise FillDynamicParamsArrayError(self.name, params, dynamic_params)
         elif isinstance(params, Sequence):
-            if len(params) == len(dynamic_params):
+            if len(params) == 0:
+                return
+            elif len(params) == len(dynamic_params):
                 for param, value in zip(dynamic_params, params):
                     if dynamic_values:
                         param.dynamic_value = value
@@ -238,13 +241,6 @@ class Module(Node):
                 )
         elif isinstance(params, Mapping):
             self._fill_dict(self, params, dynamic_values=dynamic_values)
-            if local:
-                return
-            for param in dynamic_params:
-                if param.value is None:
-                    raise FillDynamicParamsMappingError(
-                        self.name, self.children, self.dynamic_modules, missing_param=param
-                    )
         else:
             try:
                 if params.dtype is not None and backend.backend == "object":
@@ -300,7 +296,13 @@ class Module(Node):
         kwargs = {}
         for key in keys:
             if key in self.children and isinstance(self[key], Param):
-                kwargs[key] = self[key].value
+                val = self.children[key].value
+                if val is None:
+                    raise FillDynamicParamsError(
+                        f"Param {key} in Module {self.name} has no value. "
+                        "Ensure that the parameter is set before calling the forward method or provided with the params."
+                    )
+                kwargs[key] = val
         return kwargs
 
     def fill_dynamic_values(self, params: Union[ArrayLike, Sequence, Mapping], local=False):
