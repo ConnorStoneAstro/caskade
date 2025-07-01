@@ -132,6 +132,7 @@ def test_param_to():
         return
     if backend.backend == "jax":
         device = backend.jax.devices()[0]
+        backend.jax.config.update("jax_enable_x64", True)
     else:
         device = "cpu"
 
@@ -148,6 +149,7 @@ def test_params_sticky_to():
         return
     if backend.backend == "jax":
         device = backend.jax.devices()[0]
+        backend.jax.config.update("jax_enable_x64", True)
     else:
         device = "cpu"
     # static
