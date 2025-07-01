@@ -76,6 +76,12 @@ class Param(Node):
     dynamic_value: (Optional[Union[ArrayLike, float, int]], optional)
         Allows the parameter to store a value while still dynamic (think of it
         as a default value).
+    dtype: (Optional[Any], optional)
+        The data type of the parameter. Defaults to None meaning the data type
+        will be inferred from the value.
+    device: (Optional[Any], optional)
+        The device of the parameter. Defaults to None meaning the device will
+        be inferred from the value.
     """
 
     graphviz_types = {
