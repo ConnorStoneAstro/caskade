@@ -169,8 +169,8 @@ class Backend:
     def _to_torch(self, array, dtype=None, device=None):
         return array.to(dtype=dtype, device=device)
 
-    def _to_jax(self, array, dtype=None, **kwargs):
-        return array.astype(dtype)
+    def _to_jax(self, array, dtype=None, device=None):
+        return self.module.device_put(array.astype(dtype), device=device)
 
     def _to_numpy(self, array, dtype=None, **kwargs):
         return array.astype(dtype)

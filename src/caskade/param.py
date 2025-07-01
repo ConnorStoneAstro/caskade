@@ -132,8 +132,8 @@ class Param(Node):
                     f"Shape {shape} does not match dynamic value shape {dynamic_value.shape}"
                 )
         self._type = "null"
-        self.dtype = dtype
-        self.device = device
+        self._dtype = dtype
+        self._device = device
         self.value = value
         if not hasattr(self, "_dynamic_value"):
             self.dynamic_value = dynamic_value
@@ -221,6 +221,24 @@ class Param(Node):
         self._shape = shape
 
     @property
+    def dtype(self) -> Optional[str]:
+        if self._dtype is None:
+            try:
+                return self.value.dtype
+            except AttributeError:
+                pass
+        return self._dtype
+
+    @property
+    def device(self) -> Optional[str]:
+        if self._device is None:
+            try:
+                return self.value.device
+            except AttributeError:
+                pass
+        return self._device
+
+    @property
     def dynamic_value(self) -> Union[ArrayLike, None]:
         return self._dynamic_value
 
@@ -250,11 +268,6 @@ class Param(Node):
         self._type = "dynamic value"
         self._pointer_func = None
         value = backend.as_array(value, dtype=self.dtype, device=self.device)
-        try:
-            self.dtype = value.dtype
-            self.device = value.device
-        except AttributeError:
-            pass
         self._shape = value.shape if backend.backend != "object" else None
         self._dynamic_value = value
         self._value = None
@@ -310,11 +323,6 @@ class Param(Node):
         else:
             self._type = "static"
             value = backend.as_array(value, dtype=self.dtype, device=self.device)
-            try:
-                self.dtype = value.dtype
-                self.device = value.device
-            except AttributeError:
-                pass
             self._shape = value.shape if backend.backend != "object" else None
             self._value = value
             self._dynamic_value = None
@@ -343,18 +351,24 @@ class Param(Node):
         if backend.backend == "object":
             return self
         if device is not None:
-            self.device = device
+            self._device = device
+        else:
+            device = self.device
         if dtype is not None:
-            self.dtype = dtype
+            self._dtype = dtype
+        else:
+            dtype = self.dtype
         super().to(device=device, dtype=dtype)
         if self.static:
             self._value = backend.to(self._value, device=device, dtype=dtype)
         if self._dynamic_value is not None:
             self._dynamic_value = backend.to(self._dynamic_value, device=device, dtype=dtype)
-        if self.valid[0] is not None:
-            self.valid = (backend.to(self.valid[0], device=device, dtype=dtype), self.valid[1])
-        if self.valid[1] is not None:
-            self.valid = (self.valid[0], backend.to(self.valid[1], device=device, dtype=dtype))
+        valid = self.valid
+        if valid[0] is not None:
+            valid = (backend.to(valid[0], device=device, dtype=dtype), valid[1])
+        if valid[1] is not None:
+            valid = (valid[0], backend.to(valid[1], device=device, dtype=dtype))
+        self.valid = valid
 
         return self
 
