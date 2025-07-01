@@ -55,6 +55,7 @@ class Backend:
         self.atan = self._atan_torch
 
     def setup_jax(self):
+        self.jax = importlib.import_module("jax")
         self.make_array = self._make_array_jax
         self._array_type = self._array_type_jax
         self.concatenate = self._concatenate_jax
@@ -170,8 +171,7 @@ class Backend:
         return array.to(dtype=dtype, device=device)
 
     def _to_jax(self, array, dtype=None, device=None):
-        jax = importlib.import_module("jax")
-        return jax.device_put(array.astype(dtype), device=device)
+        return self.jax.device_put(array.astype(dtype), device=device)
 
     def _to_numpy(self, array, dtype=None, **kwargs):
         return array.astype(dtype)

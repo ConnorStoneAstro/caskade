@@ -94,8 +94,8 @@ class Param(Node):
         valid: Optional[tuple[Union[ArrayLike, float, int, None]]] = None,
         units: Optional[str] = None,
         dynamic_value: Optional[Union[ArrayLike, float, int]] = None,
-        dtype: Optional[str] = None,
-        device: Optional[str] = None,
+        dtype: Optional[Any] = None,
+        device: Optional[Any] = None,
     ):
         super().__init__(name=name)
         if value is not None and dynamic_value is not None:
@@ -267,7 +267,7 @@ class Param(Node):
         # Set to dynamic value
         self._type = "dynamic value"
         self._pointer_func = None
-        value = backend.as_array(value, dtype=self.dtype, device=self.device)
+        value = backend.as_array(value, dtype=self._dtype, device=self._device)
         self._shape = value.shape if backend.backend != "object" else None
         self._dynamic_value = value
         self._value = None
@@ -322,7 +322,7 @@ class Param(Node):
             self._dynamic_value = None
         else:
             self._type = "static"
-            value = backend.as_array(value, dtype=self.dtype, device=self.device)
+            value = backend.as_array(value, dtype=self._dtype, device=self._device)
             self._shape = value.shape if backend.backend != "object" else None
             self._value = value
             self._dynamic_value = None
