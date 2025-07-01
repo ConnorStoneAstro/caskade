@@ -171,6 +171,7 @@ def test_params_sticky_to():
     p = p.to(dtype=backend.module.float64, device=device)
     assert p.dtype == backend.module.float64
     assert p.device == device
+    p = p.to()
     p.value = 1.0
     assert p.dtype == backend.module.float64
     assert p.device == device
