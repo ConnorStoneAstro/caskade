@@ -592,7 +592,7 @@ class Param(Node):
         """
         Returns a string representation of the node for graph visualization.
         """
-        if self.static or self._type == "dynamic value":
+        if (self.static or self._type == "dynamic value") and backend.backend != "object":
             if max(1, prod(self.value.shape)) == 1:
                 return f"{self.name}|{self._type}: {self.npvalue:.3g}"
             else:
