@@ -112,5 +112,7 @@ def test_full_integration_v2():
         return
     assert main.mymainfunction(1.0, params).item() == 558.0
 
+    main.c_param = [[1, 2], [1, 3]]  # test print param with shape
+    print(main)
     graph = main.graphviz()
     assert graph is not None, "should return a graphviz object"

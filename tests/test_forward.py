@@ -45,6 +45,7 @@ def test_forward():
     main1.c = main1.b
 
     # check graph generation
+    print(main1)
     graph = main1.graphviz()
     assert graph is not None, "should return a graphviz object"
 
