@@ -146,6 +146,20 @@ class Module(Node):
                 if not (ignore_pointer and n.pointer):
                     n.to_static()
 
+    @property
+    def valid_context(self) -> bool:
+        """Return True if the module is in a valid context."""
+        return self._valid_context
+
+    @valid_context.setter
+    def valid_context(self, value: bool):
+        """Set the valid context of the module."""
+        if not isinstance(value, bool):
+            raise TypeError(f"Valid context must be a boolean, got {type(value)}")
+        self._valid_context = value
+        for node in self.topological_ordering(with_isinstance=Module):
+            node._valid_context = value
+
     def _fill_dict(self, node, params, dynamic_values=False):
 
         for key in params:
