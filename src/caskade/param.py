@@ -548,7 +548,7 @@ class Param(Node):
 
     def _to_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
         value = self._to_valid_base(value)
-        return (value - self.valid[0]) % (self.valid[1] - self.valid[0]) + self.valid[0]
+        return ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]
 
     def _to_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
         value = self._to_valid_base(value)
@@ -574,7 +574,7 @@ class Param(Node):
 
     def _from_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
         value = self._from_valid_base(value)
-        value = (value - self.valid[0]) % (self.valid[1] - self.valid[0]) + self.valid[0]
+        value = ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]
         return value
 
     def _from_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
