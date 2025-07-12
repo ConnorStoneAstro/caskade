@@ -339,7 +339,6 @@ class Module(Node):
 
     def build_params_array(self) -> ArrayLike:
         """Return an input array-like object for this module's @forward methods by filling with dynamic values."""
-
         if backend.backend == "object":
             raise BackendError("Cannot use ArrayLike operations when backend is 'object'")
         self._check_dynamic_values("ArrayLike")
@@ -365,9 +364,10 @@ class Module(Node):
                     )
         if len(x) == 0:
             return backend.make_array([])
+        x = backend.concatenate(x, axis=-1)
         if self.valid_context:
             x = self.to_valid(x)
-        return backend.concatenate(x, axis=-1)
+        return x
 
     def build_params_list(self) -> list[ArrayLike]:
         """Return an input list for this module's @forward methods by filling with dynamic values."""
@@ -407,7 +407,6 @@ class Module(Node):
         """Convert input params to valid params."""
         if backend.backend == "object":
             return params
-
         dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
         if isinstance(params, backend.array_type):
             valid_params = []  # backend.zeros_like(params)
@@ -416,7 +415,7 @@ class Module(Node):
             pos = 0
             for param in dynamic_params:
                 size = max(1, prod(param.shape))  # Handle scalar parameters
-                return_shape = params[..., pos : pos + size].shape
+                return_shape = (*B, size)
                 valid_params.append(
                     backend.view(
                         param.to_valid(
@@ -472,7 +471,7 @@ class Module(Node):
             pos = 0
             for param in dynamic_params:
                 size = max(1, prod(param.shape))
-                return_shape = valid_params[..., pos : pos + size].shape
+                return_shape = (*B, size)
                 params.append(
                     backend.view(
                         param.from_valid(

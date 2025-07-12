@@ -53,6 +53,8 @@ class Backend:
         self.to = self._to_torch
         self.to_numpy = self._to_numpy_torch
         self.atan = self._atan_torch
+        self.logit = self._logit_torch
+        self.sigmoid = self._sigmoid_torch
 
     def setup_jax(self):
         self.jax = importlib.import_module("jax")
@@ -147,7 +149,7 @@ class Backend:
         return array.tolist()
 
     def _view_torch(self, array, shape):
-        return array.view(shape)
+        return array.reshape(shape)
 
     def _view_jax(self, array, shape):
         return array.reshape(shape)
@@ -199,6 +201,12 @@ class Backend:
 
     def tan(self, array):
         return self.module.tan(array)
+
+    def _logit_torch(self, array):
+        return self.module.logit(array)
+
+    def _sigmoid_torch(self, array):
+        return self.module.sigmoid(array)
 
     def _atan_torch(self, array):
         return self.module.atan(array)
