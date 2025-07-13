@@ -540,61 +540,41 @@ class Param(Node):
         self._valid = valid
 
     def _to_valid_base(self, value: ArrayLike) -> ArrayLike:
-        if self.pointer:
-            raise ParamTypeError(
-                f"Cannot apply valid transformation to pointer parameter ({self.name})"
-            )
         return value
 
     def _to_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._to_valid_base(value)
         value = (
             backend.logit((value - self.valid[0]) / (self.valid[1] - self.valid[0])) + self.valid[0]
         )
-        # value = backend.tan((value - self.valid[0]) * pi / (self.valid[1] - self.valid[0]) - pi / 2)
         return value
 
     def _to_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
-        value = self._to_valid_base(value)
         return ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]
 
     def _to_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._to_valid_base(value)
         return value - 1.0 / (value - self.valid[0])
 
     def _to_valid_rightvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._to_valid_base(value)
         return value + 1.0 / (self.valid[1] - value)
 
     def _from_valid_base(self, value: ArrayLike) -> ArrayLike:
-        if self.pointer:
-            raise ParamTypeError(
-                f"Cannot apply valid transformation to pointer parameter ({self.name})"
-            )
         return value
 
     def _from_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._from_valid_base(value)
         value = (
             backend.sigmoid(value - self.valid[0]) * (self.valid[1] - self.valid[0]) + self.valid[0]
         )
-        # value = (backend.atan(value) + pi / 2) * (self.valid[1] - self.valid[0]) / pi + self.valid[
-        #     0
-        # ]
         return value
 
     def _from_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
-        value = self._from_valid_base(value)
         value = ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]
         return value
 
     def _from_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._from_valid_base(value)
         value = (value + self.valid[0] + backend.sqrt((value - self.valid[0]) ** 2 + 4)) / 2
         return value
 
     def _from_valid_rightvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._from_valid_base(value)
         value = (value + self.valid[1] - backend.sqrt((value - self.valid[1]) ** 2 + 4)) / 2
         return value
 
