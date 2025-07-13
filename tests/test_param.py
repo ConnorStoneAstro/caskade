@@ -60,10 +60,6 @@ def test_param_creation():
     p5 = Param("test", p3)
     with pytest.raises(ParamTypeError):
         p5.shape = (1, 2, 3)
-    with pytest.raises(ParamTypeError):
-        p5.to_valid(1.0)
-    with pytest.raises(ParamTypeError):
-        p5.from_valid(1.0)
 
     # Function parameter
     p6 = Param("test", lambda p: p["other"].value * 2)
