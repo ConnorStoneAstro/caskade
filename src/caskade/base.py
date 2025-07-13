@@ -15,6 +15,8 @@ from .warnings import SaveStateWarning
 
 def attrsetter(obj, attr, value):
     """Set an attribute on an object."""
+    if isinstance(value, str) and value == "NONE":
+        value = None
     if "." in attr:
         parts = attr.split(".", 1)
         attrsetter(getattr(obj, parts[0]), parts[1], value)
@@ -238,6 +240,8 @@ class Node:
         if id(self) not in _done_save:
             for attr in self.saveattrs:
                 value = attrgetter(attr)(self)
+                if value is None:
+                    value = "NONE"
                 try:
                     h5group.attrs[attr] = value
                 except TypeError:
