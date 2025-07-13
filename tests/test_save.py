@@ -35,6 +35,8 @@ def _build_test_module(blank=False):
     )
     p4 = Param("p4", p2)
     p5 = Param("p5")
+    p5.test_none = None
+    p5.saveattrs.add("test_none")
 
     m1.p1 = p1
     m1.p2 = p2
@@ -52,7 +54,7 @@ def _make_files_and_test(usefileobject=False):
 
     # Save not appendable
     with pytest.warns(SaveStateWarning):
-        main.m1.meta.bad_meta = None
+        main.m1.meta.bad_meta = lambda x: x + 1
         main.m1.saveattrs.add("meta.bad_meta")
         if usefileobject:
             with h5py.File("test_save_notappend.h5", "w") as f:

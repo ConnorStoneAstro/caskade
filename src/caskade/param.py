@@ -216,7 +216,7 @@ class Param(Node):
         if backend.backend == "object":
             return None
         if self.pointer and self.value is not None:
-            return self.value.shape
+            return tuple(self.value.shape)
         return self._shape
 
     @shape.setter
@@ -225,7 +225,10 @@ class Param(Node):
             raise ParamTypeError("Cannot set shape of parameter with backend 'object'")
         if self.pointer:
             raise ParamTypeError(f"Cannot set shape of parameter {self.name} with type 'pointer'")
-        self._shape = shape
+        if shape is None:
+            self._shape = None
+            return
+        self._shape = tuple(shape)
 
     @property
     def dtype(self) -> Optional[str]:
@@ -275,7 +278,7 @@ class Param(Node):
         self._type = "dynamic value"
         self._pointer_func = None
         value = backend.as_array(value, dtype=self._dtype, device=self._device)
-        self._shape = value.shape if backend.backend != "object" else None
+        self._shape = tuple(value.shape) if backend.backend != "object" else None
         self._dynamic_value = value
         self._value = None
         try:
@@ -330,7 +333,7 @@ class Param(Node):
         else:
             self._type = "static"
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
-            self._shape = value.shape if backend.backend != "object" else None
+            self._shape = tuple(value.shape) if backend.backend != "object" else None
             self._value = value
             self._dynamic_value = None
             try:
@@ -405,7 +408,7 @@ class Param(Node):
                     "value",
                     data=value,
                     chunks=True if self.value is not None else False,
-                    maxshape=(None,) + tuple(self.shape) if self.value is not None else None,
+                    maxshape=(None,) + self.shape if self.value is not None else None,
                     compression="gzip" if self.value is not None else None,
                 )
             else:
@@ -437,7 +440,7 @@ class Param(Node):
         if not hasattr(self, "appended"):
             self.appended = True
             if self.value is not None:
-                h5group["value"].resize((h5group["value"].shape[0] + 1,) + tuple(self.shape))
+                h5group["value"].resize((h5group["value"].shape[0] + 1,) + self.shape)
                 h5group["value"][-1] = self.value
 
     def _load_state_hdf5(self, h5group, index: int = -1, _done_load: set = None):
@@ -499,7 +502,7 @@ class Param(Node):
             self.to_valid = self._to_valid_rightvalid
             self.from_valid = self._from_valid_rightvalid
             valid = (None, backend.as_array(valid[1], dtype=self.dtype, device=self.device))
-            if self.value is not None and backend.any(self.value > valid[1]):
+            if not self.pointer and self.value is not None and backend.any(self.value > valid[1]):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         elif valid[1] is None:
             if self.cyclic:
@@ -509,7 +512,7 @@ class Param(Node):
             self.to_valid = self._to_valid_leftvalid
             self.from_valid = self._from_valid_leftvalid
             valid = (backend.as_array(valid[0], dtype=self.dtype, device=self.device), None)
-            if self.value is not None and backend.any(self.value < valid[0]):
+            if not self.pointer and self.value is not None and backend.any(self.value < valid[0]):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         else:
             if self.cyclic:
@@ -527,7 +530,8 @@ class Param(Node):
                     f"Valid range (valid[1] - valid[0]) must be positive ({self.name})"
                 )
             if (
-                self.value is not None
+                not self.pointer
+                and self.value is not None
                 and not self.cyclic
                 and (backend.any(self.value < valid[0]) or backend.any(self.value > valid[1]))
             ):
@@ -536,54 +540,41 @@ class Param(Node):
         self._valid = valid
 
     def _to_valid_base(self, value: ArrayLike) -> ArrayLike:
-        if self.pointer:
-            raise ParamTypeError(
-                f"Cannot apply valid transformation to pointer parameter ({self.name})"
-            )
         return value
 
     def _to_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._to_valid_base(value)
-        return backend.tan((value - self.valid[0]) * pi / (self.valid[1] - self.valid[0]) - pi / 2)
+        value = (
+            backend.logit((value - self.valid[0]) / (self.valid[1] - self.valid[0])) + self.valid[0]
+        )
+        return value
 
     def _to_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
-        value = self._to_valid_base(value)
-        return (value - self.valid[0]) % (self.valid[1] - self.valid[0]) + self.valid[0]
+        return ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]
 
     def _to_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._to_valid_base(value)
         return value - 1.0 / (value - self.valid[0])
 
     def _to_valid_rightvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._to_valid_base(value)
         return value + 1.0 / (self.valid[1] - value)
 
     def _from_valid_base(self, value: ArrayLike) -> ArrayLike:
-        if self.pointer:
-            raise ParamTypeError(
-                f"Cannot apply valid transformation to pointer parameter ({self.name})"
-            )
         return value
 
     def _from_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._from_valid_base(value)
-        value = (backend.atan(value) + pi / 2) * (self.valid[1] - self.valid[0]) / pi + self.valid[
-            0
-        ]
+        value = (
+            backend.sigmoid(value - self.valid[0]) * (self.valid[1] - self.valid[0]) + self.valid[0]
+        )
         return value
 
     def _from_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
-        value = self._from_valid_base(value)
-        value = (value - self.valid[0]) % (self.valid[1] - self.valid[0]) + self.valid[0]
+        value = ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]
         return value
 
     def _from_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._from_valid_base(value)
         value = (value + self.valid[0] + backend.sqrt((value - self.valid[0]) ** 2 + 4)) / 2
         return value
 
     def _from_valid_rightvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._from_valid_base(value)
         value = (value + self.valid[1] - backend.sqrt((value - self.valid[1]) ** 2 + 4)) / 2
         return value
 
@@ -596,7 +587,7 @@ class Param(Node):
             if max(1, prod(self.value.shape)) == 1:
                 return f"{self.name}|{self._type}: {self.npvalue:.3g}"
             else:
-                return f"{self.name}|{self._type}: {tuple(self.npvalue.shape)}"
+                return f"{self.name}|{self._type}: {self.shape}"
         return f"{self.name}|{self._type}"
 
     def __repr__(self) -> str:
