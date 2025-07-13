@@ -146,6 +146,20 @@ class Module(Node):
                 if not (ignore_pointer and n.pointer):
                     n.to_static()
 
+    @property
+    def valid_context(self) -> bool:
+        """Return True if the module is in a valid context."""
+        return self._valid_context
+
+    @valid_context.setter
+    def valid_context(self, value: bool):
+        """Set the valid context of the module."""
+        if not isinstance(value, bool):
+            raise TypeError(f"Valid context must be a boolean, got {type(value)}")
+        self._valid_context = value
+        for node in self.topological_ordering(with_isinstance=Module):
+            node._valid_context = value
+
     def _fill_dict(self, node, params, dynamic_values=False):
 
         for key in params:
@@ -193,9 +207,6 @@ class Module(Node):
         """
 
         dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
-
-        if self.valid_context and not local:
-            params = self.from_valid(params)
 
         if isinstance(params, backend.array_type) and backend.backend != "object":
             if params.shape[-1] == 0:
@@ -251,7 +262,7 @@ class Module(Node):
                 f"Input params type {type(params)} not supported. Should be {backend.array_type.__name__}, Sequence, or Mapping."
             )
 
-    def fill_params(self, params: Union[ArrayLike, Sequence, Mapping], local=False):
+    def fill_params(self, params: Union[ArrayLike, Sequence, Mapping]):
         """
         Fill the dynamic parameters of the module with the input values from
         params.
@@ -274,8 +285,9 @@ class Module(Node):
         """
         if not self.active:
             raise ActiveStateError(f"Module {self.name} must be active to fill params")
-
-        self._fill_values(params, local=local)
+        if self.valid_context:
+            params = self.from_valid(params)
+        self._fill_values(params)
 
     def clear_params(self):
         """Set all dynamic parameters to None and live parameters to LiveParam.
@@ -305,12 +317,14 @@ class Module(Node):
                 kwargs[key] = val
         return kwargs
 
-    def fill_dynamic_values(self, params: Union[ArrayLike, Sequence, Mapping], local=False):
+    def fill_dynamic_values(self, params: Union[ArrayLike, Sequence, Mapping]):
         """Fill the dynamic values of the module with the input values from params."""
         if self.active:
             raise ActiveStateError(f"Cannot fill dynamic values when Module {self.name} is active")
+        if self.valid_context:
+            params = self.from_valid(params)
 
-        self._fill_values(params, local=local, dynamic_values=True)
+        self._fill_values(params, dynamic_values=True)
 
     def _check_dynamic_values(self, params_type: str = "ArrayLike"):
         """Check if all dynamic values are set."""
@@ -325,7 +339,6 @@ class Module(Node):
 
     def build_params_array(self) -> ArrayLike:
         """Return an input array-like object for this module's @forward methods by filling with dynamic values."""
-
         if backend.backend == "object":
             raise BackendError("Cannot use ArrayLike operations when backend is 'object'")
         self._check_dynamic_values("ArrayLike")
@@ -351,7 +364,10 @@ class Module(Node):
                     )
         if len(x) == 0:
             return backend.make_array([])
-        return backend.concatenate(x, axis=-1)
+        x = backend.concatenate(x, axis=-1)
+        if self.valid_context:
+            x = self.to_valid(x)
+        return x
 
     def build_params_list(self) -> list[ArrayLike]:
         """Return an input list for this module's @forward methods by filling with dynamic values."""
@@ -360,6 +376,8 @@ class Module(Node):
         x = []
         for param in self.dynamic_params:
             x.append(backend.copy(param.value))
+        if self.valid_context:
+            x = self.to_valid(x)
         return x
 
     def _recursive_build_params_dict(self, unique_params: set):
@@ -379,6 +397,8 @@ class Module(Node):
         self._check_dynamic_values("Dict")
         unique_params = set()
         x = self._recursive_build_params_dict(unique_params=unique_params)
+        if self.valid_context:
+            x = self.to_valid(x)
         return x
 
     def to_valid(
@@ -387,7 +407,6 @@ class Module(Node):
         """Convert input params to valid params."""
         if backend.backend == "object":
             return params
-
         dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
         if isinstance(params, backend.array_type):
             valid_params = []  # backend.zeros_like(params)
@@ -396,7 +415,7 @@ class Module(Node):
             pos = 0
             for param in dynamic_params:
                 size = max(1, prod(param.shape))  # Handle scalar parameters
-                return_shape = params[..., pos : pos + size].shape
+                return_shape = (*B, size)
                 valid_params.append(
                     backend.view(
                         param.to_valid(
@@ -452,7 +471,7 @@ class Module(Node):
             pos = 0
             for param in dynamic_params:
                 size = max(1, prod(param.shape))
-                return_shape = valid_params[..., pos : pos + size].shape
+                return_shape = (*B, size)
                 params.append(
                     backend.view(
                         param.from_valid(
@@ -491,6 +510,13 @@ class Module(Node):
                 f"Input params type {type(valid_params)} not supported. Should be {backend.array_type.__name__}, Sequence or Mapping."
             )
         return params
+
+    @property
+    def node_str(self) -> str:
+        """
+        Returns a string representation of the node for graph visualization.
+        """
+        return f"{self.name}|{self.__class__.__name__}"
 
     def __setattr__(self, key: str, value: Any):
         """Intercept attribute setting to update parameters and graph links."""

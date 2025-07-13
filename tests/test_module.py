@@ -11,6 +11,7 @@ from caskade import (
     forward,
     backend,
     BackendError,
+    ValidContext,
 )
 
 import pytest
@@ -297,3 +298,48 @@ def test_module_and_collection():
     assert not M.static
     assert N.dynamic
     assert not N.static
+
+
+def test_valid():
+    if backend.backend == "object":
+        return
+    M = Module("M")
+    p1 = Param("p1", 1.0, valid=(0, None))
+    M.p1 = p1
+    M.p2 = Param("p2", [1.0, 1.5], valid=(None, 2))
+    M.p3 = Param("p3", [[1.0, 1.1], [1.2, 1.3]], valid=(0, 2))
+    M.m2 = Module("m2")
+    M.m2.p1 = Param("p1", 1.0, valid=(0, None))
+    M.m2.p2 = Param("p2", [1.0, 1.5], valid=(None, 2))
+    M.m2.p3 = Param("p3", M.p3, valid=(0, 2))
+    M.m2.m3 = Module("m3")
+    M.m2.m3.p1 = Param("p1", 1.0, valid=(0, 3), cyclic=True)
+    M.m2.m3.p2 = Param("p2", [1.0, 1.5], valid=(-1, 2), cyclic=True)
+    M.to_dynamic(False)
+    with ValidContext(M):
+        # Array
+        params = M.build_params_array()
+        M.fill_dynamic_values(params)
+        assert np.isclose(M.p1.value.item(), 1.0)
+        assert np.isclose(M.p2.value[1].item(), 1.5)
+        assert np.isclose(M.m2.p3.value[0][1].item(), 1.1)
+        assert np.isclose(M.m2.m3.p2.value[1].item(), 1.5)
+
+        # List
+        params = M.build_params_list()
+        M.fill_dynamic_values(params)
+        assert np.isclose(M.p1.value.item(), 1.0)
+        assert np.isclose(M.p2.value[1].item(), 1.5)
+        assert np.isclose(M.m2.p3.value[0][1].item(), 1.1)
+        assert np.isclose(M.m2.m3.p2.value[1].item(), 1.5)
+
+        # Dict
+        params = M.build_params_dict()
+        M.fill_dynamic_values(params)
+        assert np.isclose(M.p1.value.item(), 1.0)
+        assert np.isclose(M.p2.value[1].item(), 1.5)
+        assert np.isclose(M.m2.p3.value[0][1].item(), 1.1)
+        assert np.isclose(M.m2.m3.p2.value[1].item(), 1.5)
+
+    with pytest.raises(TypeError):
+        M.valid_context = None

@@ -2,6 +2,7 @@ from typing import Optional, Union, Callable, Any
 from warnings import warn
 import traceback
 from dataclasses import dataclass
+from math import prod
 
 from numpy import ndarray, pi
 
@@ -76,6 +77,12 @@ class Param(Node):
     dynamic_value: (Optional[Union[ArrayLike, float, int]], optional)
         Allows the parameter to store a value while still dynamic (think of it
         as a default value).
+    dtype: (Optional[Any], optional)
+        The data type of the parameter. Defaults to None meaning the data type
+        will be inferred from the value.
+    device: (Optional[Any], optional)
+        The device of the parameter. Defaults to None meaning the device will
+        be inferred from the value.
     """
 
     graphviz_types = {
@@ -94,6 +101,8 @@ class Param(Node):
         valid: Optional[tuple[Union[ArrayLike, float, int, None]]] = None,
         units: Optional[str] = None,
         dynamic_value: Optional[Union[ArrayLike, float, int]] = None,
+        dtype: Optional[Any] = None,
+        device: Optional[Any] = None,
     ):
         super().__init__(name=name)
         if value is not None and dynamic_value is not None:
@@ -114,7 +123,7 @@ class Param(Node):
             and value is not None
             and backend.backend != "object"
         ):
-            value = backend.as_array(value)
+            value = backend.as_array(value, dtype=dtype, device=device)
             if not (shape == () or shape is None or shape == value.shape):
                 raise ParamConfigurationError(
                     f"Shape {shape} does not match value shape {value.shape}"
@@ -124,12 +133,14 @@ class Param(Node):
             and dynamic_value is not None
             and backend.backend != "object"
         ):
-            dynamic_value = backend.as_array(dynamic_value)
+            dynamic_value = backend.as_array(dynamic_value, dtype=dtype, device=device)
             if not (shape == () or shape is None or shape == dynamic_value.shape):
                 raise ParamConfigurationError(
                     f"Shape {shape} does not match dynamic value shape {dynamic_value.shape}"
                 )
         self._type = "null"
+        self._dtype = dtype
+        self._device = device
         self.value = value
         if not hasattr(self, "_dynamic_value"):
             self.dynamic_value = dynamic_value
@@ -205,7 +216,7 @@ class Param(Node):
         if backend.backend == "object":
             return None
         if self.pointer and self.value is not None:
-            return self.value.shape
+            return tuple(self.value.shape)
         return self._shape
 
     @shape.setter
@@ -214,7 +225,28 @@ class Param(Node):
             raise ParamTypeError("Cannot set shape of parameter with backend 'object'")
         if self.pointer:
             raise ParamTypeError(f"Cannot set shape of parameter {self.name} with type 'pointer'")
-        self._shape = shape
+        if shape is None:
+            self._shape = None
+            return
+        self._shape = tuple(shape)
+
+    @property
+    def dtype(self) -> Optional[str]:
+        if self._dtype is None:
+            try:
+                return self.value.dtype
+            except AttributeError:
+                pass
+        return self._dtype
+
+    @property
+    def device(self) -> Optional[str]:
+        if self._device is None:
+            try:
+                return self.value.device
+            except AttributeError:
+                pass
+        return self._device
 
     @property
     def dynamic_value(self) -> Union[ArrayLike, None]:
@@ -245,8 +277,8 @@ class Param(Node):
         # Set to dynamic value
         self._type = "dynamic value"
         self._pointer_func = None
-        value = backend.as_array(value)
-        self._shape = value.shape if backend.backend != "object" else None
+        value = backend.as_array(value, dtype=self._dtype, device=self._device)
+        self._shape = tuple(value.shape) if backend.backend != "object" else None
         self._dynamic_value = value
         self._value = None
         try:
@@ -300,8 +332,8 @@ class Param(Node):
             self._dynamic_value = None
         else:
             self._type = "static"
-            value = backend.as_array(value)
-            self._shape = value.shape if backend.backend != "object" else None
+            value = backend.as_array(value, dtype=self._dtype, device=self._device)
+            self._shape = tuple(value.shape) if backend.backend != "object" else None
             self._value = value
             self._dynamic_value = None
             try:
@@ -328,15 +360,25 @@ class Param(Node):
         """
         if backend.backend == "object":
             return self
+        if device is not None:
+            self._device = device
+        else:
+            device = self.device
+        if dtype is not None:
+            self._dtype = dtype
+        else:
+            dtype = self.dtype
         super().to(device=device, dtype=dtype)
         if self.static:
             self._value = backend.to(self._value, device=device, dtype=dtype)
         if self._dynamic_value is not None:
             self._dynamic_value = backend.to(self._dynamic_value, device=device, dtype=dtype)
-        if self.valid[0] is not None:
-            self.valid = (backend.to(self.valid[0], device=device, dtype=dtype), self.valid[1])
-        if self.valid[1] is not None:
-            self.valid = (self.valid[0], backend.to(self.valid[1], device=device, dtype=dtype))
+        valid = self.valid
+        if valid[0] is not None:
+            valid = (backend.to(valid[0], device=device, dtype=dtype), valid[1])
+        if valid[1] is not None:
+            valid = (valid[0], backend.to(valid[1], device=device, dtype=dtype))
+        self.valid = valid
 
         return self
 
@@ -366,7 +408,7 @@ class Param(Node):
                     "value",
                     data=value,
                     chunks=True if self.value is not None else False,
-                    maxshape=(None,) + tuple(self.shape) if self.value is not None else None,
+                    maxshape=(None,) + self.shape if self.value is not None else None,
                     compression="gzip" if self.value is not None else None,
                 )
             else:
@@ -398,7 +440,7 @@ class Param(Node):
         if not hasattr(self, "appended"):
             self.appended = True
             if self.value is not None:
-                h5group["value"].resize((h5group["value"].shape[0] + 1,) + tuple(self.shape))
+                h5group["value"].resize((h5group["value"].shape[0] + 1,) + self.shape)
                 h5group["value"][-1] = self.value
 
     def _load_state_hdf5(self, h5group, index: int = -1, _done_load: set = None):
@@ -459,8 +501,8 @@ class Param(Node):
                 )
             self.to_valid = self._to_valid_rightvalid
             self.from_valid = self._from_valid_rightvalid
-            valid = (None, backend.as_array(valid[1]))
-            if self.value is not None and backend.any(self.value > valid[1]):
+            valid = (None, backend.as_array(valid[1], dtype=self.dtype, device=self.device))
+            if not self.pointer and self.value is not None and backend.any(self.value > valid[1]):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         elif valid[1] is None:
             if self.cyclic:
@@ -469,8 +511,8 @@ class Param(Node):
                 )
             self.to_valid = self._to_valid_leftvalid
             self.from_valid = self._from_valid_leftvalid
-            valid = (backend.as_array(valid[0]), None)
-            if self.value is not None and backend.any(self.value < valid[0]):
+            valid = (backend.as_array(valid[0], dtype=self.dtype, device=self.device), None)
+            if not self.pointer and self.value is not None and backend.any(self.value < valid[0]):
                 warn(InvalidValueWarning(self.name, self.value, valid))
         else:
             if self.cyclic:
@@ -479,13 +521,17 @@ class Param(Node):
             else:
                 self.to_valid = self._to_valid_fullvalid
                 self.from_valid = self._from_valid_fullvalid
-            valid = (backend.as_array(valid[0]), backend.as_array(valid[1]))
+            valid = (
+                backend.as_array(valid[0], dtype=self.dtype, device=self.device),
+                backend.as_array(valid[1], dtype=self.dtype, device=self.device),
+            )
             if backend.any(valid[0] >= valid[1]):
                 raise ParamConfigurationError(
                     f"Valid range (valid[1] - valid[0]) must be positive ({self.name})"
                 )
             if (
-                self.value is not None
+                not self.pointer
+                and self.value is not None
                 and not self.cyclic
                 and (backend.any(self.value < valid[0]) or backend.any(self.value > valid[1]))
             ):
@@ -494,56 +540,55 @@ class Param(Node):
         self._valid = valid
 
     def _to_valid_base(self, value: ArrayLike) -> ArrayLike:
-        if self.pointer:
-            raise ParamTypeError(
-                f"Cannot apply valid transformation to pointer parameter ({self.name})"
-            )
         return value
 
     def _to_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._to_valid_base(value)
-        return backend.tan((value - self.valid[0]) * pi / (self.valid[1] - self.valid[0]) - pi / 2)
+        value = (
+            backend.logit((value - self.valid[0]) / (self.valid[1] - self.valid[0])) + self.valid[0]
+        )
+        return value
 
     def _to_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
-        value = self._to_valid_base(value)
-        return (value - self.valid[0]) % (self.valid[1] - self.valid[0]) + self.valid[0]
+        return ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]
 
     def _to_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._to_valid_base(value)
         return value - 1.0 / (value - self.valid[0])
 
     def _to_valid_rightvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._to_valid_base(value)
         return value + 1.0 / (self.valid[1] - value)
 
     def _from_valid_base(self, value: ArrayLike) -> ArrayLike:
-        if self.pointer:
-            raise ParamTypeError(
-                f"Cannot apply valid transformation to pointer parameter ({self.name})"
-            )
         return value
 
     def _from_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._from_valid_base(value)
-        value = (backend.atan(value) + pi / 2) * (self.valid[1] - self.valid[0]) / pi + self.valid[
-            0
-        ]
+        value = (
+            backend.sigmoid(value - self.valid[0]) * (self.valid[1] - self.valid[0]) + self.valid[0]
+        )
         return value
 
     def _from_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
-        value = self._from_valid_base(value)
-        value = (value - self.valid[0]) % (self.valid[1] - self.valid[0]) + self.valid[0]
+        value = ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]
         return value
 
     def _from_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._from_valid_base(value)
         value = (value + self.valid[0] + backend.sqrt((value - self.valid[0]) ** 2 + 4)) / 2
         return value
 
     def _from_valid_rightvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self._from_valid_base(value)
         value = (value + self.valid[1] - backend.sqrt((value - self.valid[1]) ** 2 + 4)) / 2
         return value
+
+    @property
+    def node_str(self) -> str:
+        """
+        Returns a string representation of the node for graph visualization.
+        """
+        if (self.static or self._type == "dynamic value") and backend.backend != "object":
+            if max(1, prod(self.value.shape)) == 1:
+                return f"{self.name}|{self._type}: {self.npvalue:.3g}"
+            else:
+                return f"{self.name}|{self._type}: {self.shape}"
+        return f"{self.name}|{self._type}"
 
     def __repr__(self) -> str:
         return self.name

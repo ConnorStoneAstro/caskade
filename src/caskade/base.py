@@ -15,6 +15,8 @@ from .warnings import SaveStateWarning
 
 def attrsetter(obj, attr, value):
     """Set an attribute on an object."""
+    if isinstance(value, str) and value == "NONE":
+        value = None
     if "." in attr:
         parts = attr.split(".", 1)
         attrsetter(getattr(obj, parts[0]), parts[1], value)
@@ -238,6 +240,8 @@ class Node:
         if id(self) not in _done_save:
             for attr in self.saveattrs:
                 value = attrgetter(attr)(self)
+                if value is None:
+                    value = "NONE"
                 try:
                     h5group.attrs[attr] = value
                 except TypeError:
@@ -387,11 +391,11 @@ class Node:
         for key, child in self.children.items():
             child._load_state_hdf5(h5group[key], index=index, _done_load=_done_load)
 
-    def load_state(self, loadfrom: Union[str, "File"], index: int = -1):
+    def load_state(self, loadfrom: Union[str, "File"], index: int = -1, **kwargs):
         """Load the state of the node and its children."""
         if isinstance(loadfrom, str):
             if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
-                with h5py.File(loadfrom, "r") as h5file:
+                with h5py.File(loadfrom, "r", **{"driver": "core", **kwargs}) as h5file:
                     self._check_load_state_hdf5(h5file[self.name])
                     self._load_state_hdf5(h5file[self.name], index=index, _done_load=set())
             else:
@@ -440,14 +444,19 @@ class Node:
             dot.render(graphviz.escape(filename), format=ext.lstrip("."), cleanup=True)
         return dot
 
+    @property
+    def node_str(self):
+        return f"{self.name}|{self._type}"
+
     def graph_dict(self) -> dict[str, dict]:
         """Return a dictionary representation of the graph below the current
         node."""
+        rep = self.node_str
         graph = {
-            f"{self.name}|{self._type}": {},
+            rep: {},
         }
         for node in self.children.values():
-            graph[f"{self.name}|{self._type}"].update(node.graph_dict())
+            graph[rep].update(node.graph_dict())
         return graph
 
     def graph_print(self, dag: dict, depth: int = 0, indent: int = 4, result: str = "") -> str:

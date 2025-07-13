@@ -52,9 +52,11 @@ class Backend:
         self.as_array = self._as_array_torch
         self.to = self._to_torch
         self.to_numpy = self._to_numpy_torch
-        self.atan = self._atan_torch
+        self.logit = self._logit_torch
+        self.sigmoid = self._sigmoid_torch
 
     def setup_jax(self):
+        self.jax = importlib.import_module("jax")
         self.make_array = self._make_array_jax
         self._array_type = self._array_type_jax
         self.concatenate = self._concatenate_jax
@@ -64,7 +66,8 @@ class Backend:
         self.as_array = self._as_array_jax
         self.to = self._to_jax
         self.to_numpy = self._to_numpy_jax
-        self.atan = self._atan_jax
+        self.logit = self._logit_jax
+        self.sigmoid = self._sigmoid_jax
 
     def setup_numpy(self):
         self.make_array = self._make_array_numpy
@@ -76,7 +79,8 @@ class Backend:
         self.as_array = self._as_array_numpy
         self.to = self._to_numpy
         self.to_numpy = self._to_numpy_numpy
-        self.atan = self._atan_numpy
+        self.logit = self._logit_numpy
+        self.sigmoid = self._sigmoid_numpy
 
     def setup_object(self):
         self.make_array = self._make_array_object
@@ -146,7 +150,7 @@ class Backend:
         return array.tolist()
 
     def _view_torch(self, array, shape):
-        return array.view(shape)
+        return array.reshape(shape)
 
     def _view_jax(self, array, shape):
         return array.reshape(shape)
@@ -169,8 +173,8 @@ class Backend:
     def _to_torch(self, array, dtype=None, device=None):
         return array.to(dtype=dtype, device=device)
 
-    def _to_jax(self, array, dtype=None, **kwargs):
-        return array.astype(dtype)
+    def _to_jax(self, array, dtype=None, device=None):
+        return self.jax.device_put(array.astype(dtype), device=device)
 
     def _to_numpy(self, array, dtype=None, **kwargs):
         return array.astype(dtype)
@@ -196,17 +200,23 @@ class Backend:
     def sum(self, array, axis=None):
         return self.module.sum(array, axis=axis)
 
-    def tan(self, array):
-        return self.module.tan(array)
+    def _sigmoid_torch(self, array):
+        return self.module.sigmoid(array)
 
-    def _atan_torch(self, array):
-        return self.module.atan(array)
+    def _sigmoid_jax(self, array):
+        return self.jax.nn.sigmoid(array)
 
-    def _atan_jax(self, array):
-        return self.module.arctan(array)
+    def _sigmoid_numpy(self, array):
+        return 1 / (1 + self.module.exp(-array))
 
-    def _atan_numpy(self, array):
-        return self.module.arctan(array)
+    def _logit_torch(self, array):
+        return self.module.logit(array)
+
+    def _logit_jax(self, array):
+        return self.jax.scipy.special.logit(array)
+
+    def _logit_numpy(self, array):
+        return np.log(array / (1 - array))
 
     def sqrt(self, array):
         return self.module.sqrt(array)

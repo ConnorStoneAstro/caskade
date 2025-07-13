@@ -37,10 +37,11 @@ class ValidContext:
         self.module = module
 
     def __enter__(self):
+        self.init_valid = self.module.valid_context
         self.module.valid_context = True
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.module.valid_context = False
+        self.module.valid_context = self.init_valid
 
 
 class OverrideParam:

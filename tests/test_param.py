@@ -60,10 +60,6 @@ def test_param_creation():
     p5 = Param("test", p3)
     with pytest.raises(ParamTypeError):
         p5.shape = (1, 2, 3)
-    with pytest.raises(ParamTypeError):
-        p5.to_valid(1.0)
-    with pytest.raises(ParamTypeError):
-        p5.from_valid(1.0)
 
     # Function parameter
     p6 = Param("test", lambda p: p["other"].value * 2)
@@ -130,13 +126,51 @@ def test_param_creation():
 def test_param_to():
     if backend.backend == "object":
         return
+    if backend.backend == "jax":
+        device = backend.jax.devices()[0]
+        backend.jax.config.update("jax_enable_x64", True)
+    else:
+        device = "cpu"
 
     # static
     p = Param("test", 1.0, valid=(0, 2))
-    p = p.to(dtype=backend.module.float64, device="cpu")
+    p = p.to(dtype=backend.module.float64, device=device)
     # dynamic value
     p = Param("test", dynamic_value=1.0, valid=(0, 2))
-    p = p.to(dtype=backend.module.float64, device="cpu")
+    p = p.to(dtype=backend.module.float64, device=device)
+
+
+def test_params_sticky_to():
+    if backend.backend == "object":
+        return
+    if backend.backend == "jax":
+        device = backend.jax.devices()[0]
+        backend.jax.config.update("jax_enable_x64", True)
+    else:
+        device = "cpu"
+    # static
+    p = Param("test", 1.0, valid=(0, 2))
+    p = p.to(dtype=backend.module.float64, device=device)
+    p.value = 2.0  # value cast to float64
+    assert p.value.dtype == backend.module.float64
+    # dynamic value
+    p = Param("test", dynamic_value=1.0, dtype=backend.module.float32)
+    assert p.value.dtype == backend.module.float32
+    p = p.to(dtype=backend.module.float64, device=device)
+    assert p.value.dtype == backend.module.float64
+    p.dynamic_value = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+    assert p.value.dtype == backend.module.float64
+    # neither dtype or value set
+    p = Param("test", valid=(0, 2))
+    assert p.dtype is None
+    assert p.device is None
+    p = p.to(dtype=backend.module.float64, device=device)
+    assert p.dtype == backend.module.float64
+    assert p.device == device
+    p = p.to()
+    p.value = 1.0
+    assert p.dtype == backend.module.float64
+    assert p.device == device
 
 
 def test_check_npvalue():
