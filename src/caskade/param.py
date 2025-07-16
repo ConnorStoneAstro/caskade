@@ -543,27 +543,22 @@ class Param(Node):
         return value
 
     def _to_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        value = (
-            backend.logit((value - self.valid[0]) / (self.valid[1] - self.valid[0])) + self.valid[0]
-        )
         return value
 
     def _to_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
         return ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]
 
     def _to_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
-        return value - 1.0 / (value - self.valid[0])
+        return backend.log(value - self.valid[0])
 
     def _to_valid_rightvalid(self, value: ArrayLike) -> ArrayLike:
-        return value + 1.0 / (self.valid[1] - value)
+        return backend.log(self.valid[1] - value)
 
     def _from_valid_base(self, value: ArrayLike) -> ArrayLike:
         return value
 
     def _from_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        value = (
-            backend.sigmoid(value - self.valid[0]) * (self.valid[1] - self.valid[0]) + self.valid[0]
-        )
+        value = backend.clip(value, min=self.valid[0], max=self.valid[1])
         return value
 
     def _from_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
@@ -571,11 +566,11 @@ class Param(Node):
         return value
 
     def _from_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
-        value = (value + self.valid[0] + backend.sqrt((value - self.valid[0]) ** 2 + 4)) / 2
+        value = backend.exp(value) + self.valid[0]
         return value
 
     def _from_valid_rightvalid(self, value: ArrayLike) -> ArrayLike:
-        value = (value + self.valid[1] - backend.sqrt((value - self.valid[1]) ** 2 + 4)) / 2
+        value = self.valid[1] - backend.exp(value)
         return value
 
     @property
