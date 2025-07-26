@@ -52,7 +52,8 @@ class Backend:
         self.as_array = self._as_array_torch
         self.to = self._to_torch
         self.to_numpy = self._to_numpy_torch
-        self.clip = self._clip_torch
+        self.logit = self._logit_torch
+        self.sigmoid = self._sigmoid_torch
 
     def setup_jax(self):
         self.jax = importlib.import_module("jax")
@@ -65,7 +66,8 @@ class Backend:
         self.as_array = self._as_array_jax
         self.to = self._to_jax
         self.to_numpy = self._to_numpy_jax
-        self.clip = self._clip_jax
+        self.logit = self._logit_jax
+        self.sigmoid = self._sigmoid_jax
 
     def setup_numpy(self):
         self.make_array = self._make_array_numpy
@@ -77,7 +79,8 @@ class Backend:
         self.as_array = self._as_array_numpy
         self.to = self._to_numpy
         self.to_numpy = self._to_numpy_numpy
-        self.clip = self._clip_numpy
+        self.logit = self._logit_numpy
+        self.sigmoid = self._sigmoid_numpy
 
     def setup_object(self):
         self.make_array = self._make_array_object
@@ -203,14 +206,23 @@ class Backend:
     def sum(self, array, axis=None):
         return self.module.sum(array, axis=axis)
 
-    def _clip_torch(self, array, min=None, max=None):
-        return self.module.clamp(array, min=min, max=max)
+    def _sigmoid_torch(self, array):
+        return self.module.sigmoid(array)
 
-    def _clip_jax(self, array, min=None, max=None):
-        return self.module.clip(array, a_min=min, a_max=max)
+    def _sigmoid_jax(self, array):
+        return self.jax.nn.sigmoid(array)
 
-    def _clip_numpy(self, array, min=None, max=None):
-        return self.module.clip(array, a_min=min, a_max=max)
+    def _sigmoid_numpy(self, array):
+        return 1 / (1 + self.module.exp(-array))
+
+    def _logit_torch(self, array):
+        return self.module.logit(array)
+
+    def _logit_jax(self, array):
+        return self.jax.scipy.special.logit(array)
+
+    def _logit_numpy(self, array):
+        return np.log(array / (1 - array))
 
     def sqrt(self, array):
         return self.module.sqrt(array)
