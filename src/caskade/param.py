@@ -585,7 +585,7 @@ class Param(Node):
         """
         if (self.static or self._type == "dynamic value") and backend.backend != "object":
             if max(1, prod(self.value.shape)) == 1:
-                return f"{self.name}|{self._type}: {self.npvalue:.3g}"
+                return f"{self.name}|{self._type}: {self.npvalue.item():.3g}"
             else:
                 return f"{self.name}|{self._type}: {self.shape}"
         return f"{self.name}|{self._type}"
