@@ -197,6 +197,12 @@ class Backend:
     def all(self, array):
         return self.module.all(array)
 
+    def log(self, array):
+        return self.module.log(array)
+
+    def exp(self, array):
+        return self.module.exp(array)
+
     def sum(self, array, axis=None):
         return self.module.sum(array, axis=axis)
 
