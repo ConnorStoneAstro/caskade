@@ -4,7 +4,7 @@ import traceback
 from dataclasses import dataclass
 from math import prod
 
-from numpy import ndarray, pi
+from numpy import ndarray
 
 from .backend import backend, ArrayLike
 from .base import Node
