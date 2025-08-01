@@ -67,8 +67,8 @@ class Module(Node):
     )  # These tuples will not be converted to NodeTuple objects
     graphviz_types = {"module": {"style": "solid", "color": "black", "shape": "ellipse"}}
 
-    def __init__(self, name: Optional[str] = None):
-        super().__init__(name=name)
+    def __init__(self, name: Optional[str] = None, **kwargs):
+        super().__init__(name=name, **kwargs)
         self.dynamic_params = ()
         self.all_dynamic_value = True
         self.pointer_params = ()
