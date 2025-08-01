@@ -103,8 +103,9 @@ class Param(Node):
         dynamic_value: Optional[Union[ArrayLike, float, int]] = None,
         dtype: Optional[Any] = None,
         device: Optional[Any] = None,
+        **kwargs,
     ):
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         if value is not None and dynamic_value is not None:
             raise ParamConfigurationError("Cannot set both value and dynamic value")
         if isinstance(value, dynamic):

@@ -61,6 +61,7 @@ class Node:
         self,
         name: Optional[str] = None,
         link: Optional[Union["Node", tuple["Node"]]] = None,
+        description: str = "",
     ):
         if name is None:
             name = self.__class__.__name__
@@ -73,6 +74,7 @@ class Node:
         self._parents = set()
         self._active = False
         self._type = "node"
+        self.description = description
         self.meta = meta()
         self.saveattrs = set()
         if link is not None:
