@@ -224,8 +224,5 @@ class Backend:
     def _logit_numpy(self, array):
         return np.log(array / (1 - array))
 
-    def sqrt(self, array):
-        return self.module.sqrt(array)
-
 
 backend = Backend()
