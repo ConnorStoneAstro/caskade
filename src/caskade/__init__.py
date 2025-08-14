@@ -3,7 +3,7 @@ from ._version import version as VERSION  # noqa
 from .base import Node
 from .backend import backend, ArrayLike
 from .context import ActiveContext, ValidContext, OverrideParam
-from .decorators import forward
+from .decorators import forward, active_cache
 from .module import Module
 from .param import Param, dynamic
 from .collection import NodeCollection, NodeList, NodeTuple
@@ -42,6 +42,7 @@ __all__ = (
     "ValidContext",
     "OverrideParam",
     "forward",
+    "active_cache",
     "test",
     "CaskadeException",
     "GraphError",
