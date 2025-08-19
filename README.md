@@ -85,3 +85,10 @@ The `caskade` interface has lots of flexibility, check out the
 [docs](https://caskade.readthedocs.io) to learn more. For a quick start, jump
 right to the [Jupyter notebook
 tutorial](https://caskade.readthedocs.io/en/latest/notebooks/BeginnersGuide.html)!
+
+The [`caustics`](https://github.com/Ciela-Institute/caustics) package can serve
+as a project template utilizing the many features of `caskade`.
+
+The `caskade` package maintains 100% coverage for unit testing, ensuring
+reliability as the backbone of a research project. 
+
