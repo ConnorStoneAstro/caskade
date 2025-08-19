@@ -110,7 +110,7 @@ adding a time parameter and linking appropriately. It is possible to use
 `caskade` with `NumPy` [@numpy], `JAX` [@jax], or `PyTorch` [@pytorch] numerical
 backends.
 
-![Example `caskade` DAG representation of a gravitational lensing simulator. Ovals represent Modules, boxes represent parameters, arrow boxes represent parameters which are functionally dependent on another parameter, and thin arrows show the direction of the graph flow for parameters passed at the top level.\label{fig:graph}](media/model_graph.png)
+![Example `caskade` DAG representation of a gravitational lensing simulator. Ovals represent Modules, boxes represent dynamic parameters, shaded boxes represent fixed parameters, arrow boxes represent parameters which are functionally dependent on another parameter, and thin arrows show the direction of the graph flow for parameters passed at the top level.\label{fig:graph}](media/model_graph.pdf)
 
 Our suggested design flow is to build out a functional programming base for the
 package, then use `Module`s as wrappers for the functional base to design a
