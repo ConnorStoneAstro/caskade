@@ -21,6 +21,7 @@ argument passing for complex nested simulators.
 pip install caskade
 ```
 
+More details on the [docs page](https://caskade.readthedocs.io/en/latest/install.html). 
 if you want to use `caskade` with `jax` then run:
 
 ```bash

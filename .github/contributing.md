@@ -1,6 +1,8 @@
 # Contributing
 
-Here we explain how you can help improve `caskade`! Perhaps you noticed an odd behaviour/bug, perhaps there is just a feature you'd like to see available, this is how to make it happen!
+Here we explain how you can help improve `caskade`! Perhaps you noticed an odd
+behaviour/bug, perhaps there is just a feature you'd like to see available, this
+is how to make it happen!
 
 ## 1 Make an Issue
 
