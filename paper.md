@@ -92,7 +92,7 @@ the `Param` arguments of that function. As modules are combined into a larger
 simulator, `caskade` builds a directed acyclic graph (DAG) representation. This
 allows it to automatically manage the flow (cascade) of parameters through the
 simulator and encode arbitrary relationships between them. This is inspired by
-the `PyTorch` framework `nn.Module` which allows for near effortless
+the `PyTorch` framework `nn.Module` which allows for near-effortless
 construction of machine learning models. We generalize the object oriented
 framework to apply to almost any scientific forward model, simulator, analysis
 pipeline, and so on; `caskade` manages the flow of parameters through these
