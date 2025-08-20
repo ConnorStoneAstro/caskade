@@ -6,6 +6,9 @@
 pip install caskade
 ```
 
+> **Note:** PyTorch is not compatible with Python 3.12 on all systems, you may need 3.9 - 3.11
+
+
 ## Install with jax backend
 
 ```bash
@@ -15,6 +18,8 @@ pip install caskade[jax]
 This will simply install `jax`/`jaxlib` along with the other dependencies. It is
 always possible to use the `torch` and `numpy` backends since they are core
 requirements.
+
+> **Note:** For M1 Mac users there can be compatibility issues with jax/jaxlib. See [discussion here](https://stackoverflow.com/questions/68327863/importing-jax-fails-on-mac-with-m1-chip) and consider installing `jaxlib==0.4.35`.
 
 ## Install from source
 

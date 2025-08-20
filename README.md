@@ -1,7 +1,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/ConnorStoneAstro/caskade/blob/main/media/caskade_logo_dark.png?raw=true">
   <source media="(prefers-color-scheme: light)" srcset="https://github.com/ConnorStoneAstro/caskade/blob/main/media/caskade_logo_white.png?raw=true">
-  <img alt="caskade logo" src="media/caskade_logo_white.png" width="70%">
+  <img alt="caskade logo" src="https://github.com/ConnorStoneAstro/caskade/blob/main/media/caskade_logo_white.png?raw=true" width="70%">
 </picture>
 
 # caskade
@@ -21,6 +21,7 @@ argument passing for complex nested simulators.
 pip install caskade
 ```
 
+More details on the [docs page](https://caskade.readthedocs.io/en/latest/install.html). 
 if you want to use `caskade` with `jax` then run:
 
 ```bash
@@ -65,12 +66,15 @@ Which will print `6` by automatically filling `b` with the value from `params`.
 ### Why do this?
 
 The above example is not very impressive, the real power comes from the fact
-that `Module` objects can be nested arbitrarily making a much more complicated
-analysis graph. Further, the `Param` objects can be linked or have other complex
-relationships. All of the complexity of the nested structure and argument
-passing is abstracted away so that at the top one need only pass a list of
-tensors for each parameter, a single large 1d tensor, or a dictionary with the
-same structure as the graph.
+that `Module` objects can be nested, making an arbitrarily complicated
+analysis graph. Some other features include:
+
+* Unroll parameters into 1D vector to interface with other packages (emcee, scipy.optimize, dynesty, etc.)
+* Link parameters by value or functional relationship
+* Reparametrize (e.g. between polar and cartesian) without modifying underlying code
+* Save and load sampling chains automatically in HDF5
+* Track metadata alongside parameters
+* And much more! [Beginner tutorial](https://caskade.readthedocs.io/en/latest/notebooks/BeginnersGuide.html) and [Advanced tutorial](https://caskade.readthedocs.io/en/latest/notebooks/AdvancedGuide.html)
 
 ### Use different backends
 
@@ -85,3 +89,10 @@ The `caskade` interface has lots of flexibility, check out the
 [docs](https://caskade.readthedocs.io) to learn more. For a quick start, jump
 right to the [Jupyter notebook
 tutorial](https://caskade.readthedocs.io/en/latest/notebooks/BeginnersGuide.html)!
+
+The [`caustics`](https://github.com/Ciela-Institute/caustics) package can serve
+as a project template utilizing the many features of `caskade`.
+
+The `caskade` package maintains 100% coverage for unit testing, ensuring
+reliability as the backbone of a research project. 
+

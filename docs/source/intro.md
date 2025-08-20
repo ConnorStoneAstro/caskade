@@ -59,12 +59,15 @@ Which will print `6` by automatically filling `b` with the value from `params`.
 ### Why do this?
 
 The above example is not very impressive, the real power comes from the fact
-that `Module` objects can be nested arbitrarily making a much more complicated
-analysis graph. Further, the `Param` objects can be linked or have other complex
-relationships. All of the complexity of the nested structure and argument
-passing is abstracted away so that at the top one need only pass a list of
-tensors for each parameter, a single large 1d tensor, or a dictionary with the
-same structure as the graph.
+that `Module` objects can be nested, making an arbitrarily complicated
+analysis graph. Some other features include:
+
+* Unroll parameters into 1D vector to interface with other packages (emcee, scipy.optimize, dynesty, etc.)
+* Link parameters by value or functional relationship
+* Reparametrize (e.g. between polar and cartesian) without modifying underlying code
+* Save and load sampling chains automatically in HDF5
+* Track metadata alongside parameters
+* And much more! [Beginner tutorial](https://caskade.readthedocs.io/en/latest/notebooks/BeginnersGuide.html) and [Advanced tutorial](https://caskade.readthedocs.io/en/latest/notebooks/AdvancedGuide.html)
 
 ### Use different backends
 

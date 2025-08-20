@@ -7,6 +7,5 @@ sphinx-automodapi
 graphviz
 h5py
 jax
-numpy
 emcee
 scipy
