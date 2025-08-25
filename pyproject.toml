@@ -48,9 +48,9 @@ dev = [
     "jax",
     "jaxlib",
 ]
-torch = ["torch"]
+torch = []
 jax = ["jax", "jaxlib"]
-numpy = ["numpy"]
+numpy = []
 object = []
 
 [tool.hatch.metadata.hooks.requirements_txt]
