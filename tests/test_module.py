@@ -38,7 +38,7 @@ def test_module_methods():
         m1.fill_params([1.0, 2.0, 3.0])
 
     with pytest.raises(ActiveStateError):
-        m1.clear_params()
+        m1.clear_state()
 
 
 def test_module_delattr():

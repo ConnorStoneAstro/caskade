@@ -16,12 +16,12 @@ class ActiveContext:
         self.outer_active = self.module.active
         if self.outer_active and not self.active:
             self.outer_params = list(p.value for p in self.module.dynamic_params)
-            self.module.clear_params()
+            self.module.clear_state()
         self.module.active = self.active
 
     def __exit__(self, exc_type, exc_value, traceback):
         if not self.outer_active and self.active:
-            self.module.clear_params()
+            self.module.clear_state()
         self.module.active = self.outer_active
         if self.outer_active and not self.active:
             self.module.fill_params(self.outer_params)

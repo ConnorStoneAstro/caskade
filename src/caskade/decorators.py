@@ -2,11 +2,10 @@ import inspect
 import functools
 from contextlib import ExitStack
 
-from .backend import backend
 from .context import ActiveContext, OverrideParam
 from .param import Param
 
-__all__ = ("forward",)
+__all__ = ("forward", "active_cache")
 
 
 def forward(method):
@@ -97,5 +96,42 @@ def forward(method):
             with ActiveContext(self):
                 kwargs = {**self.fill_kwargs(method_params), **kwargs}
                 return method(self, *args, **kwargs)
+
+    return wrapped
+
+def active_cache(method):
+    """
+    Decorator to enable caching for a method. This way the method will only be
+    called once in an active state, and the cache will be dropped when exiting.
+
+    Parameters
+    ----------
+    method: (Callable)
+        The method to be decorated.
+
+    Returns
+    -------
+    Callable
+        The decorated method with caching enabled.
+    """
+
+    NOVALUE = object()
+
+    cache = NOVALUE
+
+    def hook(self):
+        nonlocal cache
+        cache = NOVALUE
+        self.clear_state_hooks.remove(hook)
+
+    @functools.wraps(method)
+    def wrapped(self, *args, **kwargs):
+        nonlocal cache
+        if not self.active:
+            return method(self, *args, **kwargs)
+        elif cache is NOVALUE:
+            cache = method(self, *args, **kwargs)
+            self.clear_state_hooks.add(hook)
+        return cache
 
     return wrapped

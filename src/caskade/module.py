@@ -75,6 +75,7 @@ class Module(Node):
         self.local_dynamic_params = {}
         self._type = "module"
         self.valid_context = False
+        self.clear_state_hooks = set()
 
     def update_graph(self):
         """Maintain a tuple of dynamic and live parameters at all points lower
@@ -289,15 +290,18 @@ class Module(Node):
             params = self.from_valid(params)
         self._fill_values(params)
 
-    def clear_params(self):
+    def clear_state(self):
         """Set all dynamic parameters to None and live parameters to LiveParam.
         This is to be used on exiting an ``ActiveContext`` and so should not be
         used by a user."""
         if not self.active:
-            raise ActiveStateError(f"Module {self.name} must be active to clear params")
+            raise ActiveStateError(f"Module {self.name} must be active to clear state")
 
         for param in self.dynamic_params + self.pointer_params:
             param._value = None
+
+        for hook in list(self.clear_state_hooks):
+            hook(self)
 
     def fill_kwargs(self, keys: tuple[str]) -> dict[str, ArrayLike]:
         """

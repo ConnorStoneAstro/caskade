@@ -1,4 +1,4 @@
-from caskade import Module, Param, forward, ActiveContext, OverrideParam, backend
+from caskade import Module, Param, forward, ActiveContext, OverrideParam, backend, active_cache
 import numpy as np
 
 
@@ -69,3 +69,30 @@ def test_override_param():
     testsim = TestSim()
     assert testsim.testfunc(backend.make_array([5.0])).item() == 27.0
     assert testsim.a.value.item() == 3.0
+
+def test_active_cache():
+    if backend.backend == "object":
+        return
+
+    class TestSim(Module):
+        def __init__(self):
+            super().__init__()
+            self.a = Param("a", 3.0)
+
+        @active_cache
+        @forward
+        def testcache(self, x, a):
+            return x + a
+        
+        @active_cache
+        def testonlycache(self, x):
+            return 2 * x
+        
+        @forward
+        def testfunc(self):
+            return self.testcache(1.0) + self.testcache(2.0) + self.testonlycache(3.0) + self.testonlycache(4.0)
+
+    testsim = TestSim()
+    assert testsim.testfunc().item() == 20.0
+    assert testsim.testonlycache(5.0) == 10.0
+    assert testsim.testonlycache(6.0) == 12.0
