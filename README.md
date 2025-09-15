@@ -11,6 +11,7 @@
 [![codecov](https://codecov.io/gh/ConnorStoneAstro/caskade/graph/badge.svg?token=7YAEJJZ4GM)](https://codecov.io/gh/ConnorStoneAstro/caskade)
 [![PyPI - Version](https://img.shields.io/pypi/v/caskade)](https://pypi.org/project/caskade/)
 [![Documentation Status](https://readthedocs.org/projects/caskade/badge/?version=latest)](https://caskade.readthedocs.io/en/latest/?badge=latest)
+[![DOI](https://joss.theoj.org/papers/10.21105/joss.08786/status.svg)](https://doi.org/10.21105/joss.08786)
 
 Build scientific simulators, treating them as a directed acyclic graph. Handles
 argument passing for complex nested simulators.
