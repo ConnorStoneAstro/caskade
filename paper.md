@@ -135,7 +135,7 @@ ecosystems (`PyTorch` and `JAX` as well as `Python` and `C++`) and on different
 compute engines (HPC clusters or in a cloud). The `SimFrame` [@Stammler2022]
 package shares `caskade`'s modular and extensible core design, though is focused
 exclusively on solving differential equations. While the `Ecos` package [@Hatledal2025]
-encode the Functional Mockup Interface standard [@Blochwitz2012], which
+encodes the Functional Mockup Interface standard [@Blochwitz2012], which
 is also designed for building modular simulators though in the more strict FMI
 standard which requires auxiliary `.xml` specification files, `caskade` focuses
 on lean and active research development, which thrives on minimal overhead.
