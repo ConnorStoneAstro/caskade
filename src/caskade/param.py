@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from math import prod
 
 from numpy import ndarray
+import numpy as np
 
 from .backend import backend, ArrayLike
 from .base import Node
@@ -210,7 +211,7 @@ class Param(Node):
             raise ParamTypeError(
                 f"Cannot set dynamic parameter {self.name} to static when no `dynamic_value` is set"
             )
-        self.value = self.dynamic_value
+        self.static_value = self.dynamic_value
 
     @property
     def shape(self) -> Optional[tuple[int, ...]]:
@@ -228,8 +229,15 @@ class Param(Node):
             raise ParamTypeError(f"Cannot set shape of parameter {self.name} with type 'pointer'")
         if shape is None:
             self._shape = None
-            return
-        self._shape = tuple(shape)
+        shape = tuple(shape)
+        if self._shape is None:
+            self._shape = shape
+        else:
+            if len(self._shape) >= 1 and self._shape[1:] == shape:
+                self._shape = shape
+                self.batched = True
+                # fixme keep working on shape. Recognize batch cases
+
 
     @property
     def dtype(self) -> Optional[str]:
@@ -250,6 +258,52 @@ class Param(Node):
         return self._device
 
     @property
+    def static_value(self) -> Union[ArrayLike, None]:
+        return self._static_value
+
+    @static_value.setter
+    def static_value(self, value):
+        # While active no value can be set
+        if self.active:
+            raise ActiveStateError(f"Cannot set static value of parameter {self.name} while active")
+
+        # No static value
+        if value is None:
+            self._type = "dynamic"
+            self._value = None
+            self._static_value = None
+            self._dynamic_value = None
+            self._pointer_func = None
+            return
+
+        # Catch cases where input is invalid
+        if isinstance(value, Param) or callable(value):
+            raise ParamTypeError(f"Cannot set static value to pointer ({self.name})")
+
+        # unlink if pointer, static_value cannot be a pointer
+        if self.pointer:
+            for child in tuple(self.children.values()):
+                self.unlink(child)
+
+        self._type = "static"
+        value = backend.as_array(value, dtype=self._dtype, device=self._device)
+        if backend.backend == "object":
+            self._shape = None
+        elif self._shape is None:
+            self._shape = tuple(value.shape)
+        elif self._shape != tuple(value.shape):
+        self._shape = tuple(value.shape) if backend.backend != "object" else None
+        self._value = None
+        self._static_value = value
+        self._dynamic_value = None
+        self._pointer_func = None
+        try:
+            self.valid = self._valid  # re-check valid range
+        except AttributeError:
+            pass
+        self.update_graph()
+
+    @property
     def dynamic_value(self) -> Union[ArrayLike, None]:
         return self._dynamic_value
 
@@ -263,7 +317,11 @@ class Param(Node):
 
         # No dynamic value
         if value is None:
+            self._type = "dynamic"
+            self._value = None
+            self._static_value = None
             self._dynamic_value = None
+            self._pointer_func = None
             return
 
         # Catch cases where input is invalid
@@ -277,11 +335,12 @@ class Param(Node):
 
         # Set to dynamic value
         self._type = "dynamic value"
-        self._pointer_func = None
         value = backend.as_array(value, dtype=self._dtype, device=self._device)
         self._shape = tuple(value.shape) if backend.backend != "object" else None
-        self._dynamic_value = value
         self._value = None
+        self._static_value = None
+        self._dynamic_value = value
+        self._pointer_func = None
         try:
             self.valid = self._valid  # re-check valid range
         except AttributeError:
@@ -290,15 +349,45 @@ class Param(Node):
         self.update_graph()
 
     @property
+    def pointer_func(self) -> Optional[Callable]:
+        return self._pointer_func
+
+    @pointer_func.setter
+    def pointer_func(self, value: Union["Param", Callable]):
+        # While active no value can be set
+        if self.active:
+            raise ActiveStateError(
+                f"Cannot set pointer function of parameter {self.name} while active"
+            )
+
+        self._type = "pointer"
+        self._value = None
+        self._static_value = None
+        self._dynamic_value = None
+        if isinstance(value, Param):
+            if not value in self.children.values():
+                self.link(value)
+            self._pointer_func = lambda p: p[value.name].value
+        elif callable(value):
+            self._pointer_func = value
+        else:
+            raise ParamTypeError(f"Pointer function must be a Param or callable ({self.name})")
+
+        self.update_graph()
+
+    @property
     def value(self) -> Union[ArrayLike, None]:
-        if self.pointer and self._value is None:
+        if self._value is not None:
+            return self._value
+        if self.pointer:
             if self.active:
                 self._value = self._pointer_func(self)
+                return self._value
             else:
                 return self._pointer_func(self)
-        if self._value is None:
-            return self._dynamic_value
-        return self._value
+        if self.static:
+            return self._static_value
+        return self._dynamic_value
 
     @value.setter
     def value(self, value):
@@ -306,43 +395,14 @@ class Param(Node):
         if self.active:
             raise ActiveStateError(f"Cannot set value of parameter {self.name} while active")
 
-        # unlink if pointer to avoid floating references
-        if self.pointer:
-            for child in tuple(self.children.values()):
-                self.unlink(child)
-
         if value is None:
-            if hasattr(self, "_value") and self._value is not None:
-                self.dynamic_value = self._value
-                return
-            self._type = "dynamic"
-            self._pointer_func = None
-            self._value = None
-        elif isinstance(value, Param):
-            self._type = "pointer"
-            self.link(value)
-            self._pointer_func = lambda p: p[value.name].value
-            self._shape = None
-            self._value = None
-            self._dynamic_value = None
-        elif callable(value):
-            self._type = "pointer"
-            self._shape = None
-            self._pointer_func = value
-            self._value = None
-            self._dynamic_value = None
+            if hasattr(self, "_static_value") and self._static_value is not None:
+                value = self._static_value
+            self.dynamic_value = value
+        elif isinstance(value, Param) or callable(value):
+            self.pointer_func = value
         else:
-            self._type = "static"
-            value = backend.as_array(value, dtype=self._dtype, device=self._device)
-            self._shape = tuple(value.shape) if backend.backend != "object" else None
-            self._value = value
-            self._dynamic_value = None
-            try:
-                self.valid = self._valid  # re-check valid range
-            except AttributeError:
-                pass
-
-        self.update_graph()
+            self.static_value = value
 
     @property
     def npvalue(self) -> ndarray:
@@ -371,7 +431,7 @@ class Param(Node):
             dtype = self.dtype
         super().to(device=device, dtype=dtype)
         if self.static:
-            self._value = backend.to(self._value, device=device, dtype=dtype)
+            self._static_value = backend.to(self._static_value, device=device, dtype=dtype)
         if self._dynamic_value is not None:
             self._dynamic_value = backend.to(self._dynamic_value, device=device, dtype=dtype)
         valid = self.valid
@@ -498,7 +558,7 @@ class Param(Node):
         elif valid[0] is None:
             if self.cyclic:
                 raise ParamConfigurationError(
-                    f"Cannot set left valid to None for cyclic parameter ({self.name})"
+                    f"Cannot set low valid to None for cyclic parameter ({self.name})"
                 )
             self.to_valid = self._to_valid_rightvalid
             self.from_valid = self._from_valid_rightvalid
@@ -508,7 +568,7 @@ class Param(Node):
         elif valid[1] is None:
             if self.cyclic:
                 raise ParamConfigurationError(
-                    f"Cannot set right valid to None for cyclic parameter ({self.name})"
+                    f"Cannot set high valid to None for cyclic parameter ({self.name})"
                 )
             self.to_valid = self._to_valid_leftvalid
             self.from_valid = self._from_valid_leftvalid
@@ -528,7 +588,7 @@ class Param(Node):
             )
             if backend.any(valid[0] >= valid[1]):
                 raise ParamConfigurationError(
-                    f"Valid range (valid[1] - valid[0]) must be positive ({self.name})"
+                    f"Valid range (valid[1] - valid[0]) must be strictly positive ({self.name})"
                 )
             if (
                 not self.pointer
@@ -587,6 +647,9 @@ class Param(Node):
         if (self.static or self._type == "dynamic value") and backend.backend != "object":
             if max(1, prod(self.value.shape)) == 1:
                 return f"{self.name}|{self._type}: {self.npvalue.item():.3g}"
+            elif prod(self.value.shape) <= 4:
+                value = str(np.char.mod("%.3g", self.npvalue).tolist()).replace("'", "")
+                return f"{self.name}|{self._type}: {value}"
             else:
                 return f"{self.name}|{self._type}: {self.shape}"
         return f"{self.name}|{self._type}"
