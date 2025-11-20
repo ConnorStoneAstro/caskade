@@ -73,6 +73,7 @@ class Node:
         self._children = {}
         self._parents = set()
         self._active = False
+        self._frozen = False
         self._type = "node"
         self.description = description
         self.meta = meta()
@@ -92,8 +93,12 @@ class Node:
     def parents(self) -> set:
         return self._parents
 
+    @property
+    def leaf(self) -> bool:
+        return len(self.children) == 0
+
     def _link(self, key: str, child: "Node"):
-        if self.active:
+        if self.active or self.frozen:
             raise GraphError("Cannot link/unlink nodes while the graph is active")
         # Avoid double linking to the same object
         if key in self.children:
@@ -161,8 +166,10 @@ class Node:
         self.__setattr__(key, child)
 
     def _unlink(self, key: str):
-        if self.active:
+        if self.active or self.frozen:
             raise GraphError(f"Cannot link/unlink nodes while the graph is active ({self.name})")
+        if not key in self._children:
+            raise LinkToAttributeError(f"{self.name} does not have child {key} to unlink.")
         self._children[key]._parents.remove(self)
         self._children[key].update_graph()
         del self._children[key]
@@ -200,8 +207,30 @@ class Node:
         """Triggers a call to all parents that the graph below them has been
         updated. The base ``Node`` object does nothing with this information, but
         other node types may use this to update internal state."""
+        if self.frozen:
+            return
+
         for parent in self.parents:
             parent.update_graph()
+
+    @property
+    def frozen(self) -> bool:
+        return self._frozen
+
+    @frozen.setter
+    def frozen(self, value: bool):
+        if self._frozen is value:
+            return
+
+        self._frozen = value
+        for node in self.topological_ordering():
+            node._frozen = value
+
+        if not value:
+            for node in self.topological_ordering():
+                if node.leaf:
+                    node.update_graph()
+            self.update_graph()
 
     @property
     def active(self) -> bool:
@@ -210,7 +239,7 @@ class Node:
     @active.setter
     def active(self, value: bool):
         # Avoid unnecessary updates
-        if self._active == value:
+        if self._active is value:
             return
 
         # Set self active level
@@ -395,18 +424,22 @@ class Node:
 
     def load_state(self, loadfrom: Union[str, "File"], index: int = -1, **kwargs):
         """Load the state of the node and its children."""
-        if isinstance(loadfrom, str):
-            if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
-                with h5py.File(loadfrom, "r", **{"driver": "core", **kwargs}) as h5file:
-                    self._check_load_state_hdf5(h5file[self.name])
-                    self._load_state_hdf5(h5file[self.name], index=index, _done_load=set())
-            else:
-                raise NotImplementedError(
-                    "Only HDF5 files ('.h5') are currently supported for loading state"
-                )
-        else:  # assume loadfrom is an HDF5 File object
-            self._check_load_state_hdf5(loadfrom[self.name])
-            self._load_state_hdf5(loadfrom[self.name], index=index, _done_load=set())
+        self.frozen = True
+        try:
+            if isinstance(loadfrom, str):
+                if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
+                    with h5py.File(loadfrom, "r", **{"driver": "core", **kwargs}) as h5file:
+                        self._check_load_state_hdf5(h5file[self.name])
+                        self._load_state_hdf5(h5file[self.name], index=index, _done_load=set())
+                else:
+                    raise NotImplementedError(
+                        "Only HDF5 files ('.h5') are currently supported for loading state"
+                    )
+            else:  # assume loadfrom is an HDF5 File object
+                self._check_load_state_hdf5(loadfrom[self.name])
+                self._load_state_hdf5(loadfrom[self.name], index=index, _done_load=set())
+        finally:
+            self.frozen = False
 
     def graphviz(self, top_down: bool = True, saveto: Optional[str] = None) -> "graphviz.Digraph":
         """Return a graphviz object representing the graph below the current

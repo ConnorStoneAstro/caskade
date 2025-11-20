@@ -77,12 +77,17 @@ class Module(Node):
         self.valid_context = False
         self.clear_state_hooks = set()
 
+    @property
+    def all_params(self):
+        return self.static_params + self.dynamic_params + self.pointer_params
+
     def update_graph(self):
         """Maintain a tuple of dynamic and live parameters at all points lower
         in the DAG."""
         self.dynamic_params = tuple(self.topological_ordering("dynamic"))
         self.all_dynamic_value = all("value" in p._type for p in self.dynamic_params)
         self.pointer_params = tuple(self.topological_ordering("pointer"))
+        self.static_params = tuple(self.topological_ordering("static"))
         self.local_dynamic_params = dict(
             (k, p) for k, p in self.children.items() if isinstance(p, Param) and p.dynamic
         )
@@ -226,7 +231,7 @@ class Module(Node):
                 try:
                     val = backend.view(params[..., pos : pos + size], B + param.shape)
                     if dynamic_values:
-                        param.dynamic_value = val
+                        param.dynamic_value(val)
                     else:
                         param._value = val
                 except (RuntimeError, IndexError, ValueError, TypeError):
@@ -241,7 +246,7 @@ class Module(Node):
             elif len(params) == len(dynamic_params):
                 for param, value in zip(dynamic_params, params):
                     if dynamic_values:
-                        param.dynamic_value = value
+                        param.dynamic_value(value)
                     else:
                         param._value = value
             elif len(params) == len(self.dynamic_modules):
@@ -297,7 +302,7 @@ class Module(Node):
         if not self.active:
             raise ActiveStateError(f"Module {self.name} must be active to clear state")
 
-        for param in self.dynamic_params + self.pointer_params:
+        for param in self.all_params:
             param._value = None
 
         for hook in list(self.clear_state_hooks):
@@ -347,25 +352,21 @@ class Module(Node):
             raise BackendError("Cannot use ArrayLike operations when backend is 'object'")
         self._check_dynamic_values("ArrayLike")
         x = []
-        is_batched = None
+        batch_shape = None
         for param in self.dynamic_params:
-            if len(param.value.shape) - len(param.shape) == 1:  # is batched
-                B, *_ = param.value.shape
-                x.append(backend.copy(param.value).reshape(B, -1))
-                if is_batched is None:
-                    is_batched = True
-                elif not is_batched:
+            if param.batched:
+                B = param.batch_shape()
+                if batch_shape is None:
+                    batch_shape = B
+                elif batch_shape != B:
                     raise ParamConfigurationError(
-                        "Cannot mix batched and non-batched parameters when building params array!"
+                        f"Batch dimensions must be the same for all params. Got {B} for {param.name} when previous batch shape was {batch_shape}"
                     )
+
+                x.append(backend.copy(param.value).reshape(B + (-1,)))
             else:
                 x.append(backend.copy(param.value).flatten())
-                if is_batched is None:
-                    is_batched = False
-                elif is_batched:
-                    raise ParamConfigurationError(
-                        "Cannot mix batched and non-batched parameters when building params array!"
-                    )
+
         if len(x) == 0:
             return backend.make_array([])
         x = backend.concatenate(x, axis=-1)
