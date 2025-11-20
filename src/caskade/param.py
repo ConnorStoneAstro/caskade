@@ -153,6 +153,18 @@ class Param(Node):
         else:
             self.to_dynamic()
 
+    @property
+    def _type(self):
+        if self.__type == "dynamic" and self.__value is not None:
+            return "dynamic value"
+        return self.__type
+
+    @_type.setter
+    def _type(self, value):
+        if value == "dynamic value":
+            value = "dynamic"
+        self.__type = value
+
     def to_dynamic(self, **kwargs):
         """Change this parameter to a dynamic parameter. If the parameter has a
         value, this will become a "dynamic value" parameter."""
@@ -162,10 +174,7 @@ class Param(Node):
             except Exception:
                 self.__value = None
         pre_type = self._type
-        if self.__value is None:
-            self._type = "dynamic"
-        else:
-            self._type = "dynamic value"
+        self._type = "dynamic"
         if pre_type != self._type:
             self.update_graph()
 
@@ -285,7 +294,7 @@ class Param(Node):
         # Set to dynamic value
         if backend.backend != "object":
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
-        self._type = "dynamic value"
+        self._type = "dynamic"
         self.__value = value
         if backend.backend != "object":
             self._shape_from_value(tuple(value.shape))
@@ -403,6 +412,7 @@ class Param(Node):
                     "value",
                     data=value,
                 )
+            self._h5group["value"].attrs["_type"] = self._type
             self._h5group["value"].attrs["appendable"] = appendable
             self._h5group["value"].attrs["cyclic"] = self.cyclic
             if self.valid[0] is not None:
@@ -437,11 +447,16 @@ class Param(Node):
         if not self.pointer:
             if isinstance(h5group["value"][()], bytes):
                 assert h5group["value"][()] == b"None"
-                self.value = None
+                value = None
             elif h5group["value"].attrs["appendable"]:
-                self.value = h5group["value"][index]
+                value = h5group["value"][index]
             else:
-                self.value = h5group["value"][()]
+                value = h5group["value"][()]
+
+            if "static" in h5group["value"].attrs["_type"]:
+                self.static_value(value)
+            elif "dynamic" in h5group["value"].attrs["_type"]:
+                self.dynamic_value(value)
         self.units = h5group["value"].attrs["units"]
         if "valid_left" in h5group["value"].attrs:
             self.valid = (
@@ -564,7 +579,7 @@ class Param(Node):
         """
         Returns a string representation of the node for graph visualization.
         """
-        if (self.static or self._type == "dynamic value") and backend.backend != "object":
+        if self.__value is not None and backend.backend != "object":
             if max(1, prod(self.value.shape)) == 1:
                 return f"{self.name}|{self._type}: {self.npvalue.item():.3g}"
             elif prod(self.value.shape) <= 4:

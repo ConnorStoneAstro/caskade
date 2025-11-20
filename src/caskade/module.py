@@ -63,6 +63,7 @@ class Module(Node):
     _special_tuples = (
         "dynamic_params",
         "pointer_params",
+        "static_params",
         "dynamic_modules",
     )  # These tuples will not be converted to NodeTuple objects
     graphviz_types = {"module": {"style": "solid", "color": "black", "shape": "ellipse"}}
@@ -171,7 +172,7 @@ class Module(Node):
         for key in params:
             if key in node.children and isinstance(node[key], Param) and node[key].dynamic:
                 if dynamic_values:
-                    node[key].dynamic_value = params[key]
+                    node[key].dynamic_value(params[key])
                 else:
                     node[key]._value = params[key]
             elif (
