@@ -45,7 +45,7 @@ class NodeTuple(NodeCollection, tuple):
     def __init__(self, iterable=None, name=None):
         tuple.__init__(iterable)
         Node.__init__(self, name=name)
-        self._type = "ntuple"
+        self.node_type = "ntuple"
 
         for node in self:
             if not isinstance(node, Node):
@@ -68,7 +68,7 @@ class NodeList(NodeCollection, list):
     def __init__(self, iterable=(), name=None):
         list.__init__(self, iterable)
         Node.__init__(self, name)
-        self._type = "nlist"
+        self.node_type = "nlist"
 
         self._link_nodes()
 

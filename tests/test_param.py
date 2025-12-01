@@ -9,7 +9,6 @@ from caskade import (
     GraphError,
     InvalidValueWarning,
     LinkToAttributeError,
-    dynamic,
     backend,
 )
 
@@ -35,10 +34,10 @@ def test_param_creation():
     p3 = Param("test", backend.module.ones((1, 2, 3)))
     p33 = Param("test", dynamic_value=backend.module.ones((1, 2, 3)))
     assert backend.all(p3.value == p33.value)
-    p33v2 = Param("test", dynamic(backend.module.ones((3, 2, 1))))
+    p33v2 = Param("test", backend.module.ones((3, 2, 1)), dynamic=True)
     assert p33v2.dynamic
     assert p33v2.value.shape == (3, 2, 1)
-    p33v3 = Param("test", dynamic_value=dynamic(backend.module.ones((3, 2, 1))))
+    p33v3 = Param("test", dynamic_value=backend.module.ones((3, 2, 1)), dynamic=True)
     assert p33v3.dynamic
     assert p33v3.value.shape == (3, 2, 1)
 

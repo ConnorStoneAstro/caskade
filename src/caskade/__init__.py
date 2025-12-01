@@ -5,7 +5,7 @@ from .backend import backend, ArrayLike
 from .context import ActiveContext, ValidContext, OverrideParam
 from .decorators import forward, active_cache
 from .module import Module
-from .param import Param, dynamic
+from .param import Param
 from .collection import NodeCollection, NodeList, NodeTuple
 from .tests import test
 from .errors import (
@@ -34,7 +34,6 @@ __all__ = (
     "ArrayLike",
     "Module",
     "Param",
-    "dynamic",
     "NodeCollection",
     "NodeList",
     "NodeTuple",

@@ -74,7 +74,7 @@ class Module(Node):
         self.all_dynamic_value = True
         self.pointer_params = ()
         self.local_dynamic_params = {}
-        self._type = "module"
+        self.node_type = "module"
         self.valid_context = False
         self.clear_state_hooks = set()
 
@@ -86,7 +86,7 @@ class Module(Node):
         """Maintain a tuple of dynamic and live parameters at all points lower
         in the DAG."""
         self.dynamic_params = tuple(self.topological_ordering("dynamic"))
-        self.all_dynamic_value = all("value" in p._type for p in self.dynamic_params)
+        self.all_dynamic_value = all("value" in p.node_type for p in self.dynamic_params)
         self.pointer_params = tuple(self.topological_ordering("pointer"))
         self.static_params = tuple(self.topological_ordering("static"))
         self.local_dynamic_params = dict(
@@ -341,7 +341,7 @@ class Module(Node):
         if not self.all_dynamic_value:
             bad_params = []
             for param in self.dynamic_params:
-                if "value" not in param._type:
+                if "value" not in param.node_type:
                     bad_params.append(param.name)
             raise ParamConfigurationError(
                 f"{self.name} Param(s) {bad_params} have no dynamic value, so the params {params_type} cannot be built. Set the `dynamic_value` attribute to use this feature."

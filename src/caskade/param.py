@@ -1,7 +1,6 @@
 from typing import Optional, Union, Callable, Any
 from warnings import warn
 import traceback
-from dataclasses import dataclass
 from math import prod
 
 from numpy import ndarray
@@ -31,19 +30,19 @@ class Param(Node):
 
     The ``Param`` object is used to represent a parameter in the graph. During
     runtime this will represent a value which can be used in various
-    calculations. The ``Param`` object can be set to a constant value (``static``);
-    ``None`` meaning the value is to be provided at runtime (``dynamic``); another
-    ``Param`` object meaning it will take on that  value at runtime (``pointer``);
-    or a function of other ``Param`` objects to be computed at runtime (also
-    ``pointer``, see user guides). These options allow users to flexibly set the
-    behavior of the simulator.
+    calculations. The ``Param`` object can be set to a constant value
+    (``static``); ``None`` meaning the value is to be provided at runtime
+    (``dynamic``); another ``Param`` object meaning it will take on that  value
+    at runtime (``pointer``); or a function of other ``Param`` objects to be
+    computed at runtime (also ``pointer``, see user guides). These options allow
+    users to flexibly set the behavior of the simulator.
 
     Examples
     --------
     Example making some ``Param`` objects::
 
         p1 = Param("test", (1.0, 2.0)) # constant value, length 2 vector
-        p2 = Param("p2", None, (2,2)) # dynamic 2x2 matrix value
+        p2 =Param("p2", None, (2,2)) # dynamic 2x2 matrix value
         p3 = Param("p3", p1) # pointer to another parameter
         p4 = Param("p4", lambda p: p.children["other"].value * 2) # arbitrary function of another parameter
         p5 = Param("p5", valid=(0.0,2*pi), units="radians", cyclic=True) # parameter with metadata
@@ -57,22 +56,25 @@ class Param(Node):
     shape: (Optional[tuple[int, ...]], optional)
         The shape of the parameter. Defaults to () meaning scalar.
     cyclic: (bool, optional)
-        Whether the parameter is cyclic, such as a rotation from 0 to 2pi.
-        Defaults to False.
+        Whether the parameter is cyclic, imposing periodic boundary conditions.
+        Such as a rotation from 0 to 2pi. Defaults to False.
     valid: (Optional[tuple[Union[ArrayLike, float, int, None]]], optional)
         The valid range of the parameter. Defaults to None meaning all of -inf
         to inf is valid.
     units: (Optional[str], optional)
         The units of the parameter. Defaults to None.
-    dynamic_value: (Optional[Union[ArrayLike, float, int]], optional)
-        Allows the parameter to store a value while still dynamic (think of it
-        as a default value).
+    dynamic: (Optional[bool], optional)
+        Force param to be dynamic if True. If a value is provided and param is dynamic
+        then it has a default value if none are provided.
+    batched (bool, optional):
+        If True, the param is assumed batched and the shape may now take the form
+        (*B, *D) where *D is the shape of the value.
     dtype: (Optional[Any], optional)
         The data type of the parameter. Defaults to None meaning the data type
         will be inferred from the value.
     device: (Optional[Any], optional)
-        The device of the parameter. Defaults to None meaning the device will
-        be inferred from the value.
+        The device of the parameter. Defaults to None meaning the device will be
+        inferred from the value.
     """
 
     graphviz_types = {
@@ -96,8 +98,12 @@ class Param(Node):
         device: Optional[Any] = None,
         **kwargs,
     ):
+        self._node_type = "node"
         super().__init__(name=name, **kwargs)
         self._shape = None
+        self._value = None
+        self.__value = None
+        self._valid = (None, None)
         if value is None and backend.backend != "object":
             if shape is None:
                 shape = ()
@@ -114,20 +120,19 @@ class Param(Node):
                 raise ParamConfigurationError(
                     f"Shape {shape} does not match value shape {value.shape}"
                 )
-        self._type = "null"
         self._dtype = dtype
         self._device = device
+        self._cyclic = cyclic
         self.batched = batched
         self.shape = shape
         self.value = value
         self.dynamic = dynamic
-        self.cyclic = cyclic
         self.valid = valid
         self.units = units
 
     @property
     def dynamic(self) -> bool:
-        return "dynamic" in self._type
+        return "dynamic" in self.node_type
 
     @dynamic.setter
     def dynamic(self, dynamic: Optional[bool]):
@@ -140,11 +145,11 @@ class Param(Node):
 
     @property
     def pointer(self) -> bool:
-        return "pointer" in self._type
+        return "pointer" in self.node_type
 
     @property
     def static(self) -> bool:
-        return "static" in self._type
+        return "static" in self.node_type
 
     @static.setter
     def static(self, static: bool):
@@ -154,16 +159,19 @@ class Param(Node):
             self.to_dynamic()
 
     @property
-    def _type(self):
-        if self.__type == "dynamic" and self.__value is not None:
+    def node_type(self):
+        if self._node_type == "dynamic" and self.__value is not None:
             return "dynamic value"
-        return self.__type
+        return self._node_type
 
-    @_type.setter
-    def _type(self, value):
+    @node_type.setter
+    def node_type(self, value):
+        pre_type = self._node_type
         if value == "dynamic value":
             value = "dynamic"
-        self.__type = value
+        self._node_type = value
+        if pre_type != self._node_type:
+            self.update_graph()
 
     def to_dynamic(self, **kwargs):
         """Change this parameter to a dynamic parameter. If the parameter has a
@@ -173,10 +181,7 @@ class Param(Node):
                 self.__value = self.__value(self)
             except Exception:
                 self.__value = None
-        pre_type = self._type
-        self._type = "dynamic"
-        if pre_type != self._type:
-            self.update_graph()
+        self.node_type = "dynamic"
 
     def to_static(self, **kwargs):
         """Change this parameter to a static parameter. This only works if the
@@ -194,10 +199,9 @@ class Param(Node):
                 )
         if self.__value is None:
             raise ParamTypeError(
-                f"Cannot set dynamic parameter {self.name} to static when no `dynamic_value` is set"
+                f"Cannot set dynamic parameter {self.name} to static when no `dynamic_value` is set. Try using `static_value(value)` to provide a value and set to static."
             )
-        self._type = "static"
-        self.update_graph()
+        self.node_type = "static"
 
     @property
     def shape(self) -> Optional[tuple[int, ...]]:
@@ -218,6 +222,7 @@ class Param(Node):
             raise ParamTypeError(f"Cannot set shape of parameter {self.name} with type 'pointer'")
         if shape is None:
             self._shape = None
+            return
         shape = tuple(shape)
         value = self.value
         if value is not None and not valid_shape(shape, value.shape, self.batched):
@@ -251,40 +256,37 @@ class Param(Node):
     def static_value(self, value):
         # While active no value can be set
         if self.active:
-            raise ActiveStateError(f"Cannot set static value of parameter {self.name} while active")
-        pre_type = self._type
+            raise ActiveStateError(
+                f"Cannot set static value of parameter {self.name} while active."
+            )
 
         # Catch cases where input is invalid
         if value is None:
             raise ParamTypeError("Cannot set to static with value of None")
         if isinstance(value, Param) or callable(value):
-            raise ParamTypeError(f"Cannot set static value to pointer ({self.name})")
+            raise ParamTypeError(
+                f"Cannot set static value to pointer ({self.name}). Try setting `pointer_func(func)` or `pointer_func(param)` to create a pointer."
+            )
 
         if backend.backend != "object":
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
-        self._type = "static"
         self.__value = value
+        self.node_type = "static"
         if backend.backend != "object":
             self._shape_from_value(tuple(value.shape))
         self.is_valid()
-
-        if pre_type != "static":
-            self.update_graph()
 
     def dynamic_value(self, value):
         # While active no value can be set
         if self.active:
             raise ActiveStateError(
-                f"Cannot set dynamic value of parameter {self.name} while active"
+                f"Cannot set dynamic value of parameter {self.name} while active."
             )
-        pre_type = self._type
 
         # No dynamic value
         if value is None:
-            self._type = "dynamic"
             self.__value = None
-            if pre_type != "dynamic":
-                self.update_graph()
+            self.node_type = "dynamic"
             return
 
         # Catch cases where input is invalid
@@ -294,14 +296,11 @@ class Param(Node):
         # Set to dynamic value
         if backend.backend != "object":
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
-        self._type = "dynamic"
         self.__value = value
+        self.node_type = "dynamic"
         if backend.backend != "object":
             self._shape_from_value(tuple(value.shape))
         self.is_valid()
-
-        if pre_type != "dynamic value":
-            self.update_graph()
 
     def pointer_func(self, value: Union["Param", Callable]):
         # While active no value can be set
@@ -312,13 +311,14 @@ class Param(Node):
 
         if isinstance(value, Param):
             self.link(value)
-            value = lambda p: p[value.name].value
+            p_name = value.name
+            value = lambda p: p[p_name].value
         elif not callable(value):
             raise ParamTypeError(f"Pointer function must be a Param or callable ({self.name})")
-        self._type = "pointer"
+        elif hasattr(value, "params"):
+            self.link(value.params)
         self.__value = value
-
-        self.update_graph()
+        self.node_type = "pointer"
 
     @property
     def value(self) -> Union[ArrayLike, None]:
@@ -338,9 +338,11 @@ class Param(Node):
             raise ActiveStateError(f"Cannot set value of parameter {self.name} while active")
 
         if value is None:
-            self.to_dynamic()
+            self.dynamic_value(None)
         elif isinstance(value, Param) or callable(value):
             self.pointer_func(value)
+        elif self.dynamic:
+            self.dynamic_value(value)
         else:
             self.static_value(value)
 
@@ -412,7 +414,7 @@ class Param(Node):
                     "value",
                     data=value,
                 )
-            self._h5group["value"].attrs["_type"] = self._type
+            self._h5group["value"].attrs["node_type"] = self.node_type
             self._h5group["value"].attrs["appendable"] = appendable
             self._h5group["value"].attrs["cyclic"] = self.cyclic
             if self.valid[0] is not None:
@@ -453,9 +455,9 @@ class Param(Node):
             else:
                 value = h5group["value"][()]
 
-            if "static" in h5group["value"].attrs["_type"]:
+            if "static" in h5group["value"].attrs["node_type"]:
                 self.static_value(value)
-            elif "dynamic" in h5group["value"].attrs["_type"]:
+            elif "dynamic" in h5group["value"].attrs["node_type"]:
                 self.dynamic_value(value)
         self.units = h5group["value"].attrs["units"]
         if "valid_left" in h5group["value"].attrs:
@@ -521,10 +523,11 @@ class Param(Node):
         self._valid = valid
         self.is_valid()
 
-    def is_valid(self) -> bool:
+    def is_valid(self, value=None) -> bool:
         if backend.backend == "object" or self.cyclic or self.pointer:
             return True
-        value = self.value
+        if value is None:
+            value = self.value
         if value is None:
             return True
         if self.valid[0] is not None and backend.any(self.value < self.valid[0]):
@@ -581,13 +584,13 @@ class Param(Node):
         """
         if self.__value is not None and backend.backend != "object":
             if max(1, prod(self.value.shape)) == 1:
-                return f"{self.name}|{self._type}: {self.npvalue.item():.3g}"
+                return f"{self.name}|{self.node_type}: {self.npvalue.item():.3g}"
             elif prod(self.value.shape) <= 4:
                 value = str(np.char.mod("%.3g", self.npvalue).tolist()).replace("'", "")
-                return f"{self.name}|{self._type}: {value}"
+                return f"{self.name}|{self.node_type}: {value}"
             else:
-                return f"{self.name}|{self._type}: {self.shape}"
-        return f"{self.name}|{self._type}"
+                return f"{self.name}|{self.node_type}: {self.shape}"
+        return f"{self.name}|{self.node_type}"
 
     def __repr__(self) -> str:
         return self.name

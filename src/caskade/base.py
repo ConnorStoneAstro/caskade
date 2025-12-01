@@ -74,7 +74,7 @@ class Node:
         self._parents = set()
         self._active = False
         self._frozen = False
-        self._type = "node"
+        self.node_type = "node"
         self.description = description
         self.meta = meta()
         self.saveattrs = set()
@@ -198,7 +198,7 @@ class Node:
                 if subnode not in ordering:
                     ordering.append(subnode)
         if with_type is not None:
-            ordering = filter(lambda n: with_type in n._type, ordering)
+            ordering = filter(lambda n: with_type in n.node_type, ordering)
         if with_isinstance is not None:
             ordering = filter(lambda n: isinstance(n, with_isinstance), ordering)
         return tuple(ordering)
@@ -461,7 +461,7 @@ class Node:
         def add_node(node, dot):
             if node in components:
                 return
-            dot.attr("node", **node.graphviz_types[node._type])
+            dot.attr("node", **node.graphviz_types[node.node_type])
             dot.node(str(id(node)), repr(node))
             components.add(node)
 
@@ -481,7 +481,7 @@ class Node:
 
     @property
     def node_str(self):
-        return f"{self.name}|{self._type}"
+        return f"{self.name}|{self.node_type}"
 
     def graph_dict(self) -> dict[str, dict]:
         """Return a dictionary representation of the graph below the current
