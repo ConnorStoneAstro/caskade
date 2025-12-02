@@ -12,7 +12,6 @@ from .errors import (
     FillDynamicParamsArrayError,
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
-    BackendError,
 )
 
 

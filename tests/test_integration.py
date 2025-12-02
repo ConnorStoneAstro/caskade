@@ -107,5 +107,6 @@ def test_full_integration_v2():
 
     main.c_param = [[1, 2], [1, 3]]  # test print param with shape
     print(main)
+    print(main.param_order())
     graph = main.graphviz()
     assert graph is not None, "should return a graphviz object"
