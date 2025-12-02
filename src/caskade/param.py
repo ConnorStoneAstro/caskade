@@ -163,7 +163,7 @@ class Param(Node):
 
     def to_static(self, **kwargs):
         """Change this parameter to a static parameter. This only works if the
-        parameter has a ``dynamic_value`` set, or if the pointer can be
+        parameter has a dynamic value set, or if the pointer can be
         evaluated."""
         if self.static:
             return
@@ -177,7 +177,7 @@ class Param(Node):
                 )
         if self.__value is None:
             raise ParamTypeError(
-                f"Cannot set dynamic parameter {self.name} to static when no `dynamic_value` is set. Try using `static_value(value)` to provide a value and set to static."
+                f"Cannot set dynamic parameter {self.name} to static when no dynamic value is set. Try using `static_value(value)` to provide a value and set to static."
             )
         self.node_type = "static"
 

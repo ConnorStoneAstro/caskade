@@ -336,7 +336,7 @@ class Module(Node):
                 bad_params.append(param.name)
         if len(bad_params) > 0:
             raise ParamConfigurationError(
-                f"{self.name} Param(s) {bad_params} have no dynamic value, so the params {params_type} cannot be built. Set the `dynamic_value` attribute to use this feature."
+                f"{self.name} Param(s) {bad_params} have no dynamic value, so the params {params_type} cannot be built. Set to a dynamic value to use this feature."
             )
 
     def build_params_array(self) -> ArrayLike:
