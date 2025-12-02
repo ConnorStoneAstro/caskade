@@ -200,6 +200,8 @@ class Param(Node):
             return
         shape = tuple(shape)
         value = self.value
+        if value is not None:
+            print(shape, value.shape, self.batched)
         if value is not None and not valid_shape(shape, value.shape, self.batched):
             raise ValueError(f"Shape {shape} does not match the shape of the value {value.shape}")
         self._shape = shape
