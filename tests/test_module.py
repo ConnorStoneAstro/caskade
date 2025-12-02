@@ -339,6 +339,3 @@ def test_valid():
         assert np.isclose(M.p2.value[1].item(), 1.5)
         assert np.isclose(M.m2.p3.value[0][1].item(), 1.1)
         assert np.isclose(M.m2.m3.p2.value[1].item(), 1.5)
-
-    with pytest.raises(TypeError):
-        M.valid_context = None

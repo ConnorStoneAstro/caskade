@@ -85,9 +85,9 @@ class Module(Node):
         """Maintain a tuple of dynamic and live parameters at all points lower
         in the DAG."""
         T = self.topological_ordering()
-        self.dynamic_params = tuple(filter(lambda n: "dynamic" in n.node_type, T))
-        self.pointer_params = tuple(filter(lambda n: "pointer" in n.node_type, T))
-        self.static_params = tuple(filter(lambda n: "static" in n.node_type, T))
+        self.dynamic_params = tuple(filter(lambda n: isinstance(n, Param) and n.dynamic, T))
+        self.pointer_params = tuple(filter(lambda n: isinstance(n, Param) and n.pointer, T))
+        self.static_params = tuple(filter(lambda n: isinstance(n, Param) and n.static, T))
         self.local_dynamic_params = dict(
             (k, p) for k, p in self.children.items() if isinstance(p, Param) and p.dynamic
         )
@@ -95,6 +95,11 @@ class Module(Node):
             m for m in filter(lambda n: isinstance(n, Module), T) if m.dynamic
         )
         super().update_graph()
+
+    def param_order(self):
+        return ", ".join(
+            tuple(f"{next(iter(p.parents)).name}: {p.name}" for p in self.dynamic_params)
+        )
 
     @property
     def dynamic(self) -> bool:
@@ -124,9 +129,9 @@ class Module(Node):
                 if isinstance(c, Param) and not (ignore_pointer and c.pointer):
                     c.to_dynamic()
         else:
-            for n in self.topological_ordering(with_isinstance=Param):
-                if not (ignore_pointer and n.pointer):
-                    n.to_dynamic()
+            for node in self.topological_ordering():
+                if isinstance(node, Param) and not (ignore_pointer and node.pointer):
+                    node.to_dynamic()
 
     def to_static(self, local_only=True, ignore_pointer=True, **kwargs):
         """Change all parameters to static parameters. This only works if the
@@ -148,9 +153,9 @@ class Module(Node):
                 if isinstance(c, Param) and not (ignore_pointer and c.pointer):
                     c.to_static()
         else:
-            for n in self.topological_ordering(with_isinstance=Param):
-                if not (ignore_pointer and n.pointer):
-                    n.to_static()
+            for node in self.topological_ordering():
+                if isinstance(node, Param) and not (ignore_pointer and node.pointer):
+                    node.to_static()
 
     @property
     def valid_context(self) -> bool:
@@ -160,11 +165,10 @@ class Module(Node):
     @valid_context.setter
     def valid_context(self, value: bool):
         """Set the valid context of the module."""
-        if not isinstance(value, bool):
-            raise TypeError(f"Valid context must be a boolean, got {type(value)}")
         self._valid_context = value
-        for node in self.topological_ordering(with_isinstance=Module):
-            node._valid_context = value
+        for node in self.topological_ordering():
+            if isinstance(node, Module):
+                node._valid_context = value
 
     def _fill_dict(self, node, params, dynamic_values=False):
 

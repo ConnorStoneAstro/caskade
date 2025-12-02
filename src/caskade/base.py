@@ -73,7 +73,6 @@ class Node:
         self._children = {}
         self._parents = set()
         self._active = False
-        self._frozen = False
         self.node_type = "node"
         self.description = description
         self.meta = meta()
@@ -86,11 +85,11 @@ class Node:
         return self._name
 
     @property
-    def children(self) -> dict:
+    def children(self) -> dict[str, "Node"]:
         return self._children
 
     @property
-    def parents(self) -> set:
+    def parents(self) -> set["Node"]:
         return self._parents
 
     @property
@@ -98,7 +97,7 @@ class Node:
         return len(self.children) == 0
 
     def _link(self, key: str, child: "Node"):
-        if self.active or self.frozen:
+        if self.active:
             raise GraphError("Cannot link/unlink nodes while the graph is active")
         # Avoid double linking to the same object
         if key in self.children:
@@ -166,7 +165,7 @@ class Node:
         self.__setattr__(key, child)
 
     def _unlink(self, key: str):
-        if self.active or self.frozen:
+        if self.active:
             raise GraphError(f"Cannot link/unlink nodes while the graph is active ({self.name})")
         if not key in self._children:
             raise LinkToAttributeError(f"{self.name} does not have child {key} to unlink.")
@@ -188,49 +187,37 @@ class Node:
             return
         self.__delattr__(key)
 
-    def topological_ordering(
-        self, with_type: Optional[str] = None, with_isinstance: Optional[object] = None
-    ) -> tuple["Node"]:
-        """Return a topological ordering of the graph below the current node."""
-        ordering = [self]
-        for node in self.children.values():
-            for subnode in node.topological_ordering():
-                if subnode not in ordering:
-                    ordering.append(subnode)
-        if with_type is not None:
-            ordering = filter(lambda n: with_type in n.node_type, ordering)
-        if with_isinstance is not None:
-            ordering = filter(lambda n: isinstance(n, with_isinstance), ordering)
-        return tuple(ordering)
+    def topological_ordering(self) -> tuple["Node"]:
+        """
+        Return a topological ordering of the graph below the current node.
+        Uses Iterative Deepening DFS (Post-Order) to resolve dependencies.
+        """
+        visited = set()
+        stack = []
+
+        def visit(node):
+            if node in visited:
+                return
+            visited.add(node)
+
+            # Visit all children first
+            for child in reversed(node.children.values()):
+                visit(child)
+
+            # Add node to stack only after all children are processed
+            stack.append(node)
+
+        visit(self)
+
+        # Reverse the stack to get Parent -> Child ordering
+        return tuple(reversed(stack))
 
     def update_graph(self):
         """Triggers a call to all parents that the graph below them has been
         updated. The base ``Node`` object does nothing with this information, but
         other node types may use this to update internal state."""
-        if self.frozen:
-            return
-
         for parent in self.parents:
             parent.update_graph()
-
-    @property
-    def frozen(self) -> bool:
-        return self._frozen
-
-    @frozen.setter
-    def frozen(self, value: bool):
-        if self._frozen is value:
-            return
-
-        self._frozen = value
-        for node in self.topological_ordering():
-            node._frozen = value
-
-        if not value:
-            for node in self.topological_ordering():
-                if node.leaf:
-                    node.update_graph()
-            self.update_graph()
 
     @property
     def active(self) -> bool:
@@ -424,22 +411,18 @@ class Node:
 
     def load_state(self, loadfrom: Union[str, "File"], index: int = -1, **kwargs):
         """Load the state of the node and its children."""
-        self.frozen = True
-        try:
-            if isinstance(loadfrom, str):
-                if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
-                    with h5py.File(loadfrom, "r", **{"driver": "core", **kwargs}) as h5file:
-                        self._check_load_state_hdf5(h5file[self.name])
-                        self._load_state_hdf5(h5file[self.name], index=index, _done_load=set())
-                else:
-                    raise NotImplementedError(
-                        "Only HDF5 files ('.h5') are currently supported for loading state"
-                    )
-            else:  # assume loadfrom is an HDF5 File object
-                self._check_load_state_hdf5(loadfrom[self.name])
-                self._load_state_hdf5(loadfrom[self.name], index=index, _done_load=set())
-        finally:
-            self.frozen = False
+        if isinstance(loadfrom, str):
+            if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
+                with h5py.File(loadfrom, "r", **{"driver": "core", **kwargs}) as h5file:
+                    self._check_load_state_hdf5(h5file[self.name])
+                    self._load_state_hdf5(h5file[self.name], index=index, _done_load=set())
+            else:
+                raise NotImplementedError(
+                    "Only HDF5 files ('.h5') are currently supported for loading state"
+                )
+        else:  # assume loadfrom is an HDF5 File object
+            self._check_load_state_hdf5(loadfrom[self.name])
+            self._load_state_hdf5(loadfrom[self.name], index=index, _done_load=set())
 
     def graphviz(self, top_down: bool = True, saveto: Optional[str] = None) -> "graphviz.Digraph":
         """Return a graphviz object representing the graph below the current

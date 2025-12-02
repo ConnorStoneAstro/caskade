@@ -147,17 +147,14 @@ class Param(Node):
 
     @property
     def node_type(self):
-        if self._node_type == "dynamic" and self.__value is not None:
-            return "dynamic value"
         return self._node_type
 
     @node_type.setter
     def node_type(self, value):
         pre_type = self.node_type
-        if value == "dynamic value":
-            value = "dynamic"
+        if value == "dynamic" and self.__value is not None:
+            value = "dynamic value"
         self._node_type = value
-        print(pre_type, self.node_type)
         if pre_type != self.node_type:
             self.update_graph()
 
@@ -167,7 +164,7 @@ class Param(Node):
         if self.pointer:
             try:
                 self.__value = self.__value(self)
-            except Exception:
+            except:
                 self.__value = None
         self.node_type = "dynamic"
 
@@ -180,7 +177,7 @@ class Param(Node):
         if self.pointer:
             try:
                 self.__value = self.__value(self)
-            except Exception as e:
+            except:
                 raise ParamTypeError(
                     f"Cannot set pointer parameter {self.name} to static with `to_static`. Pointer could not be evaluated because of: \n"
                     + traceback.format_exc()

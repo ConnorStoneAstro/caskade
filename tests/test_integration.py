@@ -89,13 +89,12 @@ def test_full_integration_v2():
             return u * z
 
     util = MyUtilitySim("util")
-    #                      u for MyUtilitySim
-    params = [backend.make_array(1.0)]
+    util.u = 1.0
     actions = []
     for i in range(3):
         actions.append(MyActionSim(f"action_{i}", util))
-        #                     a for MyActionSim, b for MyActionSim
-        params = params + [backend.make_array(i), backend.make_array(i + 1)]
+        actions[-1].a = i
+        actions[-1].b = i + 1
 
     main = MyMainSim("main", util, actions)
 
@@ -104,11 +103,11 @@ def test_full_integration_v2():
     main.d_param.link("c", main.c_param)
 
     #                      c for MyMainSim
-    params = params + [backend.make_array(3.0)]
+    main.c_param = 3.0
 
     if backend.backend == "object":
         return
-    assert main.mymainfunction(1.0, params).item() == 558.0
+    assert main.mymainfunction(1.0, main.build_params_array()).item() == 558.0
 
     main.c_param = [[1, 2], [1, 3]]  # test print param with shape
     print(main)
