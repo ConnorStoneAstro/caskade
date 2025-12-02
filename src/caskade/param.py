@@ -63,9 +63,9 @@ class Param(Node):
         to inf is valid.
     units: (Optional[str], optional)
         The units of the parameter. Defaults to None.
-    dynamic: (Optional[bool], optional)
+    dynamic: (bool, optional)
         Force param to be dynamic if True. If a value is provided and param is dynamic
-        then it has a default value if none are provided.
+        then it has a default value at call time.
     batched (bool, optional):
         If True, the param is assumed batched and the shape may now take the form
         (*B, *D) where *D is the shape of the value.
@@ -92,7 +92,7 @@ class Param(Node):
         cyclic: bool = False,
         valid: Optional[tuple[Union[ArrayLike, float, int, None]]] = None,
         units: Optional[str] = None,
-        dynamic: Optional[bool] = None,
+        dynamic: bool = False,
         batched: bool = False,
         dtype: Optional[Any] = None,
         device: Optional[Any] = None,
@@ -126,7 +126,7 @@ class Param(Node):
         self._cyclic = cyclic
         self.batched = batched
         self.shape = shape
-        if dynamic is not None and dynamic:
+        if dynamic:
             self.dynamic_value(value)
         else:
             self.value = value
@@ -137,15 +137,6 @@ class Param(Node):
     def dynamic(self) -> bool:
         return "dynamic" in self.node_type
 
-    @dynamic.setter
-    def dynamic(self, dynamic: Optional[bool]):
-        if dynamic is None:
-            return
-        elif dynamic:
-            self.to_dynamic()
-        else:
-            self.to_static()
-
     @property
     def pointer(self) -> bool:
         return "pointer" in self.node_type
@@ -153,13 +144,6 @@ class Param(Node):
     @property
     def static(self) -> bool:
         return "static" in self.node_type
-
-    @static.setter
-    def static(self, static: bool):
-        if static:
-            self.to_static()
-        else:
-            self.to_dynamic()
 
     @property
     def node_type(self):
@@ -170,11 +154,11 @@ class Param(Node):
     @node_type.setter
     def node_type(self, value):
         pre_type = self.node_type
-        do_update = pre_type != value
         if value == "dynamic value":
             value = "dynamic"
         self._node_type = value
-        if do_update:
+        print(pre_type, self.node_type)
+        if pre_type != self.node_type:
             self.update_graph()
 
     def to_dynamic(self, **kwargs):
@@ -211,7 +195,10 @@ class Param(Node):
     def shape(self) -> Optional[tuple[int, ...]]:
         if backend.backend == "object":
             return None
-        value = self.value
+        try:
+            value = self.value
+        except:
+            value = None
         if self.pointer and value is not None:
             return tuple(value.shape)
         if self._shape is None and value is not None:
@@ -607,7 +594,7 @@ class Param(Node):
             if self.pointer:
                 try:
                     value = self.value
-                except Exception:
+                except:
                     value = None
             else:
                 value = self.value

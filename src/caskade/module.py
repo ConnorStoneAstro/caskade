@@ -71,7 +71,6 @@ class Module(Node):
     def __init__(self, name: Optional[str] = None, **kwargs):
         super().__init__(name=name, **kwargs)
         self.dynamic_params = ()
-        self.all_dynamic_value = True
         self.pointer_params = ()
         self.local_dynamic_params = {}
         self.node_type = "module"
@@ -85,15 +84,15 @@ class Module(Node):
     def update_graph(self):
         """Maintain a tuple of dynamic and live parameters at all points lower
         in the DAG."""
-        self.dynamic_params = tuple(self.topological_ordering("dynamic"))
-        self.all_dynamic_value = all("value" in p.node_type for p in self.dynamic_params)
-        self.pointer_params = tuple(self.topological_ordering("pointer"))
-        self.static_params = tuple(self.topological_ordering("static"))
+        T = self.topological_ordering()
+        self.dynamic_params = tuple(filter(lambda n: "dynamic" in n.node_type, T))
+        self.pointer_params = tuple(filter(lambda n: "pointer" in n.node_type, T))
+        self.static_params = tuple(filter(lambda n: "static" in n.node_type, T))
         self.local_dynamic_params = dict(
             (k, p) for k, p in self.children.items() if isinstance(p, Param) and p.dynamic
         )
         self.dynamic_modules = tuple(
-            m for m in self.topological_ordering(with_isinstance=Module) if m.dynamic
+            m for m in filter(lambda n: isinstance(n, Module), T) if m.dynamic
         )
         super().update_graph()
 
@@ -338,11 +337,11 @@ class Module(Node):
 
     def _check_dynamic_values(self, params_type: str = "ArrayLike"):
         """Check if all dynamic values are set."""
-        if not self.all_dynamic_value:
-            bad_params = []
-            for param in self.dynamic_params:
-                if "value" not in param.node_type:
-                    bad_params.append(param.name)
+        bad_params = []
+        for param in self.dynamic_params:
+            if "value" not in param.node_type:
+                bad_params.append(param.name)
+        if len(bad_params) > 0:
             raise ParamConfigurationError(
                 f"{self.name} Param(s) {bad_params} have no dynamic value, so the params {params_type} cannot be built. Set the `dynamic_value` attribute to use this feature."
             )

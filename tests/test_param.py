@@ -106,14 +106,6 @@ def test_param_creation():
     p16.to_dynamic()
     assert p16.dynamic
     assert p16.value.item() == 1.0
-    p16.dynamic = False
-    assert p16.static
-    p16.dynamic = True
-    assert p16.dynamic
-    p16.static = True
-    assert p16.static
-    p16.static = False
-    assert p16.dynamic
 
 
 def test_param_to():

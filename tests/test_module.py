@@ -120,7 +120,6 @@ def test_dynamic_value():
     sub1 = TestSubSim(d=2.0, e=2.5, f=None)
     main1 = TestSim(a=1.0, b_shape=(2,), c=4.0, m1=sub1)
 
-    assert not main1.all_dynamic_value
     main1.b.static_value(backend.make_array([1.0, 2.0]))
     if backend.backend == "object":
         with pytest.raises(BackendError):
@@ -142,7 +141,6 @@ def test_dynamic_value():
     with pytest.raises(ParamConfigurationError):
         p00 = sub1.build_params_dict()
     sub1.f.dynamic_value(3.0)
-    assert main1.all_dynamic_value
 
     # Check dynamic value
     assert main1.c.value.item() == 4.0
