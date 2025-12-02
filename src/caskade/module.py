@@ -72,7 +72,7 @@ class Module(Node):
         super().__init__(name=name, **kwargs)
         self.dynamic_params = ()
         self.pointer_params = ()
-        self.local_dynamic_params = {}
+        self.child_dynamic_params = {}
         self.node_type = "module"
         self.valid_context = False
         self.clear_state_hooks = set()
@@ -88,7 +88,7 @@ class Module(Node):
         self.dynamic_params = tuple(filter(lambda n: isinstance(n, Param) and n.dynamic, T))
         self.pointer_params = tuple(filter(lambda n: isinstance(n, Param) and n.pointer, T))
         self.static_params = tuple(filter(lambda n: isinstance(n, Param) and n.static, T))
-        self.local_dynamic_params = dict(
+        self.child_dynamic_params = dict(
             (k, p) for k, p in self.children.items() if isinstance(p, Param) and p.dynamic
         )
         self.dynamic_modules = tuple(
@@ -104,57 +104,48 @@ class Module(Node):
     @property
     def dynamic(self) -> bool:
         """Return True if the module has dynamic parameters as direct children."""
-        return len(self.local_dynamic_params) > 0
+        return len(self.child_dynamic_params) > 0
 
     @property
     def static(self) -> bool:
         return not self.dynamic
 
-    def to_dynamic(self, local_only=True, ignore_pointer=True, **kwargs):
+    def to_dynamic(self, children_only=True, **kwargs):
         """Change all parameters to dynamic parameters. If the parameter has a
-        value, this will be stored in the ``dynamic_value`` attribute.
+        value, this will become a dynamic value parameter.
 
         Parameters
         ----------
-        local_only: (bool, optional)
-            If True, only convert the local parameters that are children of this
-            module. If False, convert all parameters in the graph below this
-            module. Defaults to True.
-        ignore_pointer: (bool, optional)
-            If True, do not convert any parameters that are pointers. Defaults
-            to True.
+        children_only: (bool, optional)
+            If True, only convert the children of this module to dynamic. If False,
+            convert all parameters in the graph below this module. Defaults to True.
         """
-        if local_only:
+        if children_only:
             for c in self.children.values():
-                if isinstance(c, Param) and not (ignore_pointer and c.pointer):
+                if isinstance(c, Param) and not c.pointer:
                     c.to_dynamic()
         else:
             for node in self.topological_ordering():
-                if isinstance(node, Param) and not (ignore_pointer and node.pointer):
+                if isinstance(node, Param) and not node.pointer:
                     node.to_dynamic()
 
-    def to_static(self, local_only=True, ignore_pointer=True, **kwargs):
+    def to_static(self, children_only=True, **kwargs):
         """Change all parameters to static parameters. This only works if the
-        parameter has a ``dynamic_value`` set, or if the pointer can be
-        evaluated.
+        parameter has a ``dynamic value`` set to become the static value.
 
         Parameters
         ----------
-        local_only: (bool, optional)
-            If True, only convert the local parameters that are children of this
-            module. If False, convert all parameters in the graph below this
-            module. Defaults to True.
-        ignore_pointer: (bool, optional)
-            If True, do not convert any parameters that are pointers. Defaults
-            to True.
+        children_only: (bool, optional)
+            If True, only convert children of this module. If False, convert
+            all parameters in the graph below this module. Defaults to True.
         """
-        if local_only:
+        if children_only:
             for c in self.children.values():
-                if isinstance(c, Param) and not (ignore_pointer and c.pointer):
+                if isinstance(c, Param) and not c.pointer:
                     c.to_static()
         else:
             for node in self.topological_ordering():
-                if isinstance(node, Param) and not (ignore_pointer and node.pointer):
+                if isinstance(node, Param) and not node.pointer:
                     node.to_static()
 
     @property
@@ -184,7 +175,9 @@ class Module(Node):
                 and node[key].dynamic
                 and not isinstance(params[key], dict)
             ):
-                node[key]._fill_values(params[key], local=True, dynamic_values=dynamic_values)
+                node[key]._fill_values(
+                    params[key], children_only=True, dynamic_values=dynamic_values
+                )
             elif key in node.children and isinstance(node[key], Node) and node[key].dynamic:
                 self._fill_dict(node[key], params[key], dynamic_values=dynamic_values)
             else:
@@ -193,7 +186,7 @@ class Module(Node):
                 )
 
     def _fill_values(
-        self, params: Union[ArrayLike, Sequence, Mapping], local=False, dynamic_values=False
+        self, params: Union[ArrayLike, Sequence, Mapping], children_only=False, dynamic_values=False
     ):
         """
         Fill the dynamic parameters of the module with the input values from
@@ -216,9 +209,11 @@ class Module(Node):
             error eventually if a value is missing.
         """
 
-        dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
+        dynamic_params = (
+            self.child_dynamic_params.values() if children_only else self.dynamic_params
+        )
 
-        if isinstance(params, backend.array_type) and backend.backend != "object":
+        if isinstance(params, backend.array_type):
             if params.shape[-1] == 0:
                 return  # No parameters to fill
             # check for batch dimension
@@ -255,7 +250,7 @@ class Module(Node):
                         param._value = value
             elif len(params) == len(self.dynamic_modules):
                 for module, value in zip(self.dynamic_modules, params):
-                    module._fill_values(value, local=True, dynamic_values=dynamic_values)
+                    module._fill_values(value, children_only=True, dynamic_values=dynamic_values)
             else:
                 raise FillDynamicParamsSequenceError(
                     self.name, params, dynamic_params, self.dynamic_modules
@@ -263,11 +258,6 @@ class Module(Node):
         elif isinstance(params, Mapping):
             self._fill_dict(self, params, dynamic_values=dynamic_values)
         else:
-            try:
-                if params.dtype is not None and backend.backend == "object":
-                    raise BackendError("Cannot use ArrayLike operations when backend is 'object'")
-            except AttributeError:
-                pass
             raise TypeError(
                 f"Input params type {type(params)} not supported. Should be {backend.array_type.__name__}, Sequence, or Mapping."
             )
@@ -352,8 +342,6 @@ class Module(Node):
 
     def build_params_array(self) -> ArrayLike:
         """Return an input array-like object for this module's @forward methods by filling with dynamic values."""
-        if backend.backend == "object":
-            raise BackendError("Cannot use ArrayLike operations when backend is 'object'")
         self._check_dynamic_values("ArrayLike")
         x = []
         batch_shape = None
@@ -411,12 +399,12 @@ class Module(Node):
         return x
 
     def to_valid(
-        self, params: Union[ArrayLike, Sequence, Mapping], local=False
+        self, params: Union[ArrayLike, Sequence, Mapping], children_only=False
     ) -> Union[ArrayLike, Sequence, Mapping]:
         """Convert input params to valid params."""
-        if backend.backend == "object":
-            return params
-        dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
+        dynamic_params = (
+            self.child_dynamic_params.values() if children_only else self.dynamic_params
+        )
         if isinstance(params, backend.array_type):
             valid_params = []  # backend.zeros_like(params)
             batch = len(params.shape) > 1
@@ -442,7 +430,7 @@ class Module(Node):
                     valid_params.append(param.to_valid(value))
             elif len(params) == len(self.dynamic_modules):
                 for module, value in zip(self.dynamic_modules, params):
-                    valid_params.append(module.to_valid(value, local=True))
+                    valid_params.append(module.to_valid(value, children_only=True))
             else:
                 raise FillDynamicParamsSequenceError(
                     self.name, params, dynamic_params, self.dynamic_modules
@@ -451,7 +439,7 @@ class Module(Node):
             valid_params = {}
             for key in params:
                 if key in self.children and isinstance(self[key], Module) and self[key].dynamic:
-                    valid_params[key] = self[key].to_valid(params[key], local=True)
+                    valid_params[key] = self[key].to_valid(params[key], children_only=True)
                 elif key in self.children and isinstance(self[key], Param) and self[key].dynamic:
                     valid_params[key] = self[key].to_valid(params[key])
                 else:
@@ -465,13 +453,13 @@ class Module(Node):
         return valid_params
 
     def from_valid(
-        self, valid_params: Union[ArrayLike, Sequence, Mapping], local=False
+        self, valid_params: Union[ArrayLike, Sequence, Mapping], children_only=False
     ) -> Union[ArrayLike, Sequence, Mapping]:
         """Convert valid params to input params."""
-        if backend.backend == "object":
-            return valid_params
 
-        dynamic_params = self.local_dynamic_params.values() if local else self.dynamic_params
+        dynamic_params = (
+            self.child_dynamic_params.values() if children_only else self.dynamic_params
+        )
 
         if isinstance(valid_params, backend.array_type):
             params = []  # backend.zeros_like(valid_params)
@@ -498,7 +486,7 @@ class Module(Node):
                     params.append(param.from_valid(value))
             elif len(valid_params) == len(self.dynamic_modules):
                 for module, value in zip(self.dynamic_modules, valid_params):
-                    params.append(module.from_valid(value, local=True))
+                    params.append(module.from_valid(value, children_only=True))
             else:
                 raise FillDynamicParamsSequenceError(
                     self.name, valid_params, dynamic_params, self.dynamic_modules
@@ -507,7 +495,7 @@ class Module(Node):
             params = {}
             for key in valid_params:
                 if key in self.children and isinstance(self[key], Module) and self[key].dynamic:
-                    params[key] = self[key].from_valid(valid_params[key], local=True)
+                    params[key] = self[key].from_valid(valid_params[key], children_only=True)
                 elif key in self.children and isinstance(self[key], Param) and self[key].dynamic:
                     params[key] = self[key].from_valid(valid_params[key])
                 else:

@@ -10,7 +10,6 @@ from caskade import (
     InvalidValueWarning,
     forward,
     backend,
-    BackendError,
     ValidContext,
 )
 
@@ -85,8 +84,6 @@ def test_shared_param():
             return self.m1.test() + self.m2.test()
 
     c1 = CombineModules("c1", m1, m2)
-    if backend.backend == "object":
-        return
     assert c1.big_test([backend.make_array(1.0)]).item() == 4.0, "Shared parameter not working"
 
 
@@ -121,16 +118,7 @@ def test_dynamic_value():
     main1 = TestSim(a=1.0, b_shape=(2,), c=4.0, m1=sub1)
 
     main1.b.static_value(backend.make_array([1.0, 2.0]))
-    if backend.backend == "object":
-        with pytest.raises(BackendError):
-            main1.testfun(np.array([1.0, 2.0]), np.ones(3))
-        with pytest.raises(BackendError):
-            main1.build_params_array()
-        x = main1.to_valid(np.array([1, 2, 3]))
-        assert x[1] == 2.0
-        x = main1.from_valid(x)
-        assert x[1] == 2.0
-        return
+
     # Try to get auto params when not all dynamic values available
     with pytest.raises(ParamConfigurationError):
         p00 = main1.build_params_array()
@@ -229,8 +217,6 @@ def test_dynamic_value():
 
 
 def test_batched_build_params_array():
-    if backend.backend == "object":
-        return
     M = Module("M")
     M.p1 = Param("p1")
     M.p2 = Param("p2")
@@ -300,8 +286,6 @@ def test_module_and_collection():
 
 
 def test_valid():
-    if backend.backend == "object":
-        return
     M = Module("M")
     p1 = Param("p1", 1.0, valid=(0, None))
     M.p1 = p1

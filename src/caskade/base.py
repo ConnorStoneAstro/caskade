@@ -117,8 +117,8 @@ class Node:
                 f"Linking {child.name} to {self.name} would create a cycle in the graph"
             )
 
-        self._children[key] = child
-        child._parents.add(self)
+        self.children[key] = child
+        child.parents.add(self)
         self.update_graph()
 
     def link(self, key: Union[str, tuple, "Node"], child: Optional[Union["Node", tuple]] = None):
@@ -169,9 +169,9 @@ class Node:
             raise GraphError(f"Cannot link/unlink nodes while the graph is active ({self.name})")
         if not key in self._children:
             raise LinkToAttributeError(f"{self.name} does not have child {key} to unlink.")
-        self._children[key]._parents.remove(self)
-        self._children[key].update_graph()
-        del self._children[key]
+        self.children[key].parents.remove(self)
+        self.children[key].update_graph()
+        del self.children[key]
         self.update_graph()
 
     def unlink(self, key: Union[str, "Node", list, tuple]):
@@ -195,7 +195,7 @@ class Node:
         visited = set()
         stack = []
 
-        def visit(node):
+        def visit(node: Node):
             if node in visited:
                 return
             visited.add(node)
@@ -233,7 +233,7 @@ class Node:
         self._active = value
 
         # Propagate active level to children
-        for child in self._children.values():
+        for child in self.children.values():
             child.active = value
 
     def to(self, device=None, dtype=None):
@@ -322,9 +322,6 @@ class Node:
             Defaults to False.
 
         """
-        if appendable and backend.backend == "object":
-            raise BackendError("Cannot make appendable HDF5 files with the 'object' backend")
-
         if isinstance(saveto, str):
             if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
                 with h5py.File(saveto, "w") as h5file:
@@ -367,9 +364,6 @@ class Node:
 
     def append_state(self, saveto: Union[str, "File"]):
         """Append the state of the node and its children to an existing HDF5 file."""
-        if backend.backend == "object":
-            raise BackendError("Cannot append to HDF5 files with the 'object' backend")
-
         if isinstance(saveto, str):
             if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
                 with h5py.File(saveto, "a") as h5file:
@@ -441,7 +435,7 @@ class Node:
 
         components = set()
 
-        def add_node(node, dot):
+        def add_node(node: Node, dot):
             if node in components:
                 return
             dot.attr("node", **node.graphviz_types[node.node_type])
@@ -504,7 +498,7 @@ class Node:
     def __setattr__(self, key: str, value: Any):
         """Intercept attribute setting to update parameters and graph links."""
         if isinstance(value, Node):
-            # check for trying setting an attr with its own setter, allow the setter to handle throwing errors (e.g. value, and dynamic_value)
+            # check for trying setting an attr with its own setter, allow the setter to handle throwing errors (e.g. value)
             if not hasattr(getattr(type(self), key, None), "fset"):
                 self._link(key, value)
 

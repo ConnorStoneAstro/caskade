@@ -34,8 +34,6 @@ def test_full_integration():
     main1.c = main1.b
     sub1.f = main1.c
 
-    if backend.backend == "object":
-        return
     main1.to(dtype=backend.module.float32)
 
     b_value = backend.make_array(3.0)
@@ -105,8 +103,6 @@ def test_full_integration_v2():
     #                      c for MyMainSim
     main.c_param = 3.0
 
-    if backend.backend == "object":
-        return
     assert main.mymainfunction(1.0, main.build_params_array()).item() == 558.0
 
     main.c_param = [[1, 2], [1, 3]]  # test print param with shape

@@ -27,7 +27,7 @@ jobs:
       matrix:
         python-version: ["3.9", "3.10", "3.11"]
         os: [ubuntu-latest, windows-latest, macOS-latest]
-        backend: [torch, numpy, jax, object]
+        backend: [torch, numpy, jax]
     
     name: Python ${{ matrix.python-version }} - OS ${{ matrix.os }} - Backend ${{ matrix.backend }}
 
@@ -101,15 +101,6 @@ jobs:
         env:
           CASKADE_BACKEND: ${{ matrix.backend }}
 
-      - name: Extra coverage report for object checks
-        if:
-            ${{ matrix.python-version == '3.10' && matrix.os == 'ubuntu-latest' && matrix.backend == 'torch' }}
-        run: |
-          echo "Running extra coverage report for object checks"
-          coverage run --append --source=${{ env.PROJECT_NAME }} -m pytest tests/
-        shell: bash
-        env:
-          CASKADE_BACKEND: object
       - name: Extra coverage report for jax checks
         if:
             ${{ matrix.python-version == '3.10' && matrix.os == 'ubuntu-latest' && matrix.backend == 'torch' }}

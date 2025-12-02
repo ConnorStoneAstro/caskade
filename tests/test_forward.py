@@ -53,9 +53,6 @@ def test_forward():
     with pytest.raises(FillDynamicParamsError):
         main1.testfun()
 
-    if backend.backend == "object":
-        return
-
     # List as params
     params = [
         backend.module.ones((2, 2)),

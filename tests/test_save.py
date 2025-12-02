@@ -61,12 +61,6 @@ def _make_files_and_test(usefileobject=False):
                 main.save_state(f, appendable=False)
         else:
             main.save_state("test_save_notappend.h5", appendable=False)
-    if backend.backend == "object":
-        with pytest.raises(BackendError):
-            main.save_state("test_save_badappend.h5", appendable=True)
-        with pytest.raises(BackendError):
-            main.append_state("test_save_badappend.h5")
-        return
 
     # bad file
     with pytest.raises(NotImplementedError):
@@ -156,9 +150,6 @@ def test_save_append_load(usefileobject):
 
     # Load not appendable
     _load_not_appendable_and_test(usefileobject=usefileobject)
-
-    if backend.backend == "object":
-        return
 
     # Load appendable
     _load_appendable_and_test(usefileobject=usefileobject)

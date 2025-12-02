@@ -24,12 +24,6 @@ def test_param_creation():
     # Name and value
     p2 = Param("test", 1.0)
     assert p2.name == "test"
-    if backend.backend == "object":
-        with pytest.raises(ParamTypeError):
-            p2.shape = (1, 2, 3)
-        assert p2.shape is None
-        p2 = p2.to()
-        return
     assert p2.value.item() == 1.0
     p3 = Param("test", backend.module.ones((1, 2, 3)))
     p33 = Param("test", value=backend.module.ones((1, 2, 3)), dynamic=True)
@@ -109,8 +103,6 @@ def test_param_creation():
 
 
 def test_param_to():
-    if backend.backend == "object":
-        return
     if backend.backend == "jax":
         device = backend.jax.devices()[0]
         backend.jax.config.update("jax_enable_x64", True)
@@ -126,8 +118,6 @@ def test_param_to():
 
 
 def test_params_sticky_to():
-    if backend.backend == "object":
-        return
     if backend.backend == "jax":
         device = backend.jax.devices()[0]
         backend.jax.config.update("jax_enable_x64", True)
@@ -172,8 +162,6 @@ def test_value_setter():
     # static
     p.static_value(1.0)
     assert p.node_type == "static"
-    if backend.backend == "object":
-        return
     assert p.value.item() == 1.0
 
     p = Param("testshape", shape=(2,))
@@ -210,8 +198,6 @@ def test_to_dynamic_static():
     p.value = 2.0
     p.to_dynamic()  # from static
     assert p.dynamic
-    if backend.backend == "object":
-        return
     assert p.value.item() == 2.0
     p.value = lambda p: p["other"].value * 2
     p.to_dynamic()  # from pointer, fails
@@ -250,8 +236,6 @@ def test_units():
 
 def test_valid():
     p = Param("test", valid=None)
-    if backend.backend == "object":
-        return
 
     v = backend.make_array(0.5)
     assert p.to_valid(v) == v, "valid value should not change"

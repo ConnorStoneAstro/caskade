@@ -105,17 +105,13 @@ class Param(Node):
         self._value = None
         self.__value = None
         self._valid = (None, None)
-        if value is None and backend.backend != "object":
+        if value is None:
             if shape is None:
                 shape = ()
             if not isinstance(shape, (tuple, list)):
                 raise ParamConfigurationError("Shape must be a tuple")
             self.shape = tuple(shape)
-        elif (
-            not isinstance(value, (Param, Callable))
-            and value is not None
-            and backend.backend != "object"
-        ):
+        elif not isinstance(value, (Param, Callable)) and value is not None:
             value = backend.as_array(value, dtype=dtype, device=device)
             if not valid_shape(shape, value.shape, batched):
                 raise ParamConfigurationError(
@@ -190,8 +186,6 @@ class Param(Node):
 
     @property
     def shape(self) -> Optional[tuple[int, ...]]:
-        if backend.backend == "object":
-            return None
         try:
             value = self.value
         except:
@@ -204,8 +198,6 @@ class Param(Node):
 
     @shape.setter
     def shape(self, shape):
-        if backend.backend == "object":
-            raise ParamTypeError("Cannot set shape of parameter with backend 'object'")
         if self.pointer:
             raise ParamTypeError(f"Cannot set shape of parameter {self.name} with type 'pointer'")
         if shape is None:
@@ -219,6 +211,8 @@ class Param(Node):
 
     @property
     def batch_shape(self):
+        if not self.batched:
+            return ()
         if self._batch_shape is not None:
             return self._batch_shape
         vshape = self.value.shape
@@ -271,12 +265,10 @@ class Param(Node):
                 f"Cannot set static value to pointer ({self.name}). Try setting `pointer_func(func)` or `pointer_func(param)` to create a pointer."
             )
 
-        if backend.backend != "object":
-            value = backend.as_array(value, dtype=self._dtype, device=self._device)
+        value = backend.as_array(value, dtype=self._dtype, device=self._device)
         self.__value = value
         self.node_type = "static"
-        if backend.backend != "object":
-            self._shape_from_value(tuple(value.shape))
+        self._shape_from_value(tuple(value.shape))
         self.is_valid()
 
     def dynamic_value(self, value):
@@ -297,12 +289,10 @@ class Param(Node):
             raise ParamTypeError(f"Cannot set dynamic value to pointer ({self.name})")
 
         # Set to dynamic value
-        if backend.backend != "object":
-            value = backend.as_array(value, dtype=self._dtype, device=self._device)
+        value = backend.as_array(value, dtype=self._dtype, device=self._device)
         self.__value = value
         self.node_type = "dynamic"
-        if backend.backend != "object":
-            self._shape_from_value(tuple(value.shape))
+        self._shape_from_value(tuple(value.shape))
         self.is_valid()
 
     def pointer_func(self, value: Union["Param", Callable]):
@@ -364,8 +354,6 @@ class Param(Node):
         dtype: (Optional[torch.dtype], optional)
             The desired data type. Defaults to None.
         """
-        if backend.backend == "object":
-            return self
         if device is not None:
             self._device = device
         else:
@@ -481,11 +469,6 @@ class Param(Node):
 
     @valid.setter
     def valid(self, valid: tuple[Union[ArrayLike, float, int, None]]):
-
-        if backend.backend == "object":
-            self._valid = (None, None)
-            return
-
         if valid is None:
             valid = (None, None)
 
@@ -527,7 +510,7 @@ class Param(Node):
         self.is_valid()
 
     def is_valid(self, value=None) -> bool:
-        if backend.backend == "object" or self.cyclic or self.pointer:
+        if self.cyclic or self.pointer:
             return True
         if value is None:
             value = self.value
@@ -585,16 +568,13 @@ class Param(Node):
         """
         Returns a string representation of the node for graph visualization.
         """
-        if backend.backend == "object":
-            value = None
-        else:
-            if self.pointer:
-                try:
-                    value = self.value
-                except:
-                    value = None
-            else:
+        if self.pointer:
+            try:
                 value = self.value
+            except:
+                value = None
+        else:
+            value = self.value
         if value is not None:
             value = backend.to_numpy(value)
 
