@@ -187,7 +187,7 @@ class Param(Node):
             value = self.value
         except:
             value = None
-        if self.pointer and value is not None:
+        if value is not None and (self.pointer or self._shape is None):
             return tuple(value.shape)
         return self._shape
 
@@ -205,11 +205,25 @@ class Param(Node):
         self._shape = shape
 
     @property
-    def batch_shape(self):
+    def batch_shape(self) -> tuple[int]:
         if not self.batched:
             return ()
         vshape = self.value.shape
         return tuple(vshape[: len(vshape) - len(self.shape)])
+
+    @property
+    def batched(self) -> bool:
+        return self._batched
+
+    @batched.setter
+    def batched(self, value: bool):
+        self._batched = value
+        if not value:
+            try:
+                value = self.value
+                self.shape = value.shape
+            except:
+                pass
 
     def _shape_from_value(self, value_shape):
         if self._shape is None:
@@ -296,6 +310,7 @@ class Param(Node):
         elif hasattr(value, "params"):
             self.link(value.params)
         self.__value = value
+        self._shape = None
         self.node_type = "pointer"
 
     @property

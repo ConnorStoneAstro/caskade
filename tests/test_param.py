@@ -205,6 +205,26 @@ def test_value_setter():
         p.pointer_func(lambda p: p.other.value)
 
 
+def test_param_shape():
+    p = Param("p", [1, 2])
+    assert p.shape == (2,)
+
+    with pytest.raises(ValueError):
+        p.shape = (3, 2)
+
+    p.value = np.ones((3, 2))
+
+    with pytest.raises(ValueError):
+        p.shape = (2,)
+    p.batched = True
+    p.shape = (2,)
+    assert p.batch_shape == (3,)
+
+    p.value = lambda p: p.other.value
+    p.batched = False
+    assert p.shape is None
+
+
 def test_to_dynamic_static():
 
     other = Param("other", 3.0)
