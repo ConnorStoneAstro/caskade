@@ -101,6 +101,7 @@ class Param(Node):
         self._node_type = "node"
         super().__init__(name=name, **kwargs)
         self._shape = None
+        self._batch_shape = None
         self._value = None
         self.__value = None
         self._valid = (None, None)
@@ -125,8 +126,10 @@ class Param(Node):
         self._cyclic = cyclic
         self.batched = batched
         self.shape = shape
-        self.value = value
-        self.dynamic = dynamic
+        if dynamic is not None and dynamic:
+            self.dynamic_value(value)
+        else:
+            self.value = value
         self.valid = valid
         self.units = units
 
@@ -166,11 +169,12 @@ class Param(Node):
 
     @node_type.setter
     def node_type(self, value):
-        pre_type = self._node_type
+        pre_type = self.node_type
+        do_update = pre_type != value
         if value == "dynamic value":
             value = "dynamic"
         self._node_type = value
-        if pre_type != self._node_type:
+        if do_update:
             self.update_graph()
 
     def to_dynamic(self, **kwargs):
@@ -228,6 +232,21 @@ class Param(Node):
         if value is not None and not valid_shape(shape, value.shape, self.batched):
             raise ValueError(f"Shape {shape} does not match the shape of the value {value.shape}")
         self._shape = shape
+
+    @property
+    def batch_shape(self):
+        if self._batch_shape is not None:
+            return self._batch_shape
+        vshape = self.value.shape
+        return tuple(vshape[: len(vshape) - len(self.shape)])
+
+    @batch_shape.setter
+    def batch_shape(self, value):
+        if value is None:
+            self.batched = False
+        value = tuple(value)
+        self.batched = True
+        self._batch_shape = value
 
     def _shape_from_value(self, value_shape):
         if self._shape is None:
@@ -390,7 +409,7 @@ class Param(Node):
     @cyclic.setter
     def cyclic(self, cyclic: bool):
         self._cyclic = cyclic
-        self.is_valid()
+        self.valid = self.valid
 
     def _save_state_hdf5(self, h5group, appendable: bool = False, _done_save: set = None):
         super()._save_state_hdf5(h5group, appendable=appendable, _done_save=_done_save)
@@ -582,11 +601,23 @@ class Param(Node):
         """
         Returns a string representation of the node for graph visualization.
         """
-        if self.__value is not None and backend.backend != "object":
-            if max(1, prod(self.value.shape)) == 1:
-                return f"{self.name}|{self.node_type}: {self.npvalue.item():.3g}"
-            elif prod(self.value.shape) <= 4:
-                value = str(np.char.mod("%.3g", self.npvalue).tolist()).replace("'", "")
+        if backend.backend == "object":
+            value = None
+        else:
+            if self.pointer:
+                try:
+                    value = self.value
+                except Exception:
+                    value = None
+            else:
+                value = self.value
+        if value is not None:
+            value = backend.to_numpy(value)
+
+            if max(1, prod(value.shape)) == 1:
+                return f"{self.name}|{self.node_type}: {value.item():.3g}"
+            elif prod(value.shape) <= 4:
+                value = str(np.char.mod("%.3g", value).tolist()).replace("'", "")
                 return f"{self.name}|{self.node_type}: {value}"
             else:
                 return f"{self.name}|{self.node_type}: {self.shape}"

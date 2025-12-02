@@ -11,7 +11,7 @@ def test_creation():
     assert node._children == {}
     assert node._parents == set()
     assert node._active == False
-    assert node._type == "node"
+    assert node.node_type == "node"
 
     with pytest.raises(AttributeError):
         node.name = "newname"

@@ -356,7 +356,7 @@ class Module(Node):
         batch_shape = None
         for param in self.dynamic_params:
             if param.batched:
-                B = param.batch_shape()
+                B = param.batch_shape
                 if batch_shape is None:
                     batch_shape = B
                 elif batch_shape != B:

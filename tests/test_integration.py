@@ -1,5 +1,3 @@
-import torch
-
 from caskade import Module, Param, forward, backend
 
 
@@ -30,7 +28,7 @@ def test_full_integration():
         def __call__(self, d=None, e=None, f=None):
             return d + e + f
 
-    sub1 = TestSubSim(d=1.0, e=lambda s: s.children["flink"].value, f=None)
+    sub1 = TestSubSim(d=1.0, e=lambda s: s.flink.value, f=None)
     sub1.e.link("flink", sub1.f)
     main1 = TestSim(a=2.0, b=None, c=None, c_shape=(), m1=sub1)
     main1.c = main1.b

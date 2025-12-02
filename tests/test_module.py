@@ -98,7 +98,7 @@ def test_dynamic_value():
             super().__init__("test_sim")
             self.a = Param("a", a)
             self.b = Param("b", None, b_shape)
-            self.c = Param("c", dynamic_value=c)
+            self.c = Param("c", value=c, dynamic=True)
             self.m1 = m1
 
         @forward
@@ -109,9 +109,9 @@ def test_dynamic_value():
     class TestSubSim(Module):
         def __init__(self, d=None, e=None, f=None):
             super().__init__()
-            self.d = Param("d", dynamic_value=d)
+            self.d = Param("d", value=d, dynamic=True)
             self.e = Param("e", e)
-            self.f = Param("f", dynamic_value=f, valid=(0, 10))
+            self.f = Param("f", value=f, dynamic=True, valid=(0, 10))
 
         @forward
         def __call__(self, d=None, e=None, live_c=None):
@@ -121,7 +121,7 @@ def test_dynamic_value():
     main1 = TestSim(a=1.0, b_shape=(2,), c=4.0, m1=sub1)
 
     assert not main1.all_dynamic_value
-    main1.b = backend.make_array([1.0, 2.0])
+    main1.b.static_value(backend.make_array([1.0, 2.0]))
     if backend.backend == "object":
         with pytest.raises(BackendError):
             main1.testfun(np.array([1.0, 2.0]), np.ones(3))
@@ -141,11 +141,10 @@ def test_dynamic_value():
         p00 = main1.build_params_dict()
     with pytest.raises(ParamConfigurationError):
         p00 = sub1.build_params_dict()
-    sub1.f.dynamic_value = 3.0
+    sub1.f.dynamic_value(3.0)
     assert main1.all_dynamic_value
 
     # Check dynamic value
-    assert main1.c.dynamic_value.item() == 4.0
     assert main1.c.value.item() == 4.0
     assert main1.c._value is None
 
@@ -198,7 +197,7 @@ def test_dynamic_value():
 
     # Check invalid dynamic value
     with pytest.warns(InvalidValueWarning):
-        sub1.f.dynamic_value = 11.0
+        sub1.f.dynamic_value(11.0)
 
     # All static make params
     main1.c.to_static()
@@ -238,24 +237,26 @@ def test_batched_build_params_array():
     M.p1 = Param("p1")
     M.p2 = Param("p2")
 
-    M.p1.dynamic_value = [1.0, 2.0]
+    M.p1.dynamic_value([1.0, 2.0])
+    M.p1.batched = True
     M.p1.shape = ()
-    M.p2.dynamic_value = [3.0, 4.0]
+    M.p2.dynamic_value([3.0, 4.0])
+    M.p2.batched = True
     M.p2.shape = ()
 
     a = M.build_params_array()
     assert a.shape == (2, 2)
 
     with pytest.raises(ParamConfigurationError):
-        M.p1.dynamic_value = [1.0, 2.0]
+        M.p1.dynamic_value([1.0, 2.0])
         M.p1.shape = (2,)
-        M.p2.dynamic_value = [3.0, 4.0]
+        M.p2.dynamic_value([3.0, 4.0])
         M.p2.shape = ()
         M.build_params_array()
     with pytest.raises(ParamConfigurationError):
-        M.p1.dynamic_value = [1.0, 2.0]
+        M.p1.dynamic_value([1.0, 2.0])
         M.p1.shape = ()
-        M.p2.dynamic_value = [1.0, 2.0]
+        M.p2.dynamic_value([1.0, 2.0])
         M.p2.shape = (2,)
         M.build_params_array()
 
