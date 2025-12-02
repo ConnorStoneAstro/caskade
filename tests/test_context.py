@@ -1,5 +1,4 @@
 from caskade import Module, Param, forward, ActiveContext, OverrideParam, backend, active_cache
-import numpy as np
 
 
 def test_active_context():
@@ -16,8 +15,6 @@ def test_active_context():
             return a + b + c
 
     testsim = TestSim()
-    if backend.backend == "object":
-        return
     params1 = backend.make_array([2.0, 3.0])
     params2 = backend.make_array([4.0, 5.0])
     with ActiveContext(testsim):
@@ -39,9 +36,6 @@ def test_active_context():
 
 
 def test_override_param():
-
-    if backend.backend == "object":
-        return
 
     class TestSim(Module):
         def __init__(self):
@@ -70,10 +64,8 @@ def test_override_param():
     assert testsim.testfunc(backend.make_array([5.0])).item() == 27.0
     assert testsim.a.value.item() == 3.0
 
-def test_active_cache():
-    if backend.backend == "object":
-        return
 
+def test_active_cache():
     class TestSim(Module):
         def __init__(self):
             super().__init__()
@@ -83,14 +75,19 @@ def test_active_cache():
         @forward
         def testcache(self, x, a):
             return x + a
-        
+
         @active_cache
         def testonlycache(self, x):
             return 2 * x
-        
+
         @forward
         def testfunc(self):
-            return self.testcache(1.0) + self.testcache(2.0) + self.testonlycache(3.0) + self.testonlycache(4.0)
+            return (
+                self.testcache(1.0)
+                + self.testcache(2.0)
+                + self.testonlycache(3.0)
+                + self.testonlycache(4.0)
+            )
 
     testsim = TestSim()
     assert testsim.testfunc().item() == 20.0

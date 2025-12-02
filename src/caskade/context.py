@@ -15,7 +15,7 @@ class ActiveContext:
     def __enter__(self):
         self.outer_active = self.module.active
         if self.outer_active and not self.active:
-            self.outer_params = list(p.value for p in self.module.dynamic_params)
+            self.state = list(p._value for p in self.module.all_params)
             self.module.clear_state()
         self.module.active = self.active
 
@@ -24,7 +24,8 @@ class ActiveContext:
             self.module.clear_state()
         self.module.active = self.outer_active
         if self.outer_active and not self.active:
-            self.module.fill_params(self.outer_params)
+            for p, s in zip(self.module.all_params, self.state):
+                p._value = s
 
 
 class ValidContext:
@@ -50,7 +51,7 @@ class OverrideParam:
     OverrideParam will the parameter be set to the new value.
     """
 
-    def __init__(self, param, value):
+    def __init__(self, param: Param, value):
         self.param = param
         self.value = value
 

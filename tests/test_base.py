@@ -11,7 +11,7 @@ def test_creation():
     assert node._children == {}
     assert node._parents == set()
     assert node._active == False
-    assert node._type == "node"
+    assert node.node_type == "node"
 
     with pytest.raises(AttributeError):
         node.name = "newname"
@@ -96,11 +96,8 @@ def test_topological_ordering():
     ordering = node1.topological_ordering()
     assert ordering == (node1, node2, node4, node5, node3, node6)
 
-    ordering = node1.topological_ordering(with_type="node")
+    ordering = node1.topological_ordering()
     assert ordering == (node1, node2, node4, node5, node3, node6)
-
-    ordering = node1.topological_ordering(with_type="dynamic")
-    assert ordering == ()
 
     graph = node1.graphviz()
     assert graph is not None, "should return a graphviz object"

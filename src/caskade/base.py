@@ -73,7 +73,7 @@ class Node:
         self._children = {}
         self._parents = set()
         self._active = False
-        self._type = "node"
+        self.node_type = "node"
         self.description = description
         self.meta = meta()
         self.saveattrs = set()
@@ -85,11 +85,11 @@ class Node:
         return self._name
 
     @property
-    def children(self) -> dict:
+    def children(self) -> dict[str, "Node"]:
         return self._children
 
     @property
-    def parents(self) -> set:
+    def parents(self) -> set["Node"]:
         return self._parents
 
     def _link(self, key: str, child: "Node"):
@@ -113,8 +113,8 @@ class Node:
                 f"Linking {child.name} to {self.name} would create a cycle in the graph"
             )
 
-        self._children[key] = child
-        child._parents.add(self)
+        self.children[key] = child
+        child.parents.add(self)
         self.update_graph()
 
     def link(self, key: Union[str, tuple, "Node"], child: Optional[Union["Node", tuple]] = None):
@@ -163,9 +163,9 @@ class Node:
     def _unlink(self, key: str):
         if self.active:
             raise GraphError(f"Cannot link/unlink nodes while the graph is active ({self.name})")
-        self._children[key]._parents.remove(self)
-        self._children[key].update_graph()
-        del self._children[key]
+        self.children[key].parents.remove(self)
+        self.children[key].update_graph()
+        del self.children[key]
         self.update_graph()
 
     def unlink(self, key: Union[str, "Node", list, tuple]):
@@ -181,20 +181,30 @@ class Node:
             return
         self.__delattr__(key)
 
-    def topological_ordering(
-        self, with_type: Optional[str] = None, with_isinstance: Optional[object] = None
-    ) -> tuple["Node"]:
-        """Return a topological ordering of the graph below the current node."""
-        ordering = [self]
-        for node in self.children.values():
-            for subnode in node.topological_ordering():
-                if subnode not in ordering:
-                    ordering.append(subnode)
-        if with_type is not None:
-            ordering = filter(lambda n: with_type in n._type, ordering)
-        if with_isinstance is not None:
-            ordering = filter(lambda n: isinstance(n, with_isinstance), ordering)
-        return tuple(ordering)
+    def topological_ordering(self) -> tuple["Node"]:
+        """
+        Return a topological ordering of the graph below the current node.
+        Uses Iterative Deepening DFS (Post-Order) to resolve dependencies.
+        """
+        visited = set()
+        stack = []
+
+        def visit(node: Node):
+            if node in visited:
+                return
+            visited.add(node)
+
+            # Visit all children first
+            for child in reversed(node.children.values()):
+                visit(child)
+
+            # Add node to stack only after all children are processed
+            stack.append(node)
+
+        visit(self)
+
+        # Reverse the stack to get Parent -> Child ordering
+        return tuple(reversed(stack))
 
     def update_graph(self):
         """Triggers a call to all parents that the graph below them has been
@@ -210,14 +220,14 @@ class Node:
     @active.setter
     def active(self, value: bool):
         # Avoid unnecessary updates
-        if self._active == value:
+        if self._active is value:
             return
 
         # Set self active level
         self._active = value
 
         # Propagate active level to children
-        for child in self._children.values():
+        for child in self.children.values():
             child.active = value
 
     def to(self, device=None, dtype=None):
@@ -306,9 +316,6 @@ class Node:
             Defaults to False.
 
         """
-        if appendable and backend.backend == "object":
-            raise BackendError("Cannot make appendable HDF5 files with the 'object' backend")
-
         if isinstance(saveto, str):
             if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
                 with h5py.File(saveto, "w") as h5file:
@@ -351,9 +358,6 @@ class Node:
 
     def append_state(self, saveto: Union[str, "File"]):
         """Append the state of the node and its children to an existing HDF5 file."""
-        if backend.backend == "object":
-            raise BackendError("Cannot append to HDF5 files with the 'object' backend")
-
         if isinstance(saveto, str):
             if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
                 with h5py.File(saveto, "a") as h5file:
@@ -425,10 +429,10 @@ class Node:
 
         components = set()
 
-        def add_node(node, dot):
+        def add_node(node: Node, dot):
             if node in components:
                 return
-            dot.attr("node", **node.graphviz_types[node._type])
+            dot.attr("node", **node.graphviz_types[node.node_type])
             dot.node(str(id(node)), repr(node))
             components.add(node)
 
@@ -448,7 +452,7 @@ class Node:
 
     @property
     def node_str(self):
-        return f"{self.name}|{self._type}"
+        return f"{self.name}|{self.node_type}"
 
     def graph_dict(self) -> dict[str, dict]:
         """Return a dictionary representation of the graph below the current
@@ -488,7 +492,7 @@ class Node:
     def __setattr__(self, key: str, value: Any):
         """Intercept attribute setting to update parameters and graph links."""
         if isinstance(value, Node):
-            # check for trying setting an attr with its own setter, allow the setter to handle throwing errors (e.g. value, and dynamic_value)
+            # check for trying setting an attr with its own setter, allow the setter to handle throwing errors (e.g. value)
             if not hasattr(getattr(type(self), key, None), "fset"):
                 self._link(key, value)
 

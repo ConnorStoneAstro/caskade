@@ -1,5 +1,3 @@
-import torch
-
 from caskade import Module, Param, forward, backend
 
 
@@ -30,14 +28,12 @@ def test_full_integration():
         def __call__(self, d=None, e=None, f=None):
             return d + e + f
 
-    sub1 = TestSubSim(d=1.0, e=lambda s: s.children["flink"].value, f=None)
+    sub1 = TestSubSim(d=1.0, e=lambda s: s.flink.value, f=None)
     sub1.e.link("flink", sub1.f)
     main1 = TestSim(a=2.0, b=None, c=None, c_shape=(), m1=sub1)
     main1.c = main1.b
     sub1.f = main1.c
 
-    if backend.backend == "object":
-        return
     main1.to(dtype=backend.module.float32)
 
     b_value = backend.make_array(3.0)
@@ -91,13 +87,12 @@ def test_full_integration_v2():
             return u * z
 
     util = MyUtilitySim("util")
-    #                      u for MyUtilitySim
-    params = [backend.make_array(1.0)]
+    util.u = 1.0
     actions = []
     for i in range(3):
         actions.append(MyActionSim(f"action_{i}", util))
-        #                     a for MyActionSim, b for MyActionSim
-        params = params + [backend.make_array(i), backend.make_array(i + 1)]
+        actions[-1].a = i
+        actions[-1].b = i + 1
 
     main = MyMainSim("main", util, actions)
 
@@ -106,13 +101,12 @@ def test_full_integration_v2():
     main.d_param.link("c", main.c_param)
 
     #                      c for MyMainSim
-    params = params + [backend.make_array(3.0)]
+    main.c_param = 3.0
 
-    if backend.backend == "object":
-        return
-    assert main.mymainfunction(1.0, params).item() == 558.0
+    assert main.mymainfunction(1.0, main.build_params_array()).item() == 558.0
 
     main.c_param = [[1, 2], [1, 3]]  # test print param with shape
     print(main)
+    print(main.param_order())
     graph = main.graphviz()
     assert graph is not None, "should return a graphviz object"

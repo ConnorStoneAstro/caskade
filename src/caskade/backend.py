@@ -36,9 +36,6 @@ class Backend:
         elif backend == "numpy":
             self.setup_numpy()
             return importlib.import_module("numpy")
-        elif backend == "object":
-            self.setup_object()
-            return None
         else:
             raise ValueError(f"Unsupported backend: {backend}")
 
@@ -82,18 +79,6 @@ class Backend:
         self.logit = self._logit_numpy
         self.sigmoid = self._sigmoid_numpy
 
-    def setup_object(self):
-        self.make_array = self._make_array_object
-        self._array_type = self._array_type_object
-        self.concatenate = None
-        self.copy = None
-        self.detach = None
-        self.tolist = None
-        self.view = None
-        self.as_array = self._as_array_object
-        self.to = None
-        self.to_numpy = self._to_numpy_object
-
     @property
     def array_type(self):
         return self._array_type()
@@ -107,9 +92,6 @@ class Backend:
     def _make_array_numpy(self, array, dtype=None, **kwargs):
         return self.module.array(array, dtype=dtype)
 
-    def _make_array_object(self, array, **kwargs):
-        return array
-
     def _array_type_torch(self):
         return self.module.Tensor
 
@@ -118,9 +100,6 @@ class Backend:
 
     def _array_type_numpy(self):
         return self.module.ndarray
-
-    def _array_type_object(self):
-        return object
 
     def _concatenate_torch(self, arrays, axis=0):
         return self.module.cat(arrays, dim=axis)
@@ -167,9 +146,6 @@ class Backend:
     def _as_array_numpy(self, array, dtype=None, **kwargs):
         return self.module.asarray(array, dtype=dtype)
 
-    def _as_array_object(self, array, **kwargs):
-        return array
-
     def _to_torch(self, array, dtype=None, device=None):
         return array.to(dtype=dtype, device=device)
 
@@ -187,9 +163,6 @@ class Backend:
 
     def _to_numpy_numpy(self, array):
         return array
-
-    def _to_numpy_object(self, array):
-        return np.array(array)
 
     def any(self, array):
         return self.module.any(array)
