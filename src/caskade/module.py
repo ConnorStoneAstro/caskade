@@ -345,18 +345,15 @@ class Module(Node):
         x = []
         batch_shape = None
         for param in self.dynamic_params:
-            if param.batched:
-                B = param.batch_shape
-                if batch_shape is None:
-                    batch_shape = B
-                elif batch_shape != B:
-                    raise ParamConfigurationError(
-                        f"Batch dimensions must be the same for all params. Got {B} for {param.name} when previous batch shape was {batch_shape}"
-                    )
+            B = param.batch_shape
+            if batch_shape is None:
+                batch_shape = B
+            elif batch_shape != B:
+                raise ParamConfigurationError(
+                    f"Batch dimensions must be the same for all params. Got {B} for {param.name} when previous batch shape was {batch_shape}"
+                )
 
-                x.append(backend.copy(param.value).reshape(B + (-1,)))
-            else:
-                x.append(backend.copy(param.value).flatten())
+            x.append(backend.copy(param.value).reshape(B + (-1,)))
 
         if len(x) == 0:
             return backend.make_array([])

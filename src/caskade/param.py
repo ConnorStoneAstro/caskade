@@ -13,13 +13,11 @@ from .warnings import InvalidValueWarning
 
 
 def valid_shape(shape, value_shape, batched):
-    if shape is None:
+    if shape is None:  # no shape to compare
         return True
-    if value_shape == shape:
+    if value_shape == shape:  # shapes match
         return True
-    if batched and len(shape) == 0:
-        return True
-    if batched and len(value_shape) > 1 and value_shape[-len(shape) :] == shape:
+    if batched and value_shape[len(value_shape) - len(shape) :] == shape:  # endswith
         return True
     return False
 
@@ -101,7 +99,6 @@ class Param(Node):
         self._node_type = "node"
         super().__init__(name=name, **kwargs)
         self._shape = None
-        self._batch_shape = None
         self._value = None
         self.__value = None
         self._valid = (None, None)
@@ -192,8 +189,6 @@ class Param(Node):
             value = None
         if self.pointer and value is not None:
             return tuple(value.shape)
-        if self._shape is None and value is not None:
-            return value.shape
         return self._shape
 
     @shape.setter
@@ -213,18 +208,8 @@ class Param(Node):
     def batch_shape(self):
         if not self.batched:
             return ()
-        if self._batch_shape is not None:
-            return self._batch_shape
         vshape = self.value.shape
         return tuple(vshape[: len(vshape) - len(self.shape)])
-
-    @batch_shape.setter
-    def batch_shape(self, value):
-        if value is None:
-            self.batched = False
-        value = tuple(value)
-        self.batched = True
-        self._batch_shape = value
 
     def _shape_from_value(self, value_shape):
         if self._shape is None:

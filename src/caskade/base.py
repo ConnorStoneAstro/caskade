@@ -92,10 +92,6 @@ class Node:
     def parents(self) -> set["Node"]:
         return self._parents
 
-    @property
-    def leaf(self) -> bool:
-        return len(self.children) == 0
-
     def _link(self, key: str, child: "Node"):
         if self.active:
             raise GraphError("Cannot link/unlink nodes while the graph is active")
@@ -167,8 +163,6 @@ class Node:
     def _unlink(self, key: str):
         if self.active:
             raise GraphError(f"Cannot link/unlink nodes while the graph is active ({self.name})")
-        if not key in self._children:
-            raise LinkToAttributeError(f"{self.name} does not have child {key} to unlink.")
         self.children[key].parents.remove(self)
         self.children[key].update_graph()
         del self.children[key]

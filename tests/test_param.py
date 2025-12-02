@@ -182,6 +182,28 @@ def test_value_setter():
     assert p.node_type == "pointer"
     assert p.value.item() == 4.0
 
+    # Invalid pointer
+    with pytest.raises(ParamTypeError):
+        p.pointer_func(1.0)
+    with pytest.raises(ParamTypeError):
+        p.pointer_func(None)
+
+    # Invalid static value
+    with pytest.raises(ParamTypeError):
+        p.static_value(None)
+
+    with pytest.raises(ParamTypeError):
+        p.static_value(lambda p: p.other.value)
+
+    # Cannot update while active
+    p.active = True
+    with pytest.raises(ActiveStateError):
+        p.dynamic_value(1.0)
+    with pytest.raises(ActiveStateError):
+        p.static_value(1.0)
+    with pytest.raises(ActiveStateError):
+        p.pointer_func(lambda p: p.other.value)
+
 
 def test_to_dynamic_static():
 
@@ -298,3 +320,12 @@ def test_valid():
         p.valid = (0, None)
     with pytest.warns(InvalidValueWarning):
         p.valid = (None, -2)
+
+
+def test_node_str():
+    p = Param("p", 1.0)
+    assert p.node_str == "p|static: 1"
+    p = Param("p", [1.0, 2.0])
+    assert p.node_str == "p|static: [1, 2]"
+    p = Param("p", [1.0, 2.0, 3.0, 4.0, 5.0])
+    assert p.node_str == "p|static: (5,)"
