@@ -227,6 +227,8 @@ def test_to_dynamic_static():
     p.to_dynamic()  # from dynamic
     assert p.dynamic
     p.dynamic_value(1.0)
+    with pytest.raises(ParamTypeError):
+        p.dynamic_value(other)
     assert p.dynamic
     p.to_dynamic()  # from dynamic with dynamic value
     assert p.dynamic
