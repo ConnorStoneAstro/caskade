@@ -518,10 +518,10 @@ class Param(Node):
             value = self.value
         if value is None:
             return True
-        if self.valid[0] is not None and backend.any(self.value < self.valid[0]):
+        if self.valid[0] is not None and backend.any(value < self.valid[0]):
             warn(InvalidValueWarning(self.name, value, self.valid))
             return False
-        elif self.valid[1] is not None and backend.any(self.value > self.valid[1]):
+        elif self.valid[1] is not None and backend.any(value > self.valid[1]):
             warn(InvalidValueWarning(self.name, value, self.valid))
             return False
         return True
