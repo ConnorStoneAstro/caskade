@@ -254,6 +254,9 @@ def test_to_dynamic_static():
     assert p.static
     assert p.value.item() == 2.0
     p.value = lambda p: p["other"].value * 2
+    p.to_static()  # Unable to evaluate pointer, becomes None
+    assert p.value is None
+    p.value = lambda p: p["other"].value * 2
     p.link("other", other)
     p.to_static()  # from pointer, succeeds
     assert p.static
