@@ -31,7 +31,6 @@ def test_full_integration():
     sub1 = TestSubSim(d=1.0, e=lambda s: s.flink.value, f=None)
     sub1.e.link("flink", sub1.f)
     main1 = TestSim(a=2.0, b=None, c=None, c_shape=(), m1=sub1)
-    main1.b.to_dynamic()
     main1.c = main1.b
     sub1.f = main1.c
 
