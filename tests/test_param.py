@@ -79,12 +79,6 @@ def test_param_creation():
     assert p9.valid[0].item() == 0
     assert p9.valid[1].item() == 1
 
-    # Invalid dynamic value
-    with pytest.raises(ParamTypeError):
-        p10 = Param("test", value=p9, dynamic=True)
-    with pytest.raises(ParamTypeError):
-        p11 = Param("test", value=lambda p: p.other.value * 2, dynamic=True)
-
     # Set dynamic from other states
     p13 = Param("test", 1.0)  # static
     p13.dynamic_value(2.0)
@@ -156,7 +150,7 @@ def test_check_npvalue():
 def test_value_setter():
 
     # dynamic
-    p = Param("test")
+    p = Param("test", dynamic=True)
     assert p.node_type == "dynamic"
 
     # static
@@ -184,14 +178,13 @@ def test_value_setter():
 
     # Invalid pointer
     with pytest.raises(ParamTypeError):
-        p.pointer_func(1.0)
+        p.pointer_value(1.0)
     with pytest.raises(ParamTypeError):
-        p.pointer_func(None)
+        p.pointer_value(None)
 
     # Invalid static value
     with pytest.raises(ParamTypeError):
-        p.static_value(None)
-
+        p.static_value(other)
     with pytest.raises(ParamTypeError):
         p.static_value(lambda p: p.other.value)
 
@@ -202,7 +195,7 @@ def test_value_setter():
     with pytest.raises(ActiveStateError):
         p.static_value(1.0)
     with pytest.raises(ActiveStateError):
-        p.pointer_func(lambda p: p.other.value)
+        p.pointer_value(lambda p: p.other.value)
 
 
 def test_param_shape():
@@ -256,15 +249,11 @@ def test_to_dynamic_static():
     p.to_static()  # from static
     assert p.static
     p = Param("test")
-    with pytest.raises(ParamTypeError):
-        p.to_static()  # from dynamic, fails
     p.dynamic_value(2.0)
     p.to_static()  # from dynamic with dynamic value
     assert p.static
     assert p.value.item() == 2.0
     p.value = lambda p: p["other"].value * 2
-    with pytest.raises(ParamTypeError):
-        p.to_static()  # from pointer, fails
     p.link("other", other)
     p.to_static()  # from pointer, succeeds
     assert p.static

@@ -21,7 +21,7 @@ def test_module_creation():
     m2 = Module("test2")
     m1.mod = m2
     assert m1["mod"] == m2
-    p1 = Param("test1")
+    p1 = Param("test1", dynamic=True)
     m2.p = p1
     assert m2["p"] == p1
     assert m1.mod.p == p1
@@ -68,7 +68,7 @@ def test_shared_param():
         def test(self, p):
             return 2 * p
 
-    shared_param = Param("shared")
+    shared_param = Param("shared", dynamic=True)
 
     m1 = TestModule("m1", shared_param)
     m2 = TestModule("m2", shared_param)
@@ -257,6 +257,7 @@ def test_module_and_collection():
     S.d = D
     D.p = Param("p")
     D.p2 = Param("p2")
+    M.to_dynamic(False)
 
     params = {
         "p": 1.0,

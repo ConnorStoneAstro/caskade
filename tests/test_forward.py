@@ -3,6 +3,7 @@ from caskade import (
     Param,
     forward,
     ValidContext,
+    FillParamsError,
     FillDynamicParamsError,
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
@@ -20,7 +21,7 @@ def test_forward():
         def __init__(self, a, b_shape, c, m1):
             super().__init__("test_sim")
             self.a = Param("a", a)
-            self.b = Param("b", None, b_shape)
+            self.b = Param("b", None, b_shape, dynamic=True)
             self.c = Param("c", c)
             self.m1 = m1
 
@@ -32,9 +33,9 @@ def test_forward():
     class TestSubSim(Module):
         def __init__(self, d=None, e=None, f=None):
             super().__init__()
-            self.d = Param("d", d)
-            self.e = Param("e", e)
-            self.f = Param("f", f)
+            self.d = Param("d", d, dynamic=True)
+            self.e = Param("e", e, dynamic=True)
+            self.f = Param("f", f, dynamic=True)
 
         @forward
         def __call__(self, d=None, e=None, live_c=None):
@@ -50,7 +51,7 @@ def test_forward():
     assert graph is not None, "should return a graphviz object"
 
     # Dont provide params
-    with pytest.raises(FillDynamicParamsError):
+    with pytest.raises(FillParamsError):
         main1.testfun()
 
     # List as params
@@ -71,7 +72,7 @@ def test_forward():
         assert valid_result.shape == (2, 2)
         assert backend.all(valid_result == result).item()
     # Wrong number of params, too few
-    with pytest.raises(FillDynamicParamsError):
+    with pytest.raises(FillParamsError):
         result = main1.testfun(1.0, params=[])
     with pytest.raises(FillDynamicParamsSequenceError):
         result = main1.testfun(1.0, params=params[:3])
@@ -115,7 +116,7 @@ def test_forward():
         assert valid_result.shape == (2, 2)
         assert backend.all(valid_result == result).item()
     # Wrong number of params, too few
-    with pytest.raises(FillDynamicParamsError):
+    with pytest.raises(FillParamsError):
         result = main1.testfun(1.0, backend.as_array([]))
     with pytest.raises(FillDynamicParamsArrayError):
         result = main1.testfun(1.0, params[:-3])
@@ -201,7 +202,7 @@ def test_forward():
             "f": backend.make_array(1.0),
         },
     }
-    with pytest.raises(FillDynamicParamsError):
+    with pytest.raises(FillParamsError):
         result = main1.testfun(1.0, params=params)
 
     # All params static
@@ -217,7 +218,7 @@ def test_forward():
 
     # dynamic with no shape
     main1.b = None
-    main1.b.dynamic_value = None
+    main1.b.dynamic_value(None)
     main1.b.shape = None
     with pytest.raises(ParamConfigurationError):
         main1.testfun(1.0, params=backend.module.ones(4))

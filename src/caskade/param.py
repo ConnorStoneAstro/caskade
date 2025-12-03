@@ -90,7 +90,7 @@ class Param(Node):
         cyclic: bool = False,
         valid: Optional[tuple[Union[ArrayLike, float, int, None]]] = None,
         units: Optional[str] = None,
-        dynamic: bool = False,
+        dynamic: Optional[bool] = None,
         batched: bool = False,
         dtype: Optional[Any] = None,
         device: Optional[Any] = None,
@@ -119,10 +119,11 @@ class Param(Node):
         self._cyclic = cyclic
         self.batched = batched
         self.shape = shape
-        if dynamic:
-            self.dynamic_value(value)
+        if dynamic or (dynamic is None and value is None):
+            self.to_dynamic()
         else:
-            self.value = value
+            self.to_static()
+        self.value = value
         self.valid = valid
         self.units = units
 
@@ -171,14 +172,7 @@ class Param(Node):
             try:
                 self.__value = self.__value(self)
             except:
-                raise ParamTypeError(
-                    f"Cannot set pointer parameter {self.name} to static with `to_static`. Pointer could not be evaluated because of: \n"
-                    + traceback.format_exc()
-                )
-        if self.__value is None:
-            raise ParamTypeError(
-                f"Cannot set dynamic parameter {self.name} to static when no dynamic value is set. Try using `static_value(value)` to provide a value and set to static."
-            )
+                self.__value = None
         self.node_type = "static"
 
     @property
@@ -259,18 +253,17 @@ class Param(Node):
             )
 
         # Catch cases where input is invalid
-        if value is None:
-            raise ParamTypeError("Cannot set to static with value of None")
         if isinstance(value, Param) or callable(value):
             raise ParamTypeError(
-                f"Cannot set static value to pointer ({self.name}). Try setting `pointer_func(func)` or `pointer_func(param)` to create a pointer."
+                f"Cannot set static value to pointer ({self.name}). Try setting `pointer_value(func)` or `pointer_value(param)` to create a pointer."
             )
 
-        value = backend.as_array(value, dtype=self._dtype, device=self._device)
+        if value is not None:
+            value = backend.as_array(value, dtype=self._dtype, device=self._device)
+            self._shape_from_value(tuple(value.shape))
         self.__value = value
-        self.node_type = "static"
-        self._shape_from_value(tuple(value.shape))
         self.is_valid()
+        self.node_type = "static"
 
     def dynamic_value(self, value):
         # While active no value can be set
@@ -279,24 +272,19 @@ class Param(Node):
                 f"Cannot set dynamic value of parameter {self.name} while active."
             )
 
-        # No dynamic value
-        if value is None:
-            self.__value = None
-            self.node_type = "dynamic"
-            return
-
         # Catch cases where input is invalid
         if isinstance(value, Param) or callable(value):
             raise ParamTypeError(f"Cannot set dynamic value to pointer ({self.name})")
 
         # Set to dynamic value
-        value = backend.as_array(value, dtype=self._dtype, device=self._device)
+        if value is not None:
+            value = backend.as_array(value, dtype=self._dtype, device=self._device)
+            self._shape_from_value(tuple(value.shape))
         self.__value = value
         self.node_type = "dynamic"
-        self._shape_from_value(tuple(value.shape))
         self.is_valid()
 
-    def pointer_func(self, value: Union["Param", Callable]):
+    def pointer_value(self, value: Union["Param", Callable]):
         # While active no value can be set
         if self.active:
             raise ActiveStateError(
@@ -332,10 +320,8 @@ class Param(Node):
         if self.active:
             raise ActiveStateError(f"Cannot set value of parameter {self.name} while active")
 
-        if value is None:
-            self.dynamic_value(None)
-        elif isinstance(value, Param) or callable(value):
-            self.pointer_func(value)
+        if isinstance(value, Param) or callable(value):
+            self.pointer_value(value)
         elif self.dynamic:
             self.dynamic_value(value)
         else:

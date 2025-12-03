@@ -8,7 +8,7 @@ from .collection import NodeTuple, NodeList
 from .errors import (
     ActiveStateError,
     ParamConfigurationError,
-    FillDynamicParamsError,
+    FillParamsError,
     FillDynamicParamsArrayError,
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
@@ -312,7 +312,7 @@ class Module(Node):
             if key in self.children and isinstance(self[key], Param):
                 val = self.children[key].value
                 if val is None:
-                    raise FillDynamicParamsError(
+                    raise FillParamsError(
                         f"Param {key} in Module {self.name} has no value. "
                         "Ensure that the parameter is set before calling the forward method or provided with the params."
                     )

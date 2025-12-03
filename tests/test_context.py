@@ -7,8 +7,8 @@ def test_active_context():
         def __init__(self):
             super().__init__()
             self.a = Param("a", 1.0)
-            self.b = Param("b", None)
-            self.c = Param("c", None)
+            self.b = Param("b", None, dynamic=True)
+            self.c = Param("c", None, dynamic=True)
 
         @forward
         def testfunc(self, a, b, c):
@@ -43,7 +43,7 @@ def test_override_param():
             self.a = Param("a", 3.0)
             self.b = Param("b", lambda p: p["a"].value)
             self.b.link(self.a)
-            self.c = Param("c", None)
+            self.c = Param("c", None, dynamic=True)
             self.a_vals = (backend.make_array(1.0), backend.make_array(2.0))
 
         @forward
