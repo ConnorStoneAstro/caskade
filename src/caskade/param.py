@@ -1,6 +1,5 @@
 from typing import Optional, Union, Callable, Any
 from warnings import warn
-import traceback
 from math import prod
 
 from numpy import ndarray
@@ -153,7 +152,8 @@ class Param(Node):
             self.update_graph()
 
     def to_dynamic(self, value=NULL, **kwargs):
-        """Change this parameter to a dynamic parameter. If a value is provided, this will be set as the dynamic value."""
+        """Change this parameter to a dynamic parameter. If a value is provided,
+        this will be set as the dynamic value."""
         # While active no value can be set
         if self.active:
             raise ActiveStateError(f"Cannot set parameter {self.name} to dynamic while active.")
@@ -206,6 +206,11 @@ class Param(Node):
         self.node_type = "static"
 
     def to_pointer(self, value=NULL, link=(), **kwargs):
+        """Change this parameter to a pointer parameter. If a value is provided
+        this will be set as the pointer. Either provide a Param object to point
+        to its value, or provide a callable function to be called at runtime. It
+        is also possible to provide a tuple of nodes to link to while creating
+        the pointer."""
         # While active no value can be set
         if self.active:
             raise ActiveStateError(f"Cannot set parameter {self.name} to pointer while active")
