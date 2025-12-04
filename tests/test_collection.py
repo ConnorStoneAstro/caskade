@@ -111,6 +111,17 @@ def test_node_list_creation():
         n4.append(1)
 
 
+@pytest.mark.parametrize("node_type", [NodeTuple, NodeList])
+def test_node_collection_param_values(node_type):
+    NL = node_type([Param("p1"), Param("p2"), Param("p3")])
+
+    NL.fill_values([1, 2, 3])
+
+    assert NL[0].value.item() == 1.0
+    assert NL[1].value.item() == 2.0
+    assert NL[2].value.item() == 3.0
+
+
 def test_node_list_manipulation():
 
     params = [Param("ptest1", 1), Param("ptest2", 2)]
