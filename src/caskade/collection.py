@@ -1,3 +1,5 @@
+from typing import Iterable
+
 from .base import Node
 
 
@@ -11,6 +13,10 @@ class NodeCollection(Node):
         for node in self:
             if hasattr(node, "to_static"):
                 node.to_static(**kwargs)
+
+    def fill_values(self, values: Iterable):
+        for node, value in zip(self, values):
+            node.value = value
 
     def copy(self):
         raise NotImplementedError

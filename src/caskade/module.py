@@ -8,7 +8,7 @@ from .collection import NodeTuple, NodeList
 from .errors import (
     ActiveStateError,
     ParamConfigurationError,
-    FillDynamicParamsError,
+    FillParamsError,
     FillDynamicParamsArrayError,
     FillDynamicParamsSequenceError,
     FillDynamicParamsMappingError,
@@ -165,7 +165,7 @@ class Module(Node):
         for key in params:
             if key in node.children and isinstance(node[key], Param) and node[key].dynamic:
                 if dynamic_values:
-                    node[key].dynamic_value(params[key])
+                    node[key].to_dynamic(params[key])
                 else:
                     node[key]._value = params[key]
             elif (
@@ -229,7 +229,7 @@ class Module(Node):
                 try:
                     val = backend.view(params[..., pos : pos + size], B + param.shape)
                     if dynamic_values:
-                        param.dynamic_value(val)
+                        param.to_dynamic(val)
                     else:
                         param._value = val
                 except (RuntimeError, IndexError, ValueError, TypeError):
@@ -244,7 +244,7 @@ class Module(Node):
             elif len(params) == len(dynamic_params):
                 for param, value in zip(dynamic_params, params):
                     if dynamic_values:
-                        param.dynamic_value(value)
+                        param.to_dynamic(value)
                     else:
                         param._value = value
             elif len(params) == len(self.dynamic_modules):
@@ -312,7 +312,7 @@ class Module(Node):
             if key in self.children and isinstance(self[key], Param):
                 val = self.children[key].value
                 if val is None:
-                    raise FillDynamicParamsError(
+                    raise FillParamsError(
                         f"Param {key} in Module {self.name} has no value. "
                         "Ensure that the parameter is set before calling the forward method or provided with the params."
                     )
@@ -332,7 +332,7 @@ class Module(Node):
         """Check if all dynamic values are set."""
         bad_params = []
         for param in self.dynamic_params:
-            if "value" not in param.node_type:
+            if param.value is None:
                 bad_params.append(param.name)
         if len(bad_params) > 0:
             raise ParamConfigurationError(

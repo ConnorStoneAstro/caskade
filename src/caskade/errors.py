@@ -36,7 +36,11 @@ class ActiveStateError(CaskadeException):
     """Class for exceptions related to the active state of a node in ``caskade``."""
 
 
-class FillDynamicParamsError(CaskadeException):
+class FillParamsError(CaskadeException):
+    """Class for exceptions related to filling parameters in ``caskade``"""
+
+
+class FillDynamicParamsError(FillParamsError):
     """Class for exceptions related to filling dynamic parameters in ``caskade``."""
 
 
