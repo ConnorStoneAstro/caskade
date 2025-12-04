@@ -215,7 +215,7 @@ class Param(Node):
                 self.node_type = "pointer"
                 return
             if len(self.children) == 1:
-                value = next(iter(self.children))
+                value = next(iter(self.children.values()))
             else:
                 value = None
 

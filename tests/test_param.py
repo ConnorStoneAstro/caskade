@@ -166,6 +166,20 @@ def test_value_setter():
     p.value = other
     assert p.node_type == "pointer"
     assert p.shape == other.shape
+    p.to_pointer()
+    p.to_static()
+    assert p.value.item() == 2.0
+    p.to_pointer()
+    assert p.node_type == "pointer"
+    assert p.value.item() == 2.0
+    p.to_pointer(other)
+    assert p.node_type == "pointer"
+    p.to_static()
+    p.unlink(other)
+    p.to_pointer()
+    assert p.node_type == "pointer"
+    with pytest.raises(TypeError):
+        p.value
 
     # function
     def test_times_2(p):
