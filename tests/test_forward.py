@@ -218,7 +218,7 @@ def test_forward():
 
     # dynamic with no shape
     main1.b = None
-    main1.b.dynamic_value(None)
+    main1.b.to_dynamic(None)
     main1.b.shape = None
     with pytest.raises(ParamConfigurationError):
         main1.testfun(1.0, params=backend.module.ones(4))

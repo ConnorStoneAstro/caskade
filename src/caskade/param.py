@@ -22,6 +22,9 @@ def valid_shape(shape, value_shape, batched):
     return False
 
 
+NULL = object()
+
+
 class Param(Node):
     """
     Node to represent a parameter in the graph.
@@ -78,7 +81,6 @@ class Param(Node):
     graphviz_types = {
         "static": {"style": "filled", "color": "lightgrey", "shape": "box"},
         "dynamic": {"style": "solid", "color": "black", "shape": "box"},
-        "dynamic value": {"style": "solid", "color": "#333333", "shape": "box"},
         "pointer": {"style": "filled", "color": "lightgrey", "shape": "rarrow"},
     }
 
@@ -146,34 +148,89 @@ class Param(Node):
     @node_type.setter
     def node_type(self, value):
         pre_type = self.node_type
-        if value == "dynamic" and self.__value is not None:
-            value = "dynamic value"
         self._node_type = value
         if pre_type != self.node_type:
             self.update_graph()
 
-    def to_dynamic(self, **kwargs):
-        """Change this parameter to a dynamic parameter. If the parameter has a
-        value, this will become a "dynamic value" parameter."""
-        if self.pointer:
-            try:
-                self.__value = self.__value(self)
-            except:
-                self.__value = None
-        self.node_type = "dynamic"
+    def to_dynamic(self, value=NULL, **kwargs):
+        """Change this parameter to a dynamic parameter. If a value is provided, this will be set as the dynamic value."""
+        # While active no value can be set
+        if self.active:
+            raise ActiveStateError(f"Cannot set parameter {self.name} to dynamic while active.")
 
-    def to_static(self, **kwargs):
-        """Change this parameter to a static parameter. This only works if the
-        parameter has a dynamic value set, or if the pointer can be
-        evaluated."""
-        if self.static:
+        # Catch cases where input is invalid
+        if isinstance(value, Param) or callable(value):
+            raise ParamTypeError(f"Cannot set dynamic value to pointer ({self.name}).")
+
+        if value is NULL:
+            if self.pointer:
+                try:
+                    self.__value = self.__value(self)
+                except:
+                    self.__value = None
+            self.node_type = "dynamic"
             return
-        if self.pointer:
-            try:
-                self.__value = self.__value(self)
-            except:
-                self.__value = None
+
+        if value is not None:
+            value = backend.as_array(value, dtype=self._dtype, device=self._device)
+            self._shape_from_value(tuple(value.shape))
+        self.__value = value
+        self.node_type = "dynamic"
+        self.is_valid()
+
+    def to_static(self, value=NULL, **kwargs):
+        """Change this parameter to a static parameter. If a value is provided
+        this will be set as the static value."""
+        # While active no value can be set
+        if self.active:
+            raise ActiveStateError(f"Cannot set parameter {self.name} to static while active.")
+
+        # Catch cases where input is invalid
+        if isinstance(value, Param) or callable(value):
+            raise ParamTypeError(f"Cannot set static value to pointer ({self.name}).")
+
+        if value is NULL:
+            if self.pointer:
+                try:
+                    self.__value = self.__value(self)
+                except:
+                    self.__value = None
+            self.node_type = "static"
+            return
+
+        if value is not None:
+            value = backend.as_array(value, dtype=self._dtype, device=self._device)
+            self._shape_from_value(tuple(value.shape))
+        self.__value = value
+        self.is_valid()
         self.node_type = "static"
+
+    def to_pointer(self, value=NULL, link=(), **kwargs):
+        # While active no value can be set
+        if self.active:
+            raise ActiveStateError(f"Cannot set parameter {self.name} to pointer while active")
+
+        if value is NULL:
+            if callable(self.__value):
+                self.node_type = "pointer"
+                return
+            if len(self.children) == 1:
+                value = next(iter(self.children))
+            else:
+                value = None
+
+        if isinstance(value, Param):
+            self.link(value)
+            p_name = value.name
+            value = lambda p: p[p_name].value
+        elif value is not None and not callable(value):
+            raise ParamTypeError(f"Pointer function must be a Param or callable ({self.name})")
+        elif hasattr(value, "params"):
+            self.link(value.params)
+        self.link(link)
+        self.__value = value
+        self._shape = None
+        self.node_type = "pointer"
 
     @property
     def shape(self) -> Optional[tuple[int, ...]]:
@@ -245,64 +302,6 @@ class Param(Node):
                 pass
         return self._device
 
-    def static_value(self, value):
-        # While active no value can be set
-        if self.active:
-            raise ActiveStateError(
-                f"Cannot set static value of parameter {self.name} while active."
-            )
-
-        # Catch cases where input is invalid
-        if isinstance(value, Param) or callable(value):
-            raise ParamTypeError(
-                f"Cannot set static value to pointer ({self.name}). Try setting `pointer_value(func)` or `pointer_value(param)` to create a pointer."
-            )
-
-        if value is not None:
-            value = backend.as_array(value, dtype=self._dtype, device=self._device)
-            self._shape_from_value(tuple(value.shape))
-        self.__value = value
-        self.is_valid()
-        self.node_type = "static"
-
-    def dynamic_value(self, value):
-        # While active no value can be set
-        if self.active:
-            raise ActiveStateError(
-                f"Cannot set dynamic value of parameter {self.name} while active."
-            )
-
-        # Catch cases where input is invalid
-        if isinstance(value, Param) or callable(value):
-            raise ParamTypeError(f"Cannot set dynamic value to pointer ({self.name})")
-
-        # Set to dynamic value
-        if value is not None:
-            value = backend.as_array(value, dtype=self._dtype, device=self._device)
-            self._shape_from_value(tuple(value.shape))
-        self.__value = value
-        self.node_type = "dynamic"
-        self.is_valid()
-
-    def pointer_value(self, value: Union["Param", Callable]):
-        # While active no value can be set
-        if self.active:
-            raise ActiveStateError(
-                f"Cannot set pointer function of parameter {self.name} while active"
-            )
-
-        if isinstance(value, Param):
-            self.link(value)
-            p_name = value.name
-            value = lambda p: p[p_name].value
-        elif not callable(value):
-            raise ParamTypeError(f"Pointer function must be a Param or callable ({self.name})")
-        elif hasattr(value, "params"):
-            self.link(value.params)
-        self.__value = value
-        self._shape = None
-        self.node_type = "pointer"
-
     @property
     def value(self) -> Union[ArrayLike, None]:
         if self._value is not None:
@@ -321,11 +320,11 @@ class Param(Node):
             raise ActiveStateError(f"Cannot set value of parameter {self.name} while active")
 
         if isinstance(value, Param) or callable(value):
-            self.pointer_value(value)
+            self.to_pointer(value)
         elif self.dynamic:
-            self.dynamic_value(value)
+            self.to_dynamic(value)
         else:
-            self.static_value(value)
+            self.to_static(value)
 
     @property
     def npvalue(self) -> ndarray:
@@ -435,9 +434,9 @@ class Param(Node):
                 value = h5group["value"][()]
 
             if "static" in h5group["value"].attrs["node_type"]:
-                self.static_value(value)
+                self.to_static(value)
             elif "dynamic" in h5group["value"].attrs["node_type"]:
-                self.dynamic_value(value)
+                self.to_dynamic(value)
         self.units = h5group["value"].attrs["units"]
         if "valid_left" in h5group["value"].attrs:
             self.valid = (
