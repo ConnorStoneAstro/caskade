@@ -45,6 +45,7 @@ class Backend:
         self.concatenate = self._concatenate_torch
         self.tolist = self._tolist_torch
         self.view = self._view_torch
+        self.detach = self._detach_torch
         self.as_array = self._as_array_torch
         self.to = self._to_torch
         self.to_numpy = self._to_numpy_torch
@@ -58,6 +59,7 @@ class Backend:
         self.concatenate = self._concatenate_jax
         self.tolist = self._tolist_jax
         self.view = self._view_jax
+        self.detach = self._detach_jax
         self.as_array = self._as_array_jax
         self.to = self._to_jax
         self.to_numpy = self._to_numpy_jax
@@ -70,6 +72,7 @@ class Backend:
         self.concatenate = self._concatenate_numpy
         self.tolist = self._tolist_numpy
         self.view = self._view_numpy
+        self.detach = self._detach_numpy
         self.as_array = self._as_array_numpy
         self.to = self._to_numpy
         self.to_numpy = self._to_numpy_numpy
@@ -106,6 +109,15 @@ class Backend:
 
     def _concatenate_numpy(self, arrays, axis=0):
         return self.module.concatenate(arrays, axis=axis)
+
+    def _detach_torch(self, array):
+        return array.detach()
+
+    def _detach_jax(self, array):
+        return array
+
+    def _detach_numpy(self, array):
+        return array
 
     def _tolist_torch(self, array):
         return array.detach().cpu().tolist()

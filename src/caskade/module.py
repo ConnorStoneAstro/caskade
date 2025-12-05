@@ -337,7 +337,7 @@ class Module(Node):
                 x.append(getattr(param, attribute).reshape(B + (-1,)))
             if len(x) == 0:
                 return backend.make_array([])
-            x = backend.concatenate(x, axis=-1)
+            x = backend.detach(backend.concatenate(x, axis=-1))
         elif scheme.lower() == "list":
             for param in param_list:
                 x.append(getattr(param, attribute))
