@@ -329,7 +329,7 @@ class Module(Node):
 
         self._check_values(param_list, scheme)
         x = []
-        if scheme.lower() == "array":
+        if scheme.lower() in ["array", "tensor"]:
             for param in param_list:
                 B = param.batch_shape
                 x.append(backend.copy(param.value).reshape(B + (-1,)))
