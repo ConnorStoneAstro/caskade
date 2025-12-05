@@ -293,7 +293,9 @@ class Module(Node):
                 kwargs[key] = val
         return kwargs
 
-    def set_values(self, params: Union[ArrayLike, Sequence, Mapping], dynamic=True):
+    def set_values(
+        self, params: Union[ArrayLike, Sequence, Mapping], dynamic=True, attribute="value"
+    ):
         """Fill the dynamic values of the module with the input values from params."""
         if self.active:
             raise ActiveStateError(f"Cannot fill dynamic values when Module {self.name} is active")
@@ -301,7 +303,7 @@ class Module(Node):
             params = self.from_valid(params)
 
         node_type = "dynamic" if dynamic else "static"
-        self._set_values(params, node_type, attribute="value")
+        self._set_values(params, node_type, attribute=attribute)
 
     def _check_values(self, param_list, scheme):
         """Check if all dynamic values are set."""
@@ -323,7 +325,7 @@ class Module(Node):
             )
 
     def get_values(
-        self, scheme="array", dynamic=True
+        self, scheme="array", dynamic=True, attribute="value"
     ) -> Union[ArrayLike, list[ArrayLike], dict[str, Union[dict, ArrayLike]]]:
         param_list = self.dynamic_params if dynamic else self.static_params
 
@@ -332,26 +334,26 @@ class Module(Node):
         if scheme.lower() in ["array", "tensor"]:
             for param in param_list:
                 B = param.batch_shape
-                x.append(backend.copy(param.value).reshape(B + (-1,)))
+                x.append(getattr(param, attribute).reshape(B + (-1,)))
             if len(x) == 0:
                 return backend.make_array([])
             x = backend.concatenate(x, axis=-1)
         elif scheme.lower() == "list":
             for param in param_list:
-                x.append(backend.copy(param.value))
+                x.append(getattr(param, attribute))
         elif scheme.lower() == "dict":
             unique_params = set()
-            x = self._recursive_build_params_dict(unique_params=unique_params)
+            x = self._recursive_build_params_dict(unique_params=unique_params, attribute=attribute)
         if self.valid_context:
             x = self.to_valid(x)
         return x
 
-    def _recursive_build_params_dict(self, unique_params: set):
+    def _recursive_build_params_dict(self, unique_params: set, attribute="value"):
         params = {}
         for link, child in self.children.items():
             if isinstance(child, Param) and child.dynamic and child not in unique_params:
                 unique_params.add(child)
-                params[link] = backend.copy(child.value)
+                params[link] = getattr(child, attribute)
             elif isinstance(child, Module) and len(child.dynamic_params) > 0:
                 params[link] = child._recursive_build_params_dict(unique_params=unique_params)
         return params
