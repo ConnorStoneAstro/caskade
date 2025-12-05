@@ -115,7 +115,7 @@ def test_node_list_creation():
 def test_node_collection_param_values(node_type):
     NL = node_type([Param("p1"), Param("p2"), Param("p3")])
 
-    NL.fill_values([1, 2, 3])
+    NL.set_values([1, 2, 3])
 
     assert NL[0].value.item() == 1.0
     assert NL[1].value.item() == 2.0

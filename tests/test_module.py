@@ -121,13 +121,13 @@ def test_dynamic_value():
 
     # Try to get auto params when not all dynamic values available
     with pytest.raises(ParamConfigurationError):
-        p00 = main1.build_params_array()
+        p00 = main1.get_values("array")
     with pytest.raises(ParamConfigurationError):
-        p00 = main1.build_params_list()
+        p00 = main1.get_values("list")
     with pytest.raises(ParamConfigurationError):
-        p00 = main1.build_params_dict()
+        p00 = main1.get_values("dict")
     with pytest.raises(ParamConfigurationError):
-        p00 = sub1.build_params_dict()
+        p00 = sub1.get_values("dict")
     sub1.f.to_dynamic(3.0)
 
     # Check dynamic value
@@ -135,29 +135,29 @@ def test_dynamic_value():
     assert main1.c._value is None
 
     # Auto tensor
-    p0 = main1.build_params_array()
+    p0 = main1.get_values("array")
     x = backend.make_array([0.1, 0.2])
     assert p0.shape == (3,)
     assert backend.module.allclose(main1.testfun(x, p0), backend.make_array(18.8))
     assert backend.module.allclose(main1.testfun(x, p0), main1.testfun(x=x))
     p02 = p0 * 2
-    main1.fill_dynamic_values(p02)
+    main1.set_values(p02)
     assert backend.module.allclose(main1.testfun(x=x), backend.make_array(28.8))
-    main1.fill_dynamic_values(p0)
+    main1.set_values(p0)
 
     # Auto list
-    p0 = main1.build_params_list()
+    p0 = main1.get_values("list")
     x = backend.make_array([0.1, 0.2])
     assert len(p0) == 3
     assert backend.module.allclose(main1.testfun(x, p0), backend.make_array(18.8))
     assert backend.module.allclose(main1.testfun(x, p0), main1.testfun(x=x))
     p02 = [p * 2 for p in p0]
-    main1.fill_dynamic_values(p02)
+    main1.set_values(p02)
     assert backend.module.allclose(main1.testfun(x=x), backend.make_array(28.8))
-    main1.fill_dynamic_values(p0)
+    main1.set_values(p0)
 
     # Auto dict
-    p0 = main1.build_params_dict()
+    p0 = main1.get_values("dict")
     x = backend.make_array([0.1, 0.2])
     print(p0)
     assert len(p0) == 2
@@ -172,13 +172,13 @@ def test_dynamic_value():
     p02["m1"] = {}
     p02["m1"]["d"] = p0["m1"]["d"] * 2
     p02["m1"]["f"] = p0["m1"]["f"] * 2
-    main1.fill_dynamic_values(p02)
+    main1.set_values(p02)
     assert backend.module.allclose(main1.testfun(x=x), backend.make_array(28.8))
 
     # Check active state error
     with pytest.raises(ActiveStateError):
         main1.active = True
-        main1.fill_dynamic_values(p0)
+        main1.set_values(p0)
     main1.active = False
 
     # Check invalid dynamic value
@@ -189,11 +189,11 @@ def test_dynamic_value():
     main1.c.to_static()
     main1.m1.d.to_static()
     main1.m1.f.to_static()
-    p0 = main1.build_params_array()
+    p0 = main1.get_values("array")
     assert p0.shape == (0,)
-    p0 = main1.build_params_list()
+    p0 = main1.get_values("list")
     assert len(p0) == 0
-    p0 = main1.build_params_dict()
+    p0 = main1.get_values("dict")
     assert len(p0) == 0
 
     # Module level to_dynamic/static
@@ -228,7 +228,7 @@ def test_batched_build_params_array():
     M.p2.batched = True
     M.p2.shape = ()
 
-    a = M.build_params_array()
+    a = M.get_values("array")
     assert a.shape == (2, 2)
 
     with pytest.raises(ParamConfigurationError):
@@ -236,13 +236,13 @@ def test_batched_build_params_array():
         M.p1.shape = (2,)
         M.p2.to_dynamic([3.0, 4.0])
         M.p2.shape = ()
-        M.build_params_array()
+        M.get_values("array")
     with pytest.raises(ParamConfigurationError):
         M.p1.to_dynamic([1.0, 2.0])
         M.p1.shape = ()
         M.p2.to_dynamic([1.0, 2.0])
         M.p2.shape = (2,)
-        M.build_params_array()
+        M.get_values("array")
 
 
 def test_module_and_collection():
@@ -274,7 +274,7 @@ def test_module_and_collection():
 
     params = {
         "p": 1.0,
-        "lp": {"a": 2.0, "b": 3.0, "c": 4.0, "S": [[5.0], {"p": 5.5, "p2": 5.75}], "N": {"c": 6.0}},
+        "lp": {"a": 2.0, "b": 3.0, "c": 4.0, "S": [5.0, 5.5, 5.75], "N": {"c": 6.0}},
     }
 
     with ActiveContext(M):
@@ -301,24 +301,24 @@ def test_valid():
     M.to_dynamic(False)
     with ValidContext(M):
         # Array
-        params = M.build_params_array()
-        M.fill_dynamic_values(params)
+        params = M.get_values()
+        M.set_values(params)
         assert np.isclose(M.p1.value.item(), 1.0)
         assert np.isclose(M.p2.value[1].item(), 1.5)
         assert np.isclose(M.m2.p3.value[0][1].item(), 1.1)
         assert np.isclose(M.m2.m3.p2.value[1].item(), 1.5)
 
         # List
-        params = M.build_params_list()
-        M.fill_dynamic_values(params)
+        params = M.get_values("list")
+        M.set_values(params)
         assert np.isclose(M.p1.value.item(), 1.0)
         assert np.isclose(M.p2.value[1].item(), 1.5)
         assert np.isclose(M.m2.p3.value[0][1].item(), 1.1)
         assert np.isclose(M.m2.m3.p2.value[1].item(), 1.5)
 
         # Dict
-        params = M.build_params_dict()
-        M.fill_dynamic_values(params)
+        params = M.get_values("dict")
+        M.set_values(params)
         assert np.isclose(M.p1.value.item(), 1.0)
         assert np.isclose(M.p2.value[1].item(), 1.5)
         assert np.isclose(M.m2.p3.value[0][1].item(), 1.1)

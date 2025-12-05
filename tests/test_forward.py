@@ -4,10 +4,9 @@ from caskade import (
     forward,
     ValidContext,
     FillParamsError,
-    FillDynamicParamsError,
-    FillDynamicParamsSequenceError,
-    FillDynamicParamsMappingError,
-    FillDynamicParamsArrayError,
+    FillParamsSequenceError,
+    FillParamsMappingError,
+    FillParamsArrayError,
     ParamConfigurationError,
     backend,
 )
@@ -74,34 +73,20 @@ def test_forward():
     # Wrong number of params, too few
     with pytest.raises(FillParamsError):
         result = main1.testfun(1.0, params=[])
-    with pytest.raises(FillDynamicParamsSequenceError):
+    with pytest.raises(FillParamsSequenceError):
         result = main1.testfun(1.0, params=params[:3])
-    with pytest.raises(FillDynamicParamsSequenceError):
+    with pytest.raises(FillParamsSequenceError):
         main1.to_valid(params[:3])
-    with pytest.raises(FillDynamicParamsSequenceError):
+    with pytest.raises(FillParamsSequenceError):
         main1.from_valid(params[:3])
     # Wrong number of params, too many
     badparams = params + params + params
-    with pytest.raises(FillDynamicParamsSequenceError):
+    with pytest.raises(FillParamsSequenceError):
         result = main1.testfun(1.0, params=badparams)
-    with pytest.raises(FillDynamicParamsSequenceError):
+    with pytest.raises(FillParamsSequenceError):
         main1.to_valid(badparams)
-    with pytest.raises(FillDynamicParamsSequenceError):
+    with pytest.raises(FillParamsSequenceError):
         main1.from_valid(badparams)
-
-    # List by children
-    params = [backend.module.ones((2, 2)).flatten(), backend.make_array([3.0, 4.0, 1.0])]
-    result = main1.testfun(1.0, params=params)
-    assert result.shape == (2, 2)
-    result = main1.testfun(1.0, params)
-    assert result.shape == (2, 2)
-    # valid context
-    for param1, param2 in zip(main1.from_valid(main1.to_valid(params)), params):
-        assert backend.all(param1 == param2).item()
-    with ValidContext(main1):
-        valid_result = main1.testfun(1.0, params=main1.to_valid(params))
-        assert valid_result.shape == (2, 2)
-        assert backend.all(valid_result == result).item()
 
     # Tensor as params
     params = backend.concatenate(tuple(p.flatten() for p in params))
@@ -118,10 +103,10 @@ def test_forward():
     # Wrong number of params, too few
     with pytest.raises(FillParamsError):
         result = main1.testfun(1.0, backend.as_array([]))
-    with pytest.raises(FillDynamicParamsArrayError):
+    with pytest.raises(FillParamsArrayError):
         result = main1.testfun(1.0, params[:-3])
     # Wrong number of params, too many
-    with pytest.raises(FillDynamicParamsArrayError):
+    with pytest.raises(FillParamsArrayError):
         result = main1.testfun(1.0, backend.concatenate((params, params)))
 
     # Batched tensor as params
@@ -153,11 +138,11 @@ def test_forward():
         assert backend.all(valid_result == result).item()
     # Wrong name for params
     params = {"q": backend.module.ones((2, 2)), "m1": backend.make_array((3.0, 4.0, 1.0))}
-    with pytest.raises(FillDynamicParamsMappingError):
+    with pytest.raises(FillParamsMappingError):
         result = main1.testfun(1.0, params=params)
-    with pytest.raises(FillDynamicParamsMappingError):
+    with pytest.raises(FillParamsMappingError):
         main1.to_valid(params)
-    with pytest.raises(FillDynamicParamsMappingError):
+    with pytest.raises(FillParamsMappingError):
         main1.from_valid(params)
 
     # Dict as params, sub element is list

@@ -103,7 +103,7 @@ def test_full_integration_v2():
     #                      c for MyMainSim
     main.c_param = 3.0
 
-    assert main.mymainfunction(1.0, main.build_params_array()).item() == 558.0
+    assert main.mymainfunction(1.0, main.get_values()).item() == 558.0
 
     main.c_param = [[1, 2], [1, 3]]  # test print param with shape
     print(main)

@@ -9,9 +9,9 @@ from .errors import (
     ActiveStateError,
     ParamConfigurationError,
     FillParamsError,
-    FillDynamicParamsArrayError,
-    FillDynamicParamsSequenceError,
-    FillDynamicParamsMappingError,
+    FillParamsArrayError,
+    FillParamsSequenceError,
+    FillParamsMappingError,
 )
 
 
@@ -160,32 +160,19 @@ class Module(Node):
             if isinstance(node, Module):
                 node._valid_context = value
 
-    def _fill_dict(self, node, params, dynamic_values=False):
-
+    def _set_values_dict(self, node, params, dynamic=True, attribute="_value"):
         for key in params:
-            if key in node.children and isinstance(node[key], Param) and node[key].dynamic:
-                if dynamic_values:
-                    node[key].to_dynamic(params[key])
-                else:
-                    node[key]._value = params[key]
-            elif (
-                key in node.children
-                and isinstance(node[key], Module)
-                and node[key].dynamic
-                and not isinstance(params[key], dict)
-            ):
-                node[key]._fill_values(
-                    params[key], children_only=True, dynamic_values=dynamic_values
-                )
-            elif key in node.children and isinstance(node[key], Node) and node[key].dynamic:
-                self._fill_dict(node[key], params[key], dynamic_values=dynamic_values)
+            if key in node.children and isinstance(node[key], Param):
+                setattr(node[key], attribute, params[key])
+            elif key in node.children and isinstance(params[key], dict):
+                self._set_values_dict(node[key], params[key], attribute=attribute)
+            elif key in node.children:
+                node[key]._set_values(params[key], dynamic=dynamic, attribute=attribute)
             else:
-                raise FillDynamicParamsMappingError(
-                    self.name, self.children, self.dynamic_modules, missing_key=key
-                )
+                raise FillParamsMappingError(self.name, self.children, missing_key=key)
 
-    def _fill_values(
-        self, params: Union[ArrayLike, Sequence, Mapping], children_only=False, dynamic_values=False
+    def _set_values(
+        self, params: Union[ArrayLike, Sequence, Mapping], dynamic=True, attribute="_value"
     ):
         """
         Fill the dynamic parameters of the module with the input values from
@@ -208,9 +195,7 @@ class Module(Node):
             error eventually if a value is missing.
         """
 
-        dynamic_params = (
-            self.child_dynamic_params.values() if children_only else self.dynamic_params
-        )
+        param_list = self.dynamic_params if dynamic else self.static_params
 
         if isinstance(params, backend.array_type):
             if params.shape[-1] == 0:
@@ -219,51 +204,40 @@ class Module(Node):
             batch = len(params.shape) > 1
             B = tuple(params.shape[:-1]) if batch else ()
             pos = 0
-            for param in dynamic_params:
+            for param in param_list:
                 if not isinstance(param.shape, tuple):
                     raise ParamConfigurationError(
-                        f"Param {param.name} has no shape. dynamic parameters must have a shape to use {backend.array_type.__name__} input."
+                        f"Param {param.name} has no shape. Parameters must have a shape to use {backend.array_type.__name__} input."
                     )
                 # Handle scalar parameters
                 size = max(1, prod(param.shape))
                 try:
                     val = backend.view(params[..., pos : pos + size], B + param.shape)
-                    if dynamic_values:
-                        param.to_dynamic(val)
-                    else:
-                        param._value = val
+                    setattr(param, attribute, val)
                 except (RuntimeError, IndexError, ValueError, TypeError):
-                    raise FillDynamicParamsArrayError(self.name, params, dynamic_params)
+                    raise FillParamsArrayError(self.name, params, param_list)
 
                 pos += size
             if pos != params.shape[-1]:
-                raise FillDynamicParamsArrayError(self.name, params, dynamic_params)
+                raise FillParamsArrayError(self.name, params, param_list)
         elif isinstance(params, Sequence):
             if len(params) == 0:
                 return
-            elif len(params) == len(dynamic_params):
-                for param, value in zip(dynamic_params, params):
-                    if dynamic_values:
-                        param.to_dynamic(value)
-                    else:
-                        param._value = value
-            elif len(params) == len(self.dynamic_modules):
-                for module, value in zip(self.dynamic_modules, params):
-                    module._fill_values(value, children_only=True, dynamic_values=dynamic_values)
+            elif len(params) == len(param_list):
+                for param, value in zip(param_list, params):
+                    setattr(param, attribute, value)
             else:
-                raise FillDynamicParamsSequenceError(
-                    self.name, params, dynamic_params, self.dynamic_modules
-                )
+                raise FillParamsSequenceError(self.name, params, param_list)
         elif isinstance(params, Mapping):
-            self._fill_dict(self, params, dynamic_values=dynamic_values)
+            self._set_values_dict(self, params, dynamic, attribute=attribute)
         else:
             raise TypeError(
                 f"Input params type {type(params)} not supported. Should be {backend.array_type.__name__}, Sequence, or Mapping."
             )
 
-    def fill_params(self, params: Union[ArrayLike, Sequence, Mapping]):
+    def fill_params(self, params: Union[ArrayLike, Sequence, Mapping], dynamic=True):
         """
-        Fill the dynamic parameters of the module with the input values from
+        Fill the dynamic/static parameters of the module with the input values from
         params.
 
         Parameters
@@ -286,7 +260,7 @@ class Module(Node):
             raise ActiveStateError(f"Module {self.name} must be active to fill params")
         if self.valid_context:
             params = self.from_valid(params)
-        self._fill_values(params)
+        self._set_values(params, dynamic=dynamic, attribute="_value")
 
     def clear_state(self):
         """Set all dynamic parameters to None and live parameters to LiveParam.
@@ -319,56 +293,55 @@ class Module(Node):
                 kwargs[key] = val
         return kwargs
 
-    def fill_dynamic_values(self, params: Union[ArrayLike, Sequence, Mapping]):
+    def set_values(self, params: Union[ArrayLike, Sequence, Mapping], dynamic=True):
         """Fill the dynamic values of the module with the input values from params."""
         if self.active:
             raise ActiveStateError(f"Cannot fill dynamic values when Module {self.name} is active")
         if self.valid_context:
             params = self.from_valid(params)
 
-        self._fill_values(params, dynamic_values=True)
+        node_type = "dynamic" if dynamic else "static"
+        self._set_values(params, node_type, attribute="value")
 
-    def _check_dynamic_values(self, params_type: str = "ArrayLike"):
+    def _check_values(self, param_list, scheme):
         """Check if all dynamic values are set."""
         bad_params = []
-        for param in self.dynamic_params:
+        batch_shape = None
+        for param in param_list:
             if param.value is None:
                 bad_params.append(param.name)
-        if len(bad_params) > 0:
-            raise ParamConfigurationError(
-                f"{self.name} Param(s) {bad_params} have no dynamic value, so the params {params_type} cannot be built. Set to a dynamic value to use this feature."
-            )
-
-    def build_params_array(self) -> ArrayLike:
-        """Return an input array-like object for this module's @forward methods by filling with dynamic values."""
-        self._check_dynamic_values("ArrayLike")
-        x = []
-        batch_shape = None
-        for param in self.dynamic_params:
             B = param.batch_shape
             if batch_shape is None:
                 batch_shape = B
-            elif batch_shape != B:
+            elif scheme == "array" and batch_shape != B:
                 raise ParamConfigurationError(
-                    f"Batch dimensions must be the same for all params. Got {B} for {param.name} when previous batch shape was {batch_shape}"
+                    f"Batch dimensions must be the same for all params when using array scheme. Got {B} for {param.name} when previous batch shape was {batch_shape}"
                 )
+        if len(bad_params) > 0:
+            raise ParamConfigurationError(
+                f"{self.name} Param(s) {bad_params} have no value, so the params {scheme} cannot be built. Set their value to use this feature."
+            )
 
-            x.append(backend.copy(param.value).reshape(B + (-1,)))
+    def get_values(
+        self, scheme="array", dynamic=True
+    ) -> Union[ArrayLike, list[ArrayLike], dict[str, Union[dict, ArrayLike]]]:
+        param_list = self.dynamic_params if dynamic else self.static_params
 
-        if len(x) == 0:
-            return backend.make_array([])
-        x = backend.concatenate(x, axis=-1)
-        if self.valid_context:
-            x = self.to_valid(x)
-        return x
-
-    def build_params_list(self) -> list[ArrayLike]:
-        """Return an input list for this module's @forward methods by filling with dynamic values."""
-
-        self._check_dynamic_values("List")
+        self._check_values(param_list, scheme)
         x = []
-        for param in self.dynamic_params:
-            x.append(backend.copy(param.value))
+        if scheme.lower() == "array":
+            for param in param_list:
+                B = param.batch_shape
+                x.append(backend.copy(param.value).reshape(B + (-1,)))
+            if len(x) == 0:
+                return backend.make_array([])
+            x = backend.concatenate(x, axis=-1)
+        elif scheme.lower() == "list":
+            for param in param_list:
+                x.append(backend.copy(param.value))
+        elif scheme.lower() == "dict":
+            unique_params = set()
+            x = self._recursive_build_params_dict(unique_params=unique_params)
         if self.valid_context:
             x = self.to_valid(x)
         return x
@@ -379,130 +352,61 @@ class Module(Node):
             if isinstance(child, Param) and child.dynamic and child not in unique_params:
                 unique_params.add(child)
                 params[link] = backend.copy(child.value)
-        for link, child in self.children.items():
-            if isinstance(child, Module) and len(child.dynamic_params) > 0:
+            elif isinstance(child, Module) and len(child.dynamic_params) > 0:
                 params[link] = child._recursive_build_params_dict(unique_params=unique_params)
         return params
 
-    def build_params_dict(self) -> dict[str, Union[dict, ArrayLike]]:
-        """Return an input dict for this module's @forward methods by filling with dynamic values."""
-
-        self._check_dynamic_values("Dict")
-        unique_params = set()
-        x = self._recursive_build_params_dict(unique_params=unique_params)
-        if self.valid_context:
-            x = self.to_valid(x)
-        return x
-
-    def to_valid(
-        self, params: Union[ArrayLike, Sequence, Mapping], children_only=False
-    ) -> Union[ArrayLike, Sequence, Mapping]:
-        """Convert input params to valid params."""
-        dynamic_params = (
-            self.child_dynamic_params.values() if children_only else self.dynamic_params
-        )
-        if isinstance(params, backend.array_type):
-            valid_params = []  # backend.zeros_like(params)
-            batch = len(params.shape) > 1
-            B = tuple(params.shape[:-1]) if batch else ()
+    def _transform_params(self, init_params, transform_attr):
+        param_list = self.dynamic_params
+        if isinstance(init_params, backend.array_type):
+            trans_params = []
+            batch = len(init_params.shape) > 1
+            B = tuple(init_params.shape[:-1]) if batch else ()
             pos = 0
-            for param in dynamic_params:
+            for param in param_list:
                 size = max(1, prod(param.shape))  # Handle scalar parameters
                 return_shape = (*B, size)
-                valid_params.append(
-                    backend.view(
-                        param.to_valid(
-                            backend.view(params[..., pos : pos + size], B + param.shape)
-                        ),
-                        return_shape,
-                    )
+                val = getattr(param, transform_attr)(
+                    backend.view(init_params[..., pos : pos + size], B + param.shape)
                 )
+                trans_params.append(backend.view(val, return_shape))
                 pos += size
-            valid_params = backend.concatenate(valid_params, axis=-1)
-        elif isinstance(params, Sequence):
-            valid_params = []
-            if len(params) == len(dynamic_params):
-                for param, value in zip(dynamic_params, params):
-                    valid_params.append(param.to_valid(value))
-            elif len(params) == len(self.dynamic_modules):
-                for module, value in zip(self.dynamic_modules, params):
-                    valid_params.append(module.to_valid(value, children_only=True))
+            trans_params = backend.concatenate(trans_params, axis=-1)
+        elif isinstance(init_params, Sequence):
+            trans_params = []
+            if len(init_params) == len(param_list):
+                for param, value in zip(param_list, init_params):
+                    trans_params.append(getattr(param, transform_attr)(value))
             else:
-                raise FillDynamicParamsSequenceError(
-                    self.name, params, dynamic_params, self.dynamic_modules
-                )
-        elif isinstance(params, Mapping):
-            valid_params = {}
-            for key in params:
-                if key in self.children and isinstance(self[key], Module) and self[key].dynamic:
-                    valid_params[key] = self[key].to_valid(params[key], children_only=True)
-                elif key in self.children and isinstance(self[key], Param) and self[key].dynamic:
-                    valid_params[key] = self[key].to_valid(params[key])
-                else:
-                    raise FillDynamicParamsMappingError(
-                        self.name, self.children, self.dynamic_modules, missing_key=key
+                raise FillParamsSequenceError(self.name, init_params, param_list)
+        elif isinstance(init_params, Mapping):
+            trans_params = {}
+            for key in init_params:
+                if key in self.children and isinstance(self[key], Module):
+                    trans_params[key] = self[key]._transform_params(
+                        init_params[key], transform_attr
                     )
+                elif key in self.children and isinstance(self[key], Param):
+                    trans_params[key] = getattr(self[key], transform_attr)(init_params[key])
+                else:
+                    raise FillParamsMappingError(self.name, self.children, missing_key=key)
         else:
             raise TypeError(
-                f"Input params type {type(params)} not supported. Should be {backend.array_type.__name__}, Sequence, or Mapping."
+                f"Input params type {type(init_params)} not supported. Should be {backend.array_type.__name__}, Sequence, or Mapping."
             )
-        return valid_params
+        return trans_params
+
+    def to_valid(
+        self, params: Union[ArrayLike, Sequence, Mapping]
+    ) -> Union[ArrayLike, Sequence, Mapping]:
+        """Convert input params to valid params."""
+        return self._transform_params(params, "to_valid")
 
     def from_valid(
-        self, valid_params: Union[ArrayLike, Sequence, Mapping], children_only=False
+        self, valid_params: Union[ArrayLike, Sequence, Mapping]
     ) -> Union[ArrayLike, Sequence, Mapping]:
         """Convert valid params to input params."""
-
-        dynamic_params = (
-            self.child_dynamic_params.values() if children_only else self.dynamic_params
-        )
-
-        if isinstance(valid_params, backend.array_type):
-            params = []  # backend.zeros_like(valid_params)
-            batch = len(valid_params.shape) > 1
-            B = tuple(valid_params.shape[:-1]) if batch else ()
-            pos = 0
-            for param in dynamic_params:
-                size = max(1, prod(param.shape))
-                return_shape = (*B, size)
-                params.append(
-                    backend.view(
-                        param.from_valid(
-                            backend.view(valid_params[..., pos : pos + size], B + param.shape)
-                        ),
-                        return_shape,
-                    )
-                )
-                pos += size
-            params = backend.concatenate(params, axis=-1)
-        elif isinstance(valid_params, Sequence):
-            params = []
-            if len(valid_params) == len(dynamic_params):
-                for param, value in zip(dynamic_params, valid_params):
-                    params.append(param.from_valid(value))
-            elif len(valid_params) == len(self.dynamic_modules):
-                for module, value in zip(self.dynamic_modules, valid_params):
-                    params.append(module.from_valid(value, children_only=True))
-            else:
-                raise FillDynamicParamsSequenceError(
-                    self.name, valid_params, dynamic_params, self.dynamic_modules
-                )
-        elif isinstance(valid_params, Mapping):
-            params = {}
-            for key in valid_params:
-                if key in self.children and isinstance(self[key], Module) and self[key].dynamic:
-                    params[key] = self[key].from_valid(valid_params[key], children_only=True)
-                elif key in self.children and isinstance(self[key], Param) and self[key].dynamic:
-                    params[key] = self[key].from_valid(valid_params[key])
-                else:
-                    raise FillDynamicParamsMappingError(
-                        self.name, self.children, self.dynamic_modules, missing_key=key
-                    )
-        else:
-            raise TypeError(
-                f"Input params type {type(valid_params)} not supported. Should be {backend.array_type.__name__}, Sequence or Mapping."
-            )
-        return params
+        return self._transform_params(valid_params, "from_valid")
 
     @property
     def node_str(self) -> str:

@@ -1,6 +1,14 @@
-from typing import Iterable
+from typing import Union, Sequence, Mapping
+
+from math import prod
 
 from .base import Node
+from .backend import backend, ArrayLike
+from .errors import (
+    ParamConfigurationError,
+    FillParamsArrayError,
+    FillParamsSequenceError,
+)
 
 
 class NodeCollection(Node):
@@ -14,9 +22,53 @@ class NodeCollection(Node):
             if hasattr(node, "to_static"):
                 node.to_static(**kwargs)
 
-    def fill_values(self, values: Iterable):
-        for node, value in zip(self, values):
-            node.value = value
+    def set_values(
+        self, params: Union[ArrayLike, Sequence, Mapping], node_type="all", attribute="value"
+    ):
+        if node_type == "all":
+            node_type = "dynamic/static"
+        if isinstance(params, backend.array_type):
+            if params.shape[-1] == 0:
+                return  # No parameters to fill
+            # check for batch dimension
+            batch = len(params.shape) > 1
+            B = tuple(params.shape[:-1]) if batch else ()
+            pos = 0
+            for param in self:
+                if param.node_type not in node_type:
+                    continue
+                if not isinstance(param.shape, tuple):
+                    raise ParamConfigurationError(
+                        f"Param {param.name} has no shape. dynamic parameters must have a shape to use {backend.array_type.__name__} input."
+                    )
+                # Handle scalar parameters
+                size = max(1, prod(param.shape))
+                try:
+                    val = backend.view(params[..., pos : pos + size], B + param.shape)
+                    setattr(param, attribute, val)
+                except (RuntimeError, IndexError, ValueError, TypeError):
+                    raise FillParamsArrayError(self.name, params, self)
+
+                pos += size
+            if pos != params.shape[-1]:
+                raise FillParamsArrayError(self.name, params, self)
+        elif isinstance(params, Sequence):
+            if len(params) == 0:
+                return
+            elif len(params) == len(self):
+                param_list = filter(lambda p: p.node_type in node_type, self)
+                for param, value in zip(param_list, params):
+                    setattr(param, attribute, value)
+            else:
+                raise FillParamsSequenceError(self.name, params, self)
+        elif isinstance(params, Mapping):
+            for name, param in self.children.items():
+                if name in params:
+                    setattr(param, attribute, params[name])
+        else:
+            raise TypeError(
+                f"Input params type {type(params)} not supported. Should be {backend.array_type.__name__}, Sequence, or Mapping."
+            )
 
     def copy(self):
         raise NotImplementedError
