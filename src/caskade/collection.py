@@ -8,6 +8,7 @@ from .errors import (
     ParamConfigurationError,
     FillParamsArrayError,
     FillParamsSequenceError,
+    FillParamsMappingError,
 )
 
 
@@ -62,9 +63,13 @@ class NodeCollection(Node):
             else:
                 raise FillParamsSequenceError(self.name, params, self)
         elif isinstance(params, Mapping):
+            params_names = set(params.keys())
             for name, param in self.children.items():
                 if name in params:
+                    params_names.remove(name)
                     setattr(param, attribute, params[name])
+            if len(params_names) > 0:
+                raise FillParamsMappingError(self.name, self.children, next(iter(params_names)))
         else:
             raise TypeError(
                 f"Input params type {type(params)} not supported. Should be {backend.array_type.__name__}, Sequence, or Mapping."
