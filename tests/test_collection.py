@@ -1,6 +1,16 @@
 import pytest
 
-from caskade import NodeList, NodeTuple, Param, Module
+from caskade import (
+    NodeList,
+    NodeTuple,
+    Param,
+    Module,
+    backend,
+    ParamConfigurationError,
+    FillParamsArrayError,
+    FillParamsSequenceError,
+    FillParamsMappingError,
+)
 
 
 def test_node_tuple_creation():
@@ -115,7 +125,7 @@ def test_node_list_creation():
 def test_node_collection_param_values(node_type):
     NL = node_type([Param("p1"), Param("p2"), Param("p3")])
 
-    NL.fill_values([1, 2, 3])
+    NL.set_values([1, 2, 3])
 
     assert NL[0].value.item() == 1.0
     assert NL[1].value.item() == 2.0
@@ -207,3 +217,42 @@ def test_collection_in_module():
     assert m1["t"][2] == t1[2]
     assert m1.l[3] == l1[3]
     assert m1.t[3] == t1[3]
+
+
+@pytest.mark.parametrize("node_type", [NodeTuple, NodeList])
+def test_collection_fill(node_type):
+    NL = node_type([Param("p1"), Param("p2"), Param("p3")])
+
+    # Bad params
+    with pytest.raises(TypeError):
+        NL.set_values(lambda p: "bad idea")
+
+    # List params
+    NL.set_values([1, 2, 3])
+    NL.set_values([])
+    with pytest.raises(FillParamsSequenceError):
+        NL.set_values([1, 2])
+
+    # Dict params
+    NL.set_values({"p1": 4, "p2": 5, "p3": 6})
+    with pytest.raises(FillParamsMappingError):
+        NL.set_values({"p1": 4, "p2": 5, "p3": 6, "p4": 7})
+
+    # Array params
+    NL.set_values(backend.as_array([7, 8, 9]))
+    NL.set_values(backend.as_array([]))
+
+    with pytest.raises(FillParamsArrayError):
+        NL.set_values(backend.as_array([7, 8]))
+
+    with pytest.raises(FillParamsArrayError):
+        NL.set_values(backend.as_array([7, 8, 9, 10]))
+
+    NL[1].to_static()
+    NL.set_values(backend.as_array([7, 8]), "dynamic")
+    NL[1].to_dynamic()
+
+    NL[1].value = None
+    NL[1].shape = None
+    with pytest.raises(ParamConfigurationError):
+        NL.set_values(backend.as_array([7, 8, 9]))

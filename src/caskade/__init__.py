@@ -18,10 +18,9 @@ from .errors import (
     ParamTypeError,
     ActiveStateError,
     FillParamsError,
-    FillDynamicParamsError,
-    FillDynamicParamsArrayError,
-    FillDynamicParamsSequenceError,
-    FillDynamicParamsMappingError,
+    FillParamsArrayError,
+    FillParamsSequenceError,
+    FillParamsMappingError,
 )
 from .warnings import CaskadeWarning, InvalidValueWarning, SaveStateWarning
 
@@ -53,10 +52,9 @@ __all__ = (
     "ParamTypeError",
     "ActiveStateError",
     "FillParamsError",
-    "FillDynamicParamsError",
-    "FillDynamicParamsArrayError",
-    "FillDynamicParamsSequenceError",
-    "FillDynamicParamsMappingError",
+    "FillParamsArrayError",
+    "FillParamsSequenceError",
+    "FillParamsMappingError",
     "CaskadeWarning",
     "InvalidValueWarning",
     "SaveStateWarning",
