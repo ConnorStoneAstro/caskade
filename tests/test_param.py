@@ -210,6 +210,15 @@ def test_value_setter():
         p.to_pointer(lambda p: p.other.value)
 
 
+def test_static_none_value():
+    p = Param("test", None, dynamic=False)
+    assert p.static
+    assert p.value is None
+    p.active = True
+    p.value = 1.0  # should work since static value being set live in sim
+    assert p.value == 1.0
+
+
 def test_param_shape():
     p = Param("p", [1, 2])
     assert p.shape == (2,)

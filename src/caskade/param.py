@@ -322,6 +322,9 @@ class Param(Node):
     def value(self, value):
         # While active no value can be set
         if self.active:
+            if self.static and self.__value is None:  # static value set live in sim
+                self._value = value
+                return
             raise ActiveStateError(f"Cannot set value of parameter {self.name} while active")
 
         if isinstance(value, Param) or callable(value):
