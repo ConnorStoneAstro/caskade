@@ -55,8 +55,6 @@ class Node:
        n1.unlink("subnode") # alternately n1.unlink(n2) to unlink by object
     """
 
-    graphviz_types = {"node": {"style": "solid", "color": "black", "shape": "circle"}}
-
     def __init__(
         self,
         name: Optional[str] = None,
@@ -412,6 +410,10 @@ class Node:
             self._check_load_state_hdf5(loadfrom[self.name])
             self._load_state_hdf5(loadfrom[self.name], index=index, _done_load=set())
 
+    @property
+    def graphviz_style(self):
+        return {"style": "solid", "color": "black", "shape": "circle"}
+
     def graphviz(self, top_down: bool = True, saveto: Optional[str] = None) -> "graphviz.Digraph":
         """Return a graphviz object representing the graph below the current
         node in the DAG.
@@ -432,7 +434,7 @@ class Node:
         def add_node(node: Node, dot):
             if node in components:
                 return
-            dot.attr("node", **node.graphviz_types[node.node_type])
+            dot.attr("node", **node.graphviz_style)
             dot.node(str(id(node)), repr(node))
             components.add(node)
 

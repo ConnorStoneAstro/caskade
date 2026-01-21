@@ -11,16 +11,6 @@ from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError
 from .warnings import InvalidValueWarning
 
 
-def valid_shape(shape, value_shape, batched):
-    if shape is None:  # no shape to compare
-        return True
-    if value_shape == shape:  # shapes match
-        return True
-    if batched and value_shape[len(value_shape) - len(shape) :] == shape:  # endswith
-        return True
-    return False
-
-
 NULL = object()
 
 
@@ -92,7 +82,7 @@ class Param(Node):
         valid: Optional[tuple[Union[ArrayLike, float, int, None]]] = None,
         units: Optional[str] = None,
         dynamic: Optional[bool] = None,
-        batched: bool = False,
+        batch_dims: Optional[tuple[int, ...]] = None,
         dtype: Optional[Any] = None,
         device: Optional[Any] = None,
         **kwargs,
@@ -111,20 +101,16 @@ class Param(Node):
             self.shape = tuple(shape)
         elif not isinstance(value, (Param, Callable)) and value is not None:
             value = backend.as_array(value, dtype=dtype, device=device)
-            if not valid_shape(shape, value.shape, batched):
-                raise ParamConfigurationError(
-                    f"Shape {shape} does not match value shape {value.shape}"
-                )
         self._dtype = dtype
         self._device = device
         self._cyclic = cyclic
-        self.batched = batched
-        self.shape = shape
+        self.batch_dims = batch_dims
         if dynamic or (dynamic is None and value is None):
             self.to_dynamic()
         else:
             self.to_static()
         self.value = value
+        self.shape = shape
         self.valid = valid
         self.units = units
 
@@ -173,7 +159,7 @@ class Param(Node):
 
         if value is not None:
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
-            self._shape_from_value(tuple(value.shape))
+            self._shape = tuple(value.shape)
         self.__value = value
         self.node_type = "dynamic"
         self.is_valid()
@@ -200,7 +186,7 @@ class Param(Node):
 
         if value is not None:
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
-            self._shape_from_value(tuple(value.shape))
+            self._shape = tuple(value.shape)
         self.__value = value
         self.is_valid()
         self.node_type = "static"
@@ -256,38 +242,25 @@ class Param(Node):
             return
         shape = tuple(shape)
         value = self.value
-        if value is not None:
-            print(shape, value.shape, self.batched)
-        if value is not None and not valid_shape(shape, value.shape, self.batched):
-            raise ValueError(f"Shape {shape} does not match the shape of the value {value.shape}")
+        if value is not None and shape != tuple(value.shape):
+            raise ValueError(
+                f"Shape {shape} does not match the shape of the value {value.shape}! Setting a value will set the shape automatically."
+            )
         self._shape = shape
 
     @property
-    def batch_shape(self) -> tuple[int]:
-        if not self.batched:
-            return ()
-        vshape = self.value.shape
-        return tuple(vshape[: len(vshape) - len(self.shape)])
+    def batched(self) -> bool:
+        return self._batch_dims != ()
 
     @property
-    def batched(self) -> bool:
-        return self._batched
+    def batch_dims(self) -> tuple[int, ...]:
+        return self._batch_dims
 
-    @batched.setter
-    def batched(self, value: bool):
-        self._batched = value
-        if not value:
-            try:
-                value = self.value
-                self.shape = value.shape
-            except:
-                pass
-
-    def _shape_from_value(self, value_shape):
-        if self._shape is None:
-            self._shape = value_shape
-        if not valid_shape(self._shape, value_shape, self.batched):
-            self._shape = value_shape
+    @batch_dims.setter
+    def batch_dims(self, value: tuple[int, ...]):
+        if value is None:
+            value = ()
+        self._batch_dims = value
 
     @property
     def dtype(self) -> Optional[str]:

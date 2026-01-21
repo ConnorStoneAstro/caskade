@@ -65,7 +65,6 @@ class Module(Node):
         "static_params",
         "dynamic_modules",
     )  # These tuples will not be converted to NodeTuple objects
-    graphviz_types = {"module": {"style": "solid", "color": "black", "shape": "ellipse"}}
 
     def __init__(self, name: Optional[str] = None, **kwargs):
         super().__init__(name=name, **kwargs)
@@ -75,6 +74,10 @@ class Module(Node):
         self.node_type = "module"
         self.valid_context = False
         self.clear_state_hooks = set()
+
+    @property
+    def graphviz_style(self):
+        return {"style": "solid", "color": "black", "shape": "ellipse"}
 
     @property
     def all_params(self):
