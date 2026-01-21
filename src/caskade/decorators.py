@@ -51,17 +51,9 @@ def forward(method):
         if self.active:
             with ExitStack() as stack:
                 # User override of parameters for single function call
-                used_kwargs = []
-                for cname, cval in self.children.items():
-                    if not isinstance(cval, Param):
-                        continue
-                    for kwarg, kval in kwargs.items():
-                        if kwarg == cname:
-                            stack.enter_context(OverrideParam(cval, kval))
-                            used_kwargs.append(kwarg)
-                # Remove used kwargs from kwargs
-                for kwarg in used_kwargs:
-                    kwargs.pop(kwarg)
+                for kwarg, kval in kwargs.items():
+                    if kwarg in self.children and isinstance(self.children[kwarg], Param):
+                        stack.enter_context(OverrideParam(self.children[kwarg], kval))
                 kwargs = {**self.fill_kwargs(method_params), **kwargs}
                 return method(self, *args, **kwargs)
 
@@ -98,6 +90,7 @@ def forward(method):
                 return method(self, *args, **kwargs)
 
     return wrapped
+
 
 def active_cache(method):
     """

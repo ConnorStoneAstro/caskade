@@ -3,12 +3,14 @@ import numpy as np
 
 from caskade import (
     Param,
+    Module,
     ActiveStateError,
     ParamConfigurationError,
     ParamTypeError,
     GraphError,
     InvalidValueWarning,
     LinkToAttributeError,
+    ActiveContext,
     backend,
 )
 
@@ -208,6 +210,18 @@ def test_value_setter():
         p.to_static(1.0)
     with pytest.raises(ActiveStateError):
         p.to_pointer(lambda p: p.other.value)
+
+
+def test_static_none_value():
+    p = Param("test", None, dynamic=False)
+    m = Module()
+    m.p = p
+    assert p.static
+    assert p.value is None
+    with ActiveContext(m):
+        p.value = 1.0  # should work since static value being set live in sim
+        assert p.value == 1.0
+    assert p.value is None
 
 
 def test_param_shape():
