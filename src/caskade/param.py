@@ -127,6 +127,19 @@ class Param(Node):
         return "static" in self.node_type
 
     @property
+    def graphviz_style(self):
+        if self.pointer:
+            return {"style": "filled", "color": "lightgrey", "shape": "rarrow"}
+        elif self.dynamic:
+            return {"style": "solid", "color": "black", "shape": "box3d" if self.batched else "box"}
+        elif self.static:
+            return {
+                "style": "filled",
+                "color": "lightgrey",
+                "shape": "box3d" if self.batched else "box",
+            }
+
+    @property
     def node_type(self):
         return self._node_type
 
