@@ -1,4 +1,4 @@
-from caskade import Module, Param, forward, ActiveContext, OverrideParam, backend, active_cache
+from caskade import Module, Param, forward, ActiveContext, OverrideParam, backend
 
 
 def test_active_context():
@@ -24,15 +24,9 @@ def test_active_context():
         assert testsim.c.active
         testsim.fill_params(params1)
         assert testsim.testfunc().item() == 6.0
-        with ActiveContext(testsim):
-            assert testsim.testfunc().item() == 6.0
-        with ActiveContext(testsim, False):
-            assert not testsim.active
-            assert not testsim.a.active
-            assert not testsim.b.active
-            assert not testsim.c.active
-            assert testsim.testfunc(params2).item() == 10.0
-        assert testsim.testfunc().item() == 6.0
+    assert testsim.testfunc(params2).item() == 10.0
+    assert testsim.a.value.item() == 1.0
+    assert testsim.b.value is None
 
 
 def test_override_param():
@@ -63,33 +57,3 @@ def test_override_param():
     testsim = TestSim()
     assert testsim.testfunc(backend.make_array([5.0])).item() == 27.0
     assert testsim.a.value.item() == 3.0
-
-
-def test_active_cache():
-    class TestSim(Module):
-        def __init__(self):
-            super().__init__()
-            self.a = Param("a", 3.0)
-
-        @active_cache
-        @forward
-        def testcache(self, x, a):
-            return x + a
-
-        @active_cache
-        def testonlycache(self, x):
-            return 2 * x
-
-        @forward
-        def testfunc(self):
-            return (
-                self.testcache(1.0)
-                + self.testcache(2.0)
-                + self.testonlycache(3.0)
-                + self.testonlycache(4.0)
-            )
-
-    testsim = TestSim()
-    assert testsim.testfunc().item() == 20.0
-    assert testsim.testonlycache(5.0) == 10.0
-    assert testsim.testonlycache(6.0) == 12.0

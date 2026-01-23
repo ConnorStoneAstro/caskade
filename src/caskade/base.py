@@ -80,6 +80,7 @@ class Node:
         self._parents = set()
         self._subgraphs = set()
         self._active = False
+        self._memo = None
         self.node_type = "node"
         self.description = description
         self.meta = meta()
@@ -267,6 +268,25 @@ class Node:
             if child in self.subgraphs:
                 continue
             child.active = value
+
+    @property
+    def memo(self):
+        return self._memo
+
+    @memo.setter
+    def memo(self, memo):
+        # Avoid unnecessary updates
+        if self._memo is memo:
+            return
+
+        # Set self active level
+        self._memo = memo
+
+        # Propagate active level to children
+        for child in self.children.values():
+            if child in self.subgraphs:
+                continue
+            child.memo = memo
 
     def to(self, device=None, dtype=None):
         """
@@ -555,3 +575,15 @@ class Node:
         if key in self.children:
             self._unlink(key)
         super().__delattr__(key)
+
+
+class Memo:
+    def __init__(self, node: Node, memo):
+        self.node = node
+        self.memo = memo
+
+    def __enter__(self):
+        self.node.memo = self.memo
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.node.memo = None

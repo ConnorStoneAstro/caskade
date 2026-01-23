@@ -167,7 +167,7 @@ def test_value_setter():
     other = Param("other", 2.0)
     p.value = other
     assert p.node_type == "pointer"
-    assert p.shape == other.shape
+    assert p.shape is None
     p.to_pointer()
     p.to_static()
     assert p.value.item() == 2.0
@@ -234,13 +234,11 @@ def test_param_shape():
     p.value = np.ones((3, 2))
 
     with pytest.raises(ValueError):
-        p.shape = (2,)
-    p.batched = True
+        p.shape = (3,)
     p.shape = (2,)
     assert p.batch_shape == (3,)
 
     p.value = lambda p: p.other.value
-    p.batched = False
     assert p.shape is None
 
 

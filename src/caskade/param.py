@@ -1,4 +1,4 @@
-from typing import Optional, Union, Callable, Any
+from typing import Optional, Union, Callable, Any, Iterable
 from warnings import warn
 from math import prod
 
@@ -100,6 +100,7 @@ class Param(Node):
         self._node_type = "node"
         super().__init__(name=name, **kwargs)
         self._shape = None
+        self._batch_shape = None
         self._value = None
         self.__value = None
         self._valid = (None, None)
@@ -108,12 +109,12 @@ class Param(Node):
         self._device = device
         self._cyclic = cyclic
 
+        self.shape = shape
         if dynamic or (dynamic is None and value is None):
             self.to_dynamic()
         else:
             self.to_static()
         self.value = value
-        self.shape = shape
         self.group = group
         self.valid = valid
         self.units = units
@@ -173,9 +174,10 @@ class Param(Node):
 
         if value is not None:
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
-            assert valid_shape(
-                self._shape, tuple(value.shape)
-            ), f"Value shape {value.shape} does not match param shape {self._shape} ({self.name})"
+            if not valid_shape(self._shape, tuple(value.shape)):
+                raise ParamConfigurationError(
+                    f"Value shape {value.shape} does not match param shape {self._shape} ({self.name})"
+                )
         self.__value = value
         self.node_type = "dynamic"
         self.is_valid()
@@ -202,9 +204,10 @@ class Param(Node):
 
         if value is not None:
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
-            assert valid_shape(
-                self._shape, tuple(value.shape)
-            ), f"Value shape {value.shape} does not match param shape {self._shape} ({self.name})"
+            if not valid_shape(self._shape, tuple(value.shape)):
+                raise ParamConfigurationError(
+                    f"Value shape {value.shape} does not match param shape {self._shape} ({self.name})"
+                )
 
         self.__value = value
         self.is_valid()
@@ -244,25 +247,27 @@ class Param(Node):
 
     @property
     def shape(self) -> Optional[tuple[int, ...]]:
+        if self.pointer:
+            return None
         if self._shape is not None:
             return self._shape
-        try:
-            value = self.value
-        except:
-            value = None
+        value = self.value
         if value is not None:
             return tuple(value.shape)
         return ()
 
     @shape.setter
-    def shape(self, shape):
+    def shape(self, shape: Optional[Iterable]):
         if self.pointer:
             raise ParamTypeError(f"Cannot set shape of parameter {self.name} with type 'pointer'")
         if shape is None:
             self._shape = None
             return
         value = self.value
-        shape = tuple(shape)
+        try:
+            shape = tuple(shape)
+        except TypeError:
+            raise ParamConfigurationError(f"Param shape must be iterable of ints ({self.name})")
         if value is None or valid_shape(shape, tuple(value.shape)):
             self._shape = shape
             return

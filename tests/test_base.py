@@ -169,6 +169,7 @@ def test_subgraph():
     node1 = Node("node1")
     node2 = Node("node2")
     node3 = Node("node3")
+    node1.link((node2, node3))
 
     node4 = Node("node4")
     node5 = Node("node5")
@@ -180,6 +181,5 @@ def test_subgraph():
     node6.link(node7)
 
     node1.hierarchical_link("node4", node4)
-    node1.link((node2, node3))
 
     graph = node1.graphviz(saveto="testsubgraph.pdf")

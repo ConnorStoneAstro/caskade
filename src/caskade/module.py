@@ -2,7 +2,7 @@ from typing import Sequence, Mapping, Optional, Union, Any
 from math import prod
 
 from .backend import backend, ArrayLike
-from .base import Node
+from .base import Node, Memo
 from .param import Param
 from .collection import NodeTuple, NodeList
 from .errors import (
@@ -164,7 +164,7 @@ class Module(Node):
     def _set_values_dict(self, node, params, params_list, attribute="_value"):
         for key in params:
             if key in node.children and isinstance(params[key], dict):
-                self._set_values_dict(node[key], params[key], attribute=attribute)
+                self._set_values_dict(node[key], params[key], params_list, attribute=attribute)
             elif key in node.children and isinstance(node[key], Param):
                 setattr(node[key], attribute, params[key])
             elif key in node.children:
@@ -212,7 +212,7 @@ class Module(Node):
                     raise ParamConfigurationError(
                         f"Param {param.name} has no shape. Parameters must have a shape to use {backend.array_type.__name__} input."
                     )
-                if param.active:
+                if param.memo:
                     shape = param.shape
                 else:
                     shape = param.batch_shape + param.shape
@@ -268,16 +268,17 @@ class Module(Node):
 
         param_list = self.dynamic_params if dynamic else self.static_params
 
-        if len(self.dynamic_param_groups) > 1:
-            for group, params_g in zip(self.dynamic_param_groups, params):
-                param_list_g = tuple(p for p in param_list if p.group == group)
+        with Memo(self, True):
+            if len(self.dynamic_param_groups) > 1:
+                for group, params_g in zip(self.dynamic_param_groups, params):
+                    param_list_g = tuple(p for p in param_list if p.group == group)
+                    if self.valid_context:
+                        params_g = self.from_valid(params_g, param_list_g)
+                    self._set_values(params_g, param_list_g, attribute="_value")
+            else:
                 if self.valid_context:
-                    params_g = self.from_valid(params_g, param_list_g)
-                self._set_values(params_g, param_list_g, attribute="_value")
-        else:
-            if self.valid_context:
-                params = self.from_valid(params, param_list)
-            self._set_values(params, param_list, attribute="_value")
+                    params = self.from_valid(params, param_list)
+                self._set_values(params, param_list, attribute="_value")
 
     def clear_state(self):
         """Clear the active state `_value` for all params if this Module.
@@ -314,9 +315,7 @@ class Module(Node):
 
         param_list = self.dynamic_params if dynamic else self.static_params
 
-        try:
-            self.active = True
-
+        with Memo(self, True):
             if len(self.dynamic_param_groups) > 1:
                 for group, params_g in zip(self.dynamic_param_groups, params):
                     param_list_g = tuple(p for p in param_list if p.group == group)
@@ -327,8 +326,6 @@ class Module(Node):
                 if self.valid_context:
                     params = self.from_valid(params, param_list)
                 self._set_values(params, param_list, attribute=attribute)
-        finally:
-            self.active = False
 
     def _check_values(self, param_list, scheme):
         """Check if all dynamic values are set."""
@@ -357,19 +354,16 @@ class Module(Node):
         self._check_values(param_list, scheme)
         x = []
         if scheme.lower() in ["array", "tensor"]:
-            try:
-                self.active = True
+            with Memo(self, True):
                 for param in param_list:
-                    if param.active:
+                    if param.memo:
                         B = param.batch_shape
                     else:
                         B = ()
                     x.append(getattr(param, attribute).reshape(B + (-1,)))
-            finally:
-                self.active = False
             if len(x) == 0:
                 return backend.make_array([])
-            x = backend.detach(backend.broadcast_cat(x, axis=-1))
+            x = backend.detach(backend.broadcast_cat(x, dim=-1))
         elif scheme.lower() == "list":
             for param in param_list:
                 x.append(getattr(param, attribute))
@@ -420,8 +414,9 @@ class Module(Node):
             trans_params = {}
             for key in init_params:
                 if key in self.children and isinstance(self[key], Module):
+                    sublist = tuple(p for p in param_list if p in self[key].children.values())
                     trans_params[key] = self[key]._transform_params(
-                        init_params[key], transform_attr
+                        init_params[key], sublist, transform_attr
                     )
                 elif key in self.children and isinstance(self[key], Param):
                     trans_params[key] = getattr(self[key], transform_attr)(init_params[key])

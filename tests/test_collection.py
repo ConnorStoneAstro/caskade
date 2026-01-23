@@ -254,5 +254,6 @@ def test_collection_fill(node_type):
 
     NL[1].value = None
     NL[1].shape = None
-    with pytest.raises(ParamConfigurationError):
-        NL.set_values(backend.as_array([7, 8, 9]))
+    NL.set_values(backend.as_array([7, 8, 9]))
+    with pytest.raises(FillParamsArrayError):
+        NL.set_values(backend.as_array([7, 8]))
