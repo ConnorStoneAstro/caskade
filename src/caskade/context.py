@@ -1,5 +1,6 @@
 from .module import Module
 from .param import Param
+from .errors import ActiveStateError
 
 
 class ActiveContext:
@@ -8,24 +9,20 @@ class ActiveContext:
     ActiveContext is it possible to fill/clear the dynamic and live parameters.
     """
 
-    def __init__(self, module: Module, active: bool = True):
+    def __init__(self, module: Module):
         self.module = module
-        self.active = active
 
     def __enter__(self):
-        self.outer_active = self.module.active
-        if self.outer_active and not self.active:
-            self.state = list(p._value for p in self.module.all_params)
-            self.module.clear_state()
-        self.module.active = self.active
+        if self.module.active:
+            raise ActiveStateError(f"Module '{self.module.name}' is already active")
+        self.state = list(p._value for p in self.module.all_params)
+        self.module.active = True
 
     def __exit__(self, exc_type, exc_value, traceback):
-        if not self.outer_active and self.active:
-            self.module.clear_state()
-        self.module.active = self.outer_active
-        if self.outer_active and not self.active:
-            for p, s in zip(self.module.all_params, self.state):
-                p._value = s
+        self.module.clear_state()
+        self.module.active = False
+        for p, s in zip(self.module.all_params, self.state):
+            p._value = s
 
 
 class ValidContext:

@@ -2,15 +2,17 @@ import os
 from typing import Optional, Union, Any
 from warnings import warn
 from operator import attrgetter
+import keyword
 
 try:
     import h5py
 except ImportError:
     h5py = None
 
-from .backend import backend
-from .errors import GraphError, NodeConfigurationError, LinkToAttributeError, BackendError
+from .errors import GraphError, NodeConfigurationError, LinkToAttributeError
 from .warnings import SaveStateWarning
+
+__all__ = ("Node",)
 
 
 def attrsetter(obj, attr, value):
@@ -22,6 +24,10 @@ def attrsetter(obj, attr, value):
         attrsetter(getattr(obj, parts[0]), parts[1], value)
     else:
         setattr(obj, attr, value)
+
+
+def is_valid_name(name):
+    return name.isidentifier() and not keyword.iskeyword(name)
 
 
 class meta:
@@ -65,11 +71,14 @@ class Node:
             name = self.__class__.__name__
         if not isinstance(name, str):
             raise NodeConfigurationError(f"{self.__class__.__name__} name must be a string")
-        if "|" in name:
-            raise NodeConfigurationError(f"{self.__class__.__name__} cannot contain '|'")
+        if not is_valid_name(name):
+            raise NodeConfigurationError(
+                f"{self.__class__.__name__} name is invalid: '{name}'. Must be a valid Python identifier and not a reserved keyword."
+            )
         self._name = name
         self._children = {}
         self._parents = set()
+        self._subgraphs = set()
         self._active = False
         self.node_type = "node"
         self.description = description
@@ -89,6 +98,10 @@ class Node:
     @property
     def parents(self) -> set["Node"]:
         return self._parents
+
+    @property
+    def subgraphs(self) -> set["Node"]:
+        return self._subgraphs
 
     def _link(self, key: str, child: "Node"):
         if self.active:
@@ -115,7 +128,11 @@ class Node:
         child.parents.add(self)
         self.update_graph()
 
-    def link(self, key: Union[str, tuple, "Node"], child: Optional[Union["Node", tuple]] = None):
+    def link(
+        self,
+        key: Union[str, tuple, "Node"],
+        child: Optional[Union["Node", tuple]] = None,
+    ):
         """Link the current ``Node`` object to another ``Node`` object as a child.
 
         Parameters
@@ -156,13 +173,34 @@ class Node:
         if child is None:
             child = key
             key = child.name
+
+        if not is_valid_name(key):
+            raise NodeConfigurationError(
+                f"key is invalid: '{key}'. Must be a valid Python identifier and not a reserved keyword."
+            )
         self.__setattr__(key, child)
+
+    def hierarchical_link(self, key: str, child: "Node"):
+        """Link the current ``Node`` object to another ``Node`` object as a child
+        in a hierarchical manner.
+
+        Parameters
+        ----------
+        key: (str)
+            The key to link the child node with.
+        child: (Node)
+            The child ``Node`` object to link to.
+        """
+
+        self.link(key, child)
+        self._subgraphs.add(child)
 
     def _unlink(self, key: str):
         if self.active:
             raise GraphError(f"Cannot link/unlink nodes while the graph is active ({self.name})")
         self.children[key].parents.remove(self)
         self.children[key].update_graph()
+        self._subgraphs.discard(self.children[key])
         del self.children[key]
         self.update_graph()
 
@@ -226,6 +264,8 @@ class Node:
 
         # Propagate active level to children
         for child in self.children.values():
+            if child in self.subgraphs:
+                continue
             child.active = value
 
     def to(self, device=None, dtype=None):
@@ -414,7 +454,7 @@ class Node:
     def graphviz_style(self):
         return {"style": "solid", "color": "black", "shape": "circle"}
 
-    def graphviz(self, top_down: bool = True, saveto: Optional[str] = None) -> "graphviz.Digraph":
+    def graphviz(self, saveto: Optional[str] = None) -> "graphviz.Digraph":
         """Return a graphviz object representing the graph below the current
         node in the DAG.
 
@@ -432,21 +472,31 @@ class Node:
         components = set()
 
         def add_node(node: Node, dot):
-            if node in components:
+            if node in components or node.active:
                 return
             dot.attr("node", **node.graphviz_style)
             dot.node(str(id(node)), repr(node))
             components.add(node)
 
             for child in node.children.values():
-                add_node(child, dot)
-                if top_down:
-                    dot.edge(str(id(node)), str(id(child)))
+                if child in node.subgraphs:
+                    try:
+                        self.active = True
+                        with dot.subgraph(name=f"cluster_{id(child)}") as subdot:
+                            add_node(child, subdot)
+                    finally:
+                        self.active = False
                 else:
-                    dot.edge(str(id(child)), str(id(node)))
+                    add_node(child, dot)
+
+        def add_edges(node: Node, dot):
+            for child in node.children.values():
+                dot.edge(str(id(node)), str(id(child)))
+                add_edges(child, dot)
 
         dot = graphviz.Digraph(strict=True)
         add_node(self, dot)
+        add_edges(self, dot)
         if saveto is not None:
             filename, ext = os.path.splitext(saveto)
             dot.render(graphviz.escape(filename), format=ext.lstrip("."), cleanup=True)

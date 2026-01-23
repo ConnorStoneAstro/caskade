@@ -112,8 +112,7 @@ def test_topological_ordering():
 
 
 @pytest.mark.parametrize("linkbyname", [True, False])
-@pytest.mark.parametrize("graphviz_order", [True, False])
-def test_active(linkbyname, graphviz_order):
+def test_active(linkbyname):
     node1 = Node("node1")
     node2 = Node("node2")
     node3 = Node("node3")
@@ -158,13 +157,29 @@ def test_active(linkbyname, graphviz_order):
     assert node5.active == False
     assert node6.active == False
 
-    graph = node1.graphviz(graphviz_order)
+    graph = node1.graphviz()
     assert graph is not None, "should return a graphviz object"
 
-    node1.graphviz(graphviz_order, "testgraph.png")
+    node1.graphviz("testgraph.png")
     assert os.path.exists("testgraph.png")
     os.remove("testgraph.png")
 
 
-def test_test():
-    test()
+def test_subgraph():
+    node1 = Node("node1")
+    node2 = Node("node2")
+    node3 = Node("node3")
+
+    node4 = Node("node4")
+    node5 = Node("node5")
+    node6 = Node("node6")
+    node4.link((node5, node6))
+
+    node3.link(node6)
+    node7 = Node("node7")
+    node6.link(node7)
+
+    node1.hierarchical_link("node4", node4)
+    node1.link((node2, node3))
+
+    graph = node1.graphviz(saveto="testsubgraph.pdf")

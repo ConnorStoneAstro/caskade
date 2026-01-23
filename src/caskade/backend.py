@@ -4,6 +4,7 @@ from typing import Annotated
 
 from torch import Tensor
 import numpy as np
+from . import utils
 
 ArrayLike = Annotated[
     Tensor,
@@ -43,6 +44,7 @@ class Backend:
         self.make_array = self._make_array_torch
         self._array_type = self._array_type_torch
         self.concatenate = self._concatenate_torch
+        self.broadcast_cat = utils.broadcast_cat_torch
         self.tolist = self._tolist_torch
         self.view = self._view_torch
         self.detach = self._detach_torch
@@ -57,6 +59,7 @@ class Backend:
         self.make_array = self._make_array_jax
         self._array_type = self._array_type_jax
         self.concatenate = self._concatenate_jax
+        self.broadcast_cat = utils.broadcast_cat_jax
         self.tolist = self._tolist_jax
         self.view = self._view_jax
         self.detach = self._detach_jax
@@ -70,6 +73,7 @@ class Backend:
         self.make_array = self._make_array_numpy
         self._array_type = self._array_type_numpy
         self.concatenate = self._concatenate_numpy
+        self.broadcast_cat = utils.broadcast_cat_numpy
         self.tolist = self._tolist_numpy
         self.view = self._view_numpy
         self.detach = self._detach_numpy
