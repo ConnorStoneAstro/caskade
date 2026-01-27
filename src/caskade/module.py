@@ -95,6 +95,13 @@ class Module(Node):
         self.child_dynamic_params = dict(
             (k, p) for k, p in self.children.items() if isinstance(p, Param) and p.dynamic
         )
+        self.subgraph_kwargs = []
+        if self.subgraphs:
+            for key, child in self.children.items():
+                if child in self.subgraphs:
+                    self.subgraph_kwargs.append(f"{key}_params")
+                    self.subgraph_kwargs.append(f"{key}_dims")
+        self.subgraph_kwargs = tuple(self.subgraph_kwargs)
         super().update_graph()
 
     def param_order(self):
@@ -295,7 +302,14 @@ class Module(Node):
         """
         kwargs = {}
         for key in keys:
-            if key in self.children and isinstance(self[key], Param):
+            if key in self.subgraph_kwargs:
+                if key.endswith("_params"):
+                    kwargs[key] = self[key[:-7]].get_values("list")
+                else:
+                    kwargs[key] = tuple(
+                        0 if p.batched else None for p in self[key[:-5]].dynamic_params
+                    )
+            elif key in self.children and isinstance(self[key], Param):
                 val = self.children[key].value
                 if val is None:
                     raise FillParamsError(
