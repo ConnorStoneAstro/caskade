@@ -36,9 +36,6 @@ def test_module_methods():
     with pytest.raises(ActiveStateError):
         m1.fill_params([1.0, 2.0, 3.0])
 
-    with pytest.raises(ActiveStateError):
-        m1.clear_state()
-
 
 def test_module_delattr():
     class TestModule(Module):
@@ -177,9 +174,8 @@ def test_dynamic_value():
 
     # Check active state error
     with pytest.raises(ActiveStateError):
-        main1.active = True
-        main1.set_values(p0)
-    main1.active = False
+        with ActiveContext(main1):
+            main1.set_values(p0)
 
     # Check invalid dynamic value
     with pytest.warns(InvalidValueWarning):
@@ -222,26 +218,25 @@ def test_batched_build_params_array():
     M.p2 = Param("p2")
 
     M.p1.to_dynamic([1.0, 2.0])
-    M.p1.batched = True
     M.p1.shape = ()
     M.p2.to_dynamic([3.0, 4.0])
-    M.p2.batched = True
     M.p2.shape = ()
 
     a = M.get_values("array")
     assert a.shape == (2, 2)
 
-    with pytest.raises(ParamConfigurationError):
-        M.p1.to_dynamic([1.0, 2.0])
-        M.p1.shape = (2,)
-        M.p2.to_dynamic([3.0, 4.0])
-        M.p2.shape = ()
-        M.get_values("array")
-    with pytest.raises(ParamConfigurationError):
+    M.p1.to_dynamic([1.0, 2.0])
+    M.p1.shape = (2,)
+    M.p2.to_dynamic([3.0, 4.0])
+    M.p2.shape = ()
+    a = M.get_values("array")
+    assert a.shape == (2, 3)
+
+    with pytest.raises(RuntimeError):
         M.p1.to_dynamic([1.0, 2.0])
         M.p1.shape = ()
-        M.p2.to_dynamic([1.0, 2.0])
-        M.p2.shape = (2,)
+        M.p2.to_dynamic([1.0, 2.0, 3.0])
+        M.p2.shape = ()
         M.get_values("array")
 
 

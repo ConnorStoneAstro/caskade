@@ -69,6 +69,7 @@ class Module(Node):
     def __init__(self, name: Optional[str] = None, **kwargs):
         self.dynamic_params = ()
         self.pointer_params = ()
+        self.static_params = ()
         self.child_dynamic_params = {}
         self.dynamic_param_groups = ()
         super().__init__(name=name, **kwargs)
@@ -168,7 +169,7 @@ class Module(Node):
             elif key in node.children and isinstance(node[key], Param):
                 setattr(node[key], attribute, params[key])
             elif key in node.children:
-                sublist = tuple(p for p in params_list if p in node[key].children.values())
+                sublist = tuple(p for p in params_list if p in node[key].all_params)
                 node[key]._set_values(params[key], sublist, attribute=attribute)
             else:
                 raise FillParamsMappingError(self.name, self.children, missing_key=key)
@@ -212,7 +213,7 @@ class Module(Node):
                     raise ParamConfigurationError(
                         f"Param {param.name} has no shape. Parameters must have a shape to use {backend.array_type.__name__} input."
                     )
-                if param.memo:
+                if param.online:
                     shape = param.shape
                 else:
                     shape = param.batch_shape + param.shape
@@ -268,22 +269,20 @@ class Module(Node):
 
         param_list = self.dynamic_params if dynamic else self.static_params
 
-        with Memo(self, True):
-            if len(self.dynamic_param_groups) > 1:
-                for group, params_g in zip(self.dynamic_param_groups, params):
-                    param_list_g = tuple(p for p in param_list if p.group == group)
-                    if self.valid_context:
-                        params_g = self.from_valid(params_g, param_list_g)
-                    self._set_values(params_g, param_list_g, attribute="_value")
-            else:
+        if len(self.dynamic_param_groups) > 1:
+            for group, params_g in zip(self.dynamic_param_groups, params):
+                param_list_g = tuple(p for p in param_list if p.group == group)
                 if self.valid_context:
-                    params = self.from_valid(params, param_list)
-                self._set_values(params, param_list, attribute="_value")
+                    params_g = self.from_valid(params_g, param_list_g)
+                self._set_values(params_g, param_list_g, attribute="_value")
+        else:
+            if self.valid_context:
+                params = self.from_valid(params, param_list)
+            self._set_values(params, param_list, attribute="_value")
 
     def clear_state(self):
         """Clear the active state `_value` for all params if this Module.
-        This is to be used on exiting an ``ActiveContext`` and so should not be
-        used by a user."""
+        This should not be used by a user under normal circumstances."""
 
         for param in self.all_params:
             param._value = None
@@ -315,7 +314,7 @@ class Module(Node):
 
         param_list = self.dynamic_params if dynamic else self.static_params
 
-        with Memo(self, True):
+        with Memo(self, "semi_active"):
             if len(self.dynamic_param_groups) > 1:
                 for group, params_g in zip(self.dynamic_param_groups, params):
                     param_list_g = tuple(p for p in param_list if p.group == group)
@@ -354,9 +353,9 @@ class Module(Node):
         self._check_values(param_list, scheme)
         x = []
         if scheme.lower() in ["array", "tensor"]:
-            with Memo(self, True):
+            with Memo(self, "semi_active"):
                 for param in param_list:
-                    if param.memo:
+                    if param.online:
                         B = param.batch_shape
                     else:
                         B = ()
@@ -386,6 +385,8 @@ class Module(Node):
                 params[link] = child._recursive_build_params_dict(
                     unique_params=unique_params, param_list=param_list, attribute=attribute
                 )
+                if len(params[link]) == 0:
+                    del params[link]
         return params
 
     def _transform_params(self, init_params, param_list, transform_attr):

@@ -247,8 +247,6 @@ class Param(Node):
 
     @property
     def shape(self) -> Optional[tuple[int, ...]]:
-        if self.pointer:
-            return None
         if self._shape is not None:
             return self._shape
         value = self.value
@@ -397,12 +395,17 @@ class Param(Node):
     def _save_state_hdf5(self, h5group, appendable: bool = False, _done_save: set = None):
         super()._save_state_hdf5(h5group, appendable=appendable, _done_save=_done_save)
         if "value" not in self._h5group:
-            if self.value is None:
+            try:
+                value = self.value
+            except:
+                value = None
+
+            if value is None:
                 value = "None"
             elif appendable:
-                value = backend.to_numpy(self.value.reshape(1, *self.value.shape))
+                value = backend.to_numpy(value.reshape(1, *value.shape))
             else:
-                value = backend.to_numpy(self.value)
+                value = backend.to_numpy(value)
             if appendable:
                 self._h5group.create_dataset(
                     "value",

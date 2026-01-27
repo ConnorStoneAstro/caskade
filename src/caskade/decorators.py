@@ -48,7 +48,7 @@ def forward(method):
 
     @functools.wraps(method)
     def wrapped(self, *args, **kwargs):
-        if self.active:
+        if self.online:
             with ExitStack() as stack:
                 # User override of parameters for single function call
                 for kwarg, kval in kwargs.items():

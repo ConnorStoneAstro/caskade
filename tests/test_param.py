@@ -38,12 +38,15 @@ def test_param_creation():
     assert p33v3.value.shape == (3, 2, 1)
 
     # Cant update value when active
+    M = Module("M")
+    M.p3 = p3
+    M.p33 = p33
     with pytest.raises(ActiveStateError):
-        p3.active = True
-        p3.value = 1.0
+        with ActiveContext(M):
+            p3.value = 1.0
     with pytest.raises(ActiveStateError):
-        p33.active = True
-        p33.to_dynamic(1.0)
+        with ActiveContext(M):
+            p33.to_dynamic(1.0)
 
     # Missmatch value and shape
     with pytest.raises(ParamConfigurationError):
@@ -167,7 +170,7 @@ def test_value_setter():
     other = Param("other", 2.0)
     p.value = other
     assert p.node_type == "pointer"
-    assert p.shape is None
+    assert p.shape == ()
     p.to_pointer()
     p.to_static()
     assert p.value.item() == 2.0
@@ -203,13 +206,15 @@ def test_value_setter():
         p.to_static(lambda p: p.other.value)
 
     # Cannot update while active
-    p.active = True
-    with pytest.raises(ActiveStateError):
-        p.to_dynamic(1.0)
-    with pytest.raises(ActiveStateError):
-        p.to_static(1.0)
-    with pytest.raises(ActiveStateError):
-        p.to_pointer(lambda p: p.other.value)
+    M = Module("M")
+    M.p = p
+    with ActiveContext(M):
+        with pytest.raises(ActiveStateError):
+            p.to_dynamic(1.0)
+        with pytest.raises(ActiveStateError):
+            p.to_static(1.0)
+        with pytest.raises(ActiveStateError):
+            p.to_pointer(lambda p: p.other.value)
 
 
 def test_static_none_value():
@@ -239,7 +244,8 @@ def test_param_shape():
     assert p.batch_shape == (3,)
 
     p.value = lambda p: p.other.value
-    assert p.shape is None
+    p.link("other", Param("other"))
+    assert p.shape == ()
 
 
 def test_to_dynamic_static():

@@ -1,6 +1,6 @@
 import os
 
-from caskade import Node, test, GraphError, NodeConfigurationError
+from caskade import Node, test, GraphError, NodeConfigurationError, Memo
 
 import pytest
 
@@ -10,7 +10,7 @@ def test_creation():
     assert node._name == "test"
     assert node._children == {}
     assert node._parents == set()
-    assert node._active == False
+    assert node.active == False
     assert node.node_type == "node"
 
     with pytest.raises(AttributeError):
@@ -21,6 +21,9 @@ def test_creation():
 
     with pytest.raises(NodeConfigurationError):
         node2 = Node("test|test")
+
+    with pytest.raises(NodeConfigurationError):
+        node2 = Node("node 1")
 
 
 def test_link():
@@ -36,12 +39,11 @@ def test_link():
     with pytest.raises(GraphError):
         node1.link("subnode2", node2)
 
-    node1.active = True
-    with pytest.raises(GraphError):
-        node1.link("subnode3", node2)
-    with pytest.raises(GraphError):
-        node1.unlink("subnode")
-    node1.active = False
+    with Memo(node1, "active"):
+        with pytest.raises(GraphError):
+            node1.link("subnode3", node2)
+        with pytest.raises(GraphError):
+            node1.unlink("subnode")
 
     # Make a cycle
     node3 = Node("node3")
@@ -133,23 +135,22 @@ def test_active(linkbyname):
         node2.link(node5)
         node3.link(node6)
 
-    node1.active = True
-    assert node1.active == True
-    assert node2.active == True
-    assert node3.active == True
-    assert node4.active == True
-    assert node5.active == True
-    assert node6.active == True
+    with Memo(node1, "active"):
+        assert node1.active == True
+        assert node2.active == True
+        assert node3.active == True
+        assert node4.active == True
+        assert node5.active == True
+        assert node6.active == True
 
-    node2.active = False
-    assert node1.active == True
-    assert node2.active == False
-    assert node3.active == True
-    assert node4.active == False
-    assert node5.active == False
-    assert node6.active == True
+    with Memo(node2, "active"):
+        assert node1.active == False
+        assert node2.active == True
+        assert node3.active == False
+        assert node4.active == True
+        assert node5.active == True
+        assert node6.active == False
 
-    node1.active = False
     assert node1.active == False
     assert node2.active == False
     assert node3.active == False

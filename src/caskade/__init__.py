@@ -1,6 +1,6 @@
 from ._version import version as VERSION  # noqa
 
-from .base import Node
+from .base import Node, Memo
 from .backend import backend, ArrayLike
 from .context import ActiveContext, ValidContext, OverrideParam
 from .decorators import forward
@@ -30,6 +30,7 @@ __author__ = "Connor Stone and Alexandre Adam"
 
 __all__ = (
     "Node",
+    "Memo",
     "backend",
     "ArrayLike",
     "Module",

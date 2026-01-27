@@ -13,16 +13,23 @@ class ActiveContext:
         self.module = module
 
     def __enter__(self):
+        if self.module.online:
+            raise ActiveStateError(f"Module '{self.module.name}' is already running a simulation")
         if self.module.active:
-            raise ActiveStateError(f"Module '{self.module.name}' is already active")
-        self.state = list(p._value for p in self.module.all_params)
-        self.module.active = True
+            self.state = list(p._value for p in self.module.all_params)
+        else:
+            self.state = None
+            self.module.add_memo("active", skip_subgraphs=False)
+        self.module.add_memo(f"{self.module.name}_active")
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.module.clear_state()
-        self.module.active = False
-        for p, s in zip(self.module.all_params, self.state):
-            p._value = s
+        self.module.remove_memo(f"{self.module.name}_active")
+        if self.state is not None:
+            for p, s in zip(self.module.all_params, self.state):
+                p._value = s
+        else:
+            self.module.remove_memo("active", skip_subgraphs=False)
 
 
 class ValidContext:

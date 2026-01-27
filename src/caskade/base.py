@@ -79,8 +79,7 @@ class Node:
         self._children = {}
         self._parents = set()
         self._subgraphs = set()
-        self._active = False
-        self._memo = None
+        self._memos = set()
         self.node_type = "node"
         self.description = description
         self.meta = meta()
@@ -252,41 +251,29 @@ class Node:
 
     @property
     def active(self) -> bool:
-        return self._active
-
-    @active.setter
-    def active(self, value: bool):
-        # Avoid unnecessary updates
-        if self._active is value:
-            return
-
-        # Set self active level
-        self._active = value
-
-        # Propagate active level to children
-        for child in self.children.values():
-            if child in self.subgraphs:
-                continue
-            child.active = value
+        return "active" in self._memos
 
     @property
-    def memo(self):
-        return self._memo
+    def online(self) -> bool:
+        return any("_active" in memo for memo in self._memos)
 
-    @memo.setter
-    def memo(self, memo):
-        # Avoid unnecessary updates
-        if self._memo is memo:
-            return
+    def add_memo(self, memo, skip_subgraphs=True):
+        self._memos.add(memo)
 
-        # Set self active level
-        self._memo = memo
-
-        # Propagate active level to children
+        # Propagate memo to children
         for child in self.children.values():
-            if child in self.subgraphs:
+            if skip_subgraphs and child in self.subgraphs:
                 continue
-            child.memo = memo
+            child.add_memo(memo, skip_subgraphs)
+
+    def remove_memo(self, memo, skip_subgraphs=True):
+        self._memos.discard(memo)
+
+        # Propagate removal to children
+        for child in self.children.values():
+            if skip_subgraphs and child in self.subgraphs:
+                continue
+            child.remove_memo(memo, skip_subgraphs)
 
     def to(self, device=None, dtype=None):
         """
@@ -492,7 +479,7 @@ class Node:
         components = set()
 
         def add_node(node: Node, dot):
-            if node in components or node.active:
+            if node in components or node.online:
                 return
             dot.attr("node", **node.graphviz_style)
             dot.node(str(id(node)), repr(node))
@@ -500,12 +487,9 @@ class Node:
 
             for child in node.children.values():
                 if child in node.subgraphs:
-                    try:
-                        self.active = True
+                    with Memo(self, "semi_active"):
                         with dot.subgraph(name=f"cluster_{id(child)}") as subdot:
                             add_node(child, subdot)
-                    finally:
-                        self.active = False
                 else:
                     add_node(child, dot)
 
@@ -578,12 +562,34 @@ class Node:
 
 
 class Memo:
-    def __init__(self, node: Node, memo):
-        self.node = node
+    """
+    Sends a "memo" (a small message) to all nodes below the current one in the
+    graph. This can be used to communicate state changes in the graph with all
+    lower nodes. By default, the message will skip any subgraphs (hierarchical
+    graphs) but this can be changed to ensure all nodes hear the message.
+
+    Note that memos are stored as a python set, so duplicates will be merged.
+    Depending on your use case, it may be wise to ensure that your memo is
+    unique.
+
+    Parameters
+    ----------
+    module: Module
+        The caskade Module object that will propogate the memo
+    memo: str
+        The message to send down the graph
+    skip_subgraphs: bool
+        If True (default) any subgraphs, otherwise known as hierarchical graphs,
+        will not get the memo.
+    """
+
+    def __init__(self, module: Node, memo: str, skip_subgraphs: bool = True):
+        self.module = module
         self.memo = memo
+        self.skip_subgraphs = skip_subgraphs
 
     def __enter__(self):
-        self.node.memo = self.memo
+        self.module.add_memo(self.memo, skip_subgraphs=self.skip_subgraphs)
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.node.memo = None
+        self.module.remove_memo(self.memo, skip_subgraphs=self.skip_subgraphs)
