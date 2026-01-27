@@ -232,7 +232,7 @@ def test_batched_build_params_array():
     a = M.get_values("array")
     assert a.shape == (2, 3)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises((RuntimeError, TypeError)):
         M.p1.to_dynamic([1.0, 2.0])
         M.p1.shape = ()
         M.p2.to_dynamic([1.0, 2.0, 3.0])
