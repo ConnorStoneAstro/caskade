@@ -275,6 +275,10 @@ class Param(Node):
         )
 
     @property
+    def batched(self) -> bool:
+        return self.batch_shape is not None and len(self.batch_shape) > 0
+
+    @property
     def batch_shape(self) -> tuple[int, ...]:
         if self._batch_shape is not None:
             return self._batch_shape

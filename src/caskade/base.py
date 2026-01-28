@@ -192,8 +192,8 @@ class Node:
             The child ``Node`` object to link to.
         """
 
-        self.link(key, child)
         self._subgraphs.add(child)
+        self.link(key, child)
 
     def _unlink(self, key: str):
         if self.active:
@@ -251,29 +251,29 @@ class Node:
 
     @property
     def active(self) -> bool:
-        return "active" in self._memos
+        return any(memo.startswith("active") for memo in self._memos)
 
     @property
     def online(self) -> bool:
-        return any("_active" in memo for memo in self._memos)
+        return any(memo.endswith("_active") for memo in self._memos)
 
-    def add_memo(self, memo, skip_subgraphs=True):
+    @property
+    def memos(self) -> set[str]:
+        return self._memos
+
+    def add_memo(self, memo):
         self._memos.add(memo)
 
         # Propagate memo to children
         for child in self.children.values():
-            if skip_subgraphs and child in self.subgraphs:
-                continue
-            child.add_memo(memo, skip_subgraphs)
+            child.add_memo(memo + (f"|{child.name}" if child in self.subgraphs else ""))
 
-    def remove_memo(self, memo, skip_subgraphs=True):
+    def remove_memo(self, memo):
         self._memos.discard(memo)
 
         # Propagate removal to children
         for child in self.children.values():
-            if skip_subgraphs and child in self.subgraphs:
-                continue
-            child.remove_memo(memo, skip_subgraphs)
+            child.remove_memo(memo + (f"|{child.name}" if child in self.subgraphs else ""))
 
     def to(self, device=None, dtype=None):
         """
@@ -583,13 +583,12 @@ class Memo:
         will not get the memo.
     """
 
-    def __init__(self, module: Node, memo: str, skip_subgraphs: bool = True):
+    def __init__(self, module: Node, memo: str):
         self.module = module
         self.memo = memo
-        self.skip_subgraphs = skip_subgraphs
 
     def __enter__(self):
-        self.module.add_memo(self.memo, skip_subgraphs=self.skip_subgraphs)
+        self.module.add_memo(self.memo)
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.module.remove_memo(self.memo, skip_subgraphs=self.skip_subgraphs)
+        self.module.remove_memo(self.memo)

@@ -223,7 +223,8 @@ class Module(Node):
                 if param.online:
                     shape = param.shape
                 else:
-                    shape = param.batch_shape + param.shape
+                    depth = max(memo.count("|") for memo in param.memos)
+                    shape = param.batch_shape[-depth:] + param.shape
                 # Handle scalar parameters
                 size = max(1, prod(shape))
                 try:
@@ -306,7 +307,7 @@ class Module(Node):
                 if key.endswith("_params"):
                     kwargs[key] = self[key[:-7]].get_values("list")
                 else:
-                    kwargs[key] = tuple(
+                    kwargs[key] = list(
                         0 if p.batched else None for p in self[key[:-5]].dynamic_params
                     )
             elif key in self.children and isinstance(self[key], Param):
@@ -372,7 +373,8 @@ class Module(Node):
                     if param.online:
                         B = param.batch_shape
                     else:
-                        B = ()
+                        depth = max(memo.count("|") for memo in param.memos)
+                        B = param.batch_shape[:-depth]
                     x.append(getattr(param, attribute).reshape(B + (-1,)))
             if len(x) == 0:
                 return backend.make_array([])

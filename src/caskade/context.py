@@ -19,7 +19,7 @@ class ActiveContext:
             self.state = list(p._value for p in self.module.all_params)
         else:
             self.state = None
-            self.module.add_memo("active", skip_subgraphs=False)
+            self.module.add_memo("active")
         self.module.add_memo(f"{self.module.name}_active")
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -29,7 +29,7 @@ class ActiveContext:
             for p, s in zip(self.module.all_params, self.state):
                 p._value = s
         else:
-            self.module.remove_memo("active", skip_subgraphs=False)
+            self.module.remove_memo("active")
 
 
 class ValidContext:
