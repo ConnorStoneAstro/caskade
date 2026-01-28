@@ -77,12 +77,6 @@ class Param(Node):
         inferred from the value.
     """
 
-    graphviz_types = {
-        "static": {"style": "filled", "color": "lightgrey", "shape": "box"},
-        "dynamic": {"style": "solid", "color": "black", "shape": "box"},
-        "pointer": {"style": "filled", "color": "lightgrey", "shape": "rarrow"},
-    }
-
     def __init__(
         self,
         name: str,
@@ -134,11 +128,33 @@ class Param(Node):
     @property
     def graphviz_style(self):
         if self.pointer:
-            return {"style": "filled", "color": "lightgrey", "shape": "rarrow"}
+            return {
+                "style": "filled",
+                "color": "lightgrey",
+                "fillcolor": "lightgrey",
+                "shape": "rarrow",
+            }
         elif self.dynamic:
-            return {"style": "solid", "color": "black", "shape": "box"}
+            return {
+                "style": "solid",
+                "color": "black",
+                "fillcolor": "white",
+                "shape": "box",
+            }
         elif self.static:
-            return {"style": "filled", "color": "lightgrey", "shape": "box"}
+            if self.__value is None:
+                return {
+                    "style": "filled",
+                    "color": "black",
+                    "fillcolor": "grey90",
+                    "shape": "box",
+                }
+            return {
+                "style": "filled",
+                "color": "lightgrey",
+                "fillcolor": "lightgrey",
+                "shape": "box",
+            }
         return super().graphviz_style
 
     @property
@@ -586,13 +602,10 @@ class Param(Node):
         """
         Returns a string representation of the node for graph visualization.
         """
-        if self.pointer:
-            try:
-                value = self.value
-            except:
-                value = None
-        else:
+        try:
             value = self.value
+        except:
+            value = None
         if value is not None:
             value = backend.to_numpy(value)
 
@@ -603,6 +616,8 @@ class Param(Node):
                 return f"{self.name}|{self.node_type}: {value}"
             else:
                 return f"{self.name}|{self.node_type}: {self.shape}"
+        elif self.static:
+            return f"{self.name}|{self.node_type}: live"
         return f"{self.name}|{self.node_type}"
 
     def __repr__(self) -> str:
