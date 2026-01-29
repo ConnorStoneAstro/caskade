@@ -37,9 +37,21 @@ def test_module_graphviz(sim):
     os.remove("test_graph.pdf")
 
 
+def test_module_graphviz_hierarchical(hierarchical_sim):
+    graph = hierarchical_sim.graphviz(saveto="test_graph.pdf")
+    assert graph is not None, "should return a graphviz object"
+    assert os.path.exists("test_graph.pdf")
+    os.remove("test_graph.pdf")
+
+
 def test_module_print(sim):
     result = str(sim)
     assert all(node.name in result for node in sim.topological_ordering())
+
+
+def test_module_print_hierarchical(hierarchical_sim):
+    result = str(hierarchical_sim)
+    assert all(node.name in result for node in hierarchical_sim.topological_ordering())
 
 
 def test_module_methods(sim):
@@ -70,6 +82,7 @@ def test_module_delattr():
 
 @pytest.mark.parametrize("params_type", ["array", "list", "dict"])
 def test_input_methods(sim, params_type):
+    sim.to_dynamic(False)
     p0 = sim.get_values(params_type)
     val = sim.run_sim(10, 11, p0)
     # Check value
@@ -80,6 +93,18 @@ def test_input_methods(sim, params_type):
     sim.to_static(False)
     assert backend.module.allclose(val, sim.run_sim(10, 11))
     assert backend.module.allclose(val, sim.run_sim(10, 11, ()))
+
+
+@pytest.mark.parametrize("params_type", ["array", "list", "dict"])
+def test_input_methods_hierarchical(hierarchical_sim, params_type):
+    sim = hierarchical_sim
+    sim.to_dynamic(False)
+    p0 = sim.get_values(params_type)
+    val = sim.run_sim(10, 11, p0)
+    # Check value
+    assert np.allclose(backend.to_numpy(val), 781.0)
+    # Check last arg vs kwarg
+    assert np.allclose(backend.to_numpy(val), backend.to_numpy(sim.run_sim(10, 11, params=p0)))
 
 
 def nested_double(params):
