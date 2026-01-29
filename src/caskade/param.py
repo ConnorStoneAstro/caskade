@@ -87,6 +87,7 @@ class Param(Node):
         units: Optional[str] = None,
         dynamic: Optional[bool] = None,
         group: int = 0,
+        batch_shape: Optional[tuple[int]] = None,
         dtype: Optional[Any] = None,
         device: Optional[Any] = None,
         **kwargs,
@@ -112,6 +113,7 @@ class Param(Node):
         self.group = group
         self.valid = valid
         self.units = units
+        self.batch_shape = batch_shape
 
     @property
     def dynamic(self) -> bool:
@@ -173,7 +175,7 @@ class Param(Node):
         this will be set as the dynamic value."""
         # While active no value can be set
         if self.active:
-            raise ActiveStateError(f"Cannot set parameter {self.name} to dynamic while active.")
+            raise ActiveStateError(f"Cannot set parameter {self.name} dynamic value while active.")
 
         # Catch cases where input is invalid
         if isinstance(value, Param) or callable(value):
@@ -192,7 +194,7 @@ class Param(Node):
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
             if not valid_shape(self._shape, tuple(value.shape)):
                 raise ParamConfigurationError(
-                    f"Value shape {value.shape} does not match param shape {self._shape} ({self.name})"
+                    f"Value shape {value.shape} does not match param shape {self._shape}! Cannot update value. ({self.name})"
                 )
         self.__value = value
         self.node_type = "dynamic"
@@ -203,7 +205,7 @@ class Param(Node):
         this will be set as the static value."""
         # While active no value can be set
         if self.active:
-            raise ActiveStateError(f"Cannot set parameter {self.name} to static while active.")
+            raise ActiveStateError(f"Cannot set parameter {self.name} static value while active.")
 
         # Catch cases where input is invalid
         if isinstance(value, Param) or callable(value):
@@ -222,7 +224,7 @@ class Param(Node):
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
             if not valid_shape(self._shape, tuple(value.shape)):
                 raise ParamConfigurationError(
-                    f"Value shape {value.shape} does not match param shape {self._shape} ({self.name})"
+                    f"Value shape {value.shape} does not match param shape {self._shape}! Cannot update value. ({self.name})"
                 )
 
         self.__value = value
@@ -273,7 +275,9 @@ class Param(Node):
     @shape.setter
     def shape(self, shape: Optional[Iterable]):
         if self.pointer:
-            raise ParamTypeError(f"Cannot set shape of parameter {self.name} with type 'pointer'")
+            raise ParamTypeError(
+                f"Cannot set shape of parameter {self.name} with node type 'pointer'"
+            )
         if shape is None:
             self._shape = None
             return
@@ -287,7 +291,7 @@ class Param(Node):
             return
 
         raise ValueError(
-            f"Shape {shape} does not match the shape of the value {value.shape}! Setting a value will set the shape automatically."
+            f"Shape {shape} does not match the shape of the value {value.shape}! Unable to set shape. ({self.name})"
         )
 
     @property

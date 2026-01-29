@@ -1,3 +1,4 @@
+import os
 import numpy as np
 
 from caskade import (
@@ -29,12 +30,25 @@ def test_module_creation():
     assert m2.dynamic_params == (p1,)
 
 
-def test_module_methods():
+def test_module_graphviz(sim):
+    graph = sim.graphviz(saveto="test_graph.pdf")
+    assert graph is not None, "should return a graphviz object"
+    assert os.path.exists("test_graph.pdf")
+    os.remove("test_graph.pdf")
 
-    m1 = Module("test1")
 
+def test_module_print(sim):
+    result = str(sim)
+    assert all(node.name in result for node in sim.topological_ordering())
+
+
+def test_module_methods(sim):
     with pytest.raises(ActiveStateError):
-        m1.fill_params([1.0, 2.0, 3.0])
+        sim.fill_params([1.0, 2.0, 3.0])
+
+    with ActiveContext(sim):
+        with pytest.raises(ActiveStateError):
+            sim.set_values(())
 
 
 def test_module_delattr():
@@ -54,190 +68,115 @@ def test_module_delattr():
     assert m.p is newparam, "Module should allow setting of parameters"
 
 
-def test_shared_param():
-
-    class TestModule(Module):
-        def __init__(self, name, param):
-            super().__init__(name)
-            self.p = param
-
-        @forward
-        def test(self, p):
-            return 2 * p
-
-    shared_param = Param("shared")
-
-    m1 = TestModule("m1", shared_param)
-    m2 = TestModule("m2", shared_param)
-
-    class CombineModules(Module):
-        def __init__(self, name, m1, m2):
-            super().__init__(name)
-            self.m1 = m1
-            self.m2 = m2
-
-        @forward
-        def big_test(self):
-            return self.m1.test() + self.m2.test()
-
-    c1 = CombineModules("c1", m1, m2)
-    assert c1.big_test([backend.make_array(1.0)]).item() == 4.0, "Shared parameter not working"
+@pytest.mark.parametrize("params_type", ["array", "list", "dict"])
+def test_input_methods(sim, params_type):
+    p0 = sim.get_values(params_type)
+    val = sim.run_sim(10, 11, p0)
+    # Check value
+    assert backend.module.allclose(val, backend.make_array(781))
+    # Check last arg vs kwarg
+    assert backend.module.allclose(val, sim.run_sim(10, 11, params=p0))
+    # Check last arg vs no arg
+    sim.to_static(False)
+    assert backend.module.allclose(val, sim.run_sim(10, 11))
+    assert backend.module.allclose(val, sim.run_sim(10, 11, ()))
 
 
-@pytest.mark.filterwarnings("ignore")
-def test_dynamic_value():
+def nested_double(params):
+    new_params = {}
+    for param in params:
+        if isinstance(params[param], dict):
+            new_params[param] = nested_double(params[param])
+        else:
+            new_params[param] = 2 * params[param]
+    return new_params
 
-    class TestSim(Module):
-        def __init__(self, a, b_shape, c, m1):
-            super().__init__("test_sim")
-            self.a = Param("a", a)
-            self.b = Param("b", None, b_shape)
-            self.c = Param("c", value=c, dynamic=True)
-            self.m1 = m1
 
-        @forward
-        def testfun(self, x, a=None, b=None, c=None):
-            y = self.m1(live_c=c + x)
-            return backend.module.prod(a + b) + y
+# @pytest.mark.filterwarnings("ignore")
+@pytest.mark.parametrize("group", [0, 1])
+@pytest.mark.parametrize("params_type", ["array", "list", "dict"])
+def test_get_set_values(sim, group, params_type, capsys):
 
-    class TestSubSim(Module):
-        def __init__(self, d=None, e=None, f=None):
-            super().__init__()
-            self.d = Param("d", value=d, dynamic=True)
-            self.e = Param("e", e)
-            self.f = Param("f", value=f, dynamic=True, valid=(0, 10))
+    sim.helper.h1.group = group
+    for i in range(5):
+        sim.workers[i].w1.group = i * group
 
-        @forward
-        def __call__(self, d=None, e=None, live_c=None):
-            return d + e + backend.sum(live_c)
-
-    sub1 = TestSubSim(d=2.0, e=2.5, f=None)
-    main1 = TestSim(a=1.0, b_shape=(2,), c=4.0, m1=sub1)
-
-    main1.b.to_static(backend.make_array([1.0, 2.0]))
-
+    sim.to_dynamic(False)
+    sim.s1 = None
     # Try to get auto params when not all dynamic values available
     with pytest.raises(ParamConfigurationError):
-        p00 = main1.get_values("array")
-    with pytest.raises(ParamConfigurationError):
-        p00 = main1.get_values("list")
-    with pytest.raises(ParamConfigurationError):
-        p00 = main1.get_values("dict")
-    with pytest.raises(ParamConfigurationError):
-        p00 = sub1.get_values("dict")
-    sub1.f.to_dynamic(3.0)
+        sim.get_values(params_type)
+    sim.s1 = 9
 
-    # Check dynamic value
-    assert main1.c.value.item() == 4.0
-    assert main1.c._value is None
+    p0 = sim.get_values(params_type)
+    res = sim.run_sim(10, 11, p0)
+    assert res == 781
 
-    # Auto tensor
-    p0 = main1.get_values("array")
-    x = backend.make_array([0.1, 0.2])
-    assert p0.shape == (3,)
-    assert backend.module.allclose(main1.testfun(x, p0), backend.make_array(18.8))
-    assert backend.module.allclose(main1.testfun(x, p0), main1.testfun(x=x))
-    p02 = p0 * 2
-    main1.set_values(p02)
-    assert backend.module.allclose(main1.testfun(x=x), backend.make_array(28.8))
-    main1.set_values(p0)
+    if group == 0:  # fixme, group version test
+        if params_type == "array":
+            assert p0.shape == (28,)
+            assert isinstance(p0, backend.array_type)
+            p1 = p0 * 2
+        elif params_type == "list":
+            assert len(p0) == 12
+            assert isinstance(p0, list)
+            p1 = list(p * 2 for p in p0)
+        else:
+            assert isinstance(p0, dict)
+            p0str = str(p0)
+            assert all(p.name in p0str for p in sim.dynamic_params)
+            p1 = nested_double(p0)
 
-    # Auto list
-    p0 = main1.get_values("list")
-    x = backend.make_array([0.1, 0.2])
-    assert len(p0) == 3
-    assert backend.module.allclose(main1.testfun(x, p0), backend.make_array(18.8))
-    assert backend.module.allclose(main1.testfun(x, p0), main1.testfun(x=x))
-    p02 = [p * 2 for p in p0]
-    main1.set_values(p02)
-    assert backend.module.allclose(main1.testfun(x=x), backend.make_array(28.8))
-    main1.set_values(p0)
+        sim.set_values(p1)
+        p = sim.get_values()
+        assert backend.module.allclose(sim.run_sim(20, 22, p), 2 * res)
 
-    # Auto dict
-    p0 = main1.get_values("dict")
-    x = backend.make_array([0.1, 0.2])
-    print(p0)
-    assert len(p0) == 2
-    assert p0["c"].item() == 4.0
-    assert p0["m1"]["d"] == 2.0
-    assert p0["m1"]["f"] == 3.0
-    print(main1.m1.d.dynamic)
-    assert backend.module.allclose(main1.testfun(x, p0), backend.make_array(18.8))
-    assert backend.module.allclose(main1.testfun(x, p0), main1.testfun(x=x))
-    p02 = {}
-    p02["c"] = p0["c"] * 2
-    p02["m1"] = {}
-    p02["m1"]["d"] = p0["m1"]["d"] * 2
-    p02["m1"]["f"] = p0["m1"]["f"] * 2
-    main1.set_values(p02)
-    assert backend.module.allclose(main1.testfun(x=x), backend.make_array(28.8))
+    sim.set_values(p0)
+    p = sim.get_values()
+    assert backend.module.allclose(sim.run_sim(10, 11, p), res)
 
-    # Check active state error
-    with pytest.raises(ActiveStateError):
-        with ActiveContext(main1):
-            main1.set_values(p0)
+    sim.to_static(False)
+    assert backend.module.allclose(sim.run_sim(10, 11), res)
+    assert len(sim.get_values(params_type)) == 0
 
-    # Check invalid dynamic value
-    with pytest.warns(InvalidValueWarning):
-        sub1.f.to_dynamic(11.0)
+    sim.helper.to_dynamic()
+    p = sim.get_values()
+    assert backend.module.allclose(sim.run_sim(10, 11, p), res)
 
-    # All static make params
-    main1.c.to_static()
-    main1.m1.d.to_static()
-    main1.m1.f.to_static()
-    p0 = main1.get_values("array")
-    assert p0.shape == (0,)
-    p0 = main1.get_values("list")
-    assert len(p0) == 0
-    p0 = main1.get_values("dict")
-    assert len(p0) == 0
-
-    # Module level to_dynamic/static
-    main1.m1.f = main1.m1.d
-    main1.to_dynamic()
-    assert main1.c.dynamic
-    assert main1.m1.d.static
-    assert main1.m1.f.pointer
-    main1.to_dynamic(False)
-    assert main1.c.dynamic
-    assert main1.m1.d.dynamic
-    assert main1.m1.f.pointer
-    main1.to_static()
-    assert main1.c.static
-    assert main1.m1.d.dynamic
-    assert main1.m1.f.pointer
-    main1.to_static(False)
-    assert main1.c.static
-    assert main1.m1.d.static
-    assert main1.m1.f.pointer
+    # Ensure no spurious output
+    captured = capsys.readouterr()
+    assert captured.out == ""
 
 
-def test_batched_build_params_array():
-    M = Module("M")
-    M.p1 = Param("p1")
-    M.p2 = Param("p2")
+def test_module_graph_tracking(sim):
+    sim.to_dynamic(False)
+    assert len(sim.dynamic_params) == 12
+    assert len(sim.static_params) == 0
+    assert len(sim.pointer_params) == 1
 
-    M.p1.to_dynamic([1.0, 2.0])
-    M.p1.shape = ()
-    M.p2.to_dynamic([3.0, 4.0])
-    M.p2.shape = ()
 
-    a = M.get_values("array")
-    assert a.shape == (2, 2)
+def test_batched_build_params_array(sim):
+    sim.to_dynamic(False)
+    sim.helper.h2 = np.ones((4, 2))  # batch_shape = (4,)
+    vals = sim.get_values()
+    assert vals.shape == (4, 28)
 
-    M.p1.to_dynamic([1.0, 2.0])
-    M.p1.shape = (2,)
-    M.p2.to_dynamic([3.0, 4.0])
-    M.p2.shape = ()
-    a = M.get_values("array")
-    assert a.shape == (2, 3)
+    res = sim.run_sim(10, 11, vals[0])
 
+    if backend.backend == "torch":
+        assert backend.module.allclose(
+            res, backend.module.vmap(sim.run_sim, in_dims=(None, None, 0))(10, 11, vals)
+        )
+
+    # Missmatched batch shapes
+    sim.workers[4].w1 = np.ones((5, 5))
     with pytest.raises((RuntimeError, TypeError, ValueError)):
-        M.p1.to_dynamic([1.0, 2.0])
-        M.p1.shape = ()
-        M.p2.to_dynamic([1.0, 2.0, 3.0])
-        M.p2.shape = ()
-        M.get_values("array")
+        sim.get_values("array")
+
+    # Multi-dim batching
+    sim.workers[4].w1 = np.ones((5, 4))
+    vals = sim.get_values()
+    assert vals.shape == (5, 4, 28)
 
 
 def test_module_and_collection():
@@ -280,41 +219,24 @@ def test_module_and_collection():
     assert not N.static
 
 
-def test_valid():
-    M = Module("M")
-    p1 = Param("p1", 1.0, valid=(0, None))
-    M.p1 = p1
-    M.p2 = Param("p2", [1.0, 1.5], valid=(None, 2))
-    M.p3 = Param("p3", [[1.0, 1.1], [1.2, 1.3]], valid=(0, 2))
-    M.m2 = Module("m2")
-    M.m2.p1 = Param("p1", 1.0, valid=(0, None))
-    M.m2.p2 = Param("p2", [1.0, 1.5], valid=(None, 2))
-    M.m2.p3 = Param("p3", M.p3, valid=(0, 2))
-    M.m2.m3 = Module("m3")
-    M.m2.m3.p1 = Param("p1", 1.0, valid=(0, 3), cyclic=True)
-    M.m2.m3.p2 = Param("p2", [1.0, 1.5], valid=(-1, 2), cyclic=True)
-    M.to_dynamic(False)
-    with ValidContext(M):
-        # Array
-        params = M.get_values()
-        M.set_values(params)
-        assert np.isclose(M.p1.value.item(), 1.0)
-        assert np.isclose(M.p2.value[1].item(), 1.5)
-        assert np.isclose(M.m2.p3.value[0][1].item(), 1.1)
-        assert np.isclose(M.m2.m3.p2.value[1].item(), 1.5)
+@pytest.mark.parametrize("group", [0, 1])
+@pytest.mark.parametrize("params_type", ["array", "list", "dict"])
+def test_valid(sim, params_type, group):
+    sim.to_dynamic(False)
 
-        # List
-        params = M.get_values("list")
-        M.set_values(params)
-        assert np.isclose(M.p1.value.item(), 1.0)
-        assert np.isclose(M.p2.value[1].item(), 1.5)
-        assert np.isclose(M.m2.p3.value[0][1].item(), 1.1)
-        assert np.isclose(M.m2.m3.p2.value[1].item(), 1.5)
+    sim.helper.h1.group = group
+    for i in range(5):
+        sim.workers[i].w1.group = i * group
 
-        # Dict
-        params = M.get_values("dict")
-        M.set_values(params)
-        assert np.isclose(M.p1.value.item(), 1.0)
-        assert np.isclose(M.p2.value[1].item(), 1.5)
-        assert np.isclose(M.m2.p3.value[0][1].item(), 1.1)
-        assert np.isclose(M.m2.m3.p2.value[1].item(), 1.5)
+    init_params = sim.get_values()
+    with ValidContext(sim):
+        params = sim.get_values(params_type)
+        sim.set_values(params)
+
+    if group == 0:
+        assert backend.module.allclose(init_params, sim.get_values())
+    else:
+        assert len(sim.dynamic_param_groups) > 1
+        final_params = sim.get_values()
+        for i in range(len(sim.dynamic_param_groups)):
+            assert backend.module.allclose(init_params[i], final_params[i])

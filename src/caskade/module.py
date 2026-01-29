@@ -276,17 +276,14 @@ class Module(Node):
             raise ActiveStateError(f"Module {self.name} must be active to fill params")
 
         param_list = self.dynamic_params if dynamic else self.static_params
+        if len(self.dynamic_param_groups) == 1:
+            params = (params,)
 
-        if len(self.dynamic_param_groups) > 1:
-            for group, params_g in zip(self.dynamic_param_groups, params):
-                param_list_g = tuple(p for p in param_list if p.group == group)
-                if self.valid_context:
-                    params_g = self.from_valid(params_g, param_list_g)
-                self._set_values(params_g, param_list_g, attribute="_value")
-        else:
+        for group, params_g in zip(self.dynamic_param_groups, params):
+            param_list_g = tuple(p for p in param_list if p.group == group)
             if self.valid_context:
-                params = self.from_valid(params, param_list)
-            self._set_values(params, param_list, attribute="_value")
+                params_g = self.from_valid(params_g, param_list_g)
+            self._set_values(params_g, param_list_g, attribute="_value")
 
     def clear_state(self):
         """Clear the active state `_value` for all params if this Module.
@@ -334,7 +331,7 @@ class Module(Node):
                 for group, params_g in zip(self.dynamic_param_groups, params):
                     param_list_g = tuple(p for p in param_list if p.group == group)
                     if self.valid_context:
-                        params_g = self.from_valid(params_g, param_list_g)
+                        params_g = self.from_valid(params_g, param_list_g, group=group)
                     self._set_values(params_g, param_list_g, attribute=attribute)
             else:
                 if self.valid_context:
@@ -385,27 +382,29 @@ class Module(Node):
         elif scheme.lower() == "dict":
             unique_params = set()
             x = self._recursive_build_params_dict(
-                unique_params=unique_params, param_list=param_list, attribute=attribute
+                self, unique_params=unique_params, param_list=param_list, attribute=attribute
             )
         if self.valid_context:
-            x = self.to_valid(x)
+            x = self.to_valid(x, group=group)
         return x
 
-    def _recursive_build_params_dict(self, unique_params: set, param_list, attribute="value"):
+    def _recursive_build_params_dict(
+        self, node: Node, unique_params: set, param_list, attribute="value"
+    ):
         params = {}
-        for link, child in self.children.items():
+        for link, child in node.children.items():
             if isinstance(child, Param) and child in param_list and child not in unique_params:
                 unique_params.add(child)
                 params[link] = getattr(child, attribute)
-            elif isinstance(child, Module):
-                params[link] = child._recursive_build_params_dict(
-                    unique_params=unique_params, param_list=param_list, attribute=attribute
+            else:
+                params[link] = self._recursive_build_params_dict(
+                    child, unique_params=unique_params, param_list=param_list, attribute=attribute
                 )
                 if len(params[link]) == 0:
                     del params[link]
         return params
 
-    def _transform_params(self, init_params, param_list, transform_attr):
+    def _transform_params(self, node, init_params, param_list, transform_attr):
         if isinstance(init_params, backend.array_type):
             trans_params = []
             batch = len(init_params.shape) > 1
@@ -430,13 +429,13 @@ class Module(Node):
         elif isinstance(init_params, Mapping):
             trans_params = {}
             for key in init_params:
-                if key in self.children and isinstance(self[key], Module):
-                    sublist = tuple(p for p in param_list if p in self[key].children.values())
-                    trans_params[key] = self[key]._transform_params(
-                        init_params[key], sublist, transform_attr
+                if key in node.children and isinstance(node[key], Param):
+                    trans_params[key] = getattr(node[key], transform_attr)(init_params[key])
+                elif key in node.children:
+                    sublist = tuple(p for p in param_list if p in node[key].children.values())
+                    trans_params[key] = self._transform_params(
+                        node[key], init_params[key], sublist, transform_attr
                     )
-                elif key in self.children and isinstance(self[key], Param):
-                    trans_params[key] = getattr(self[key], transform_attr)(init_params[key])
                 else:
                     raise FillParamsMappingError(self.name, self.children, missing_key=key)
         else:
@@ -446,32 +445,42 @@ class Module(Node):
         return trans_params
 
     def to_valid(
-        self, params: Union[ArrayLike, Sequence, Mapping], param_list=None
+        self, params: Union[ArrayLike, Sequence, Mapping], param_list=None, group=None
     ) -> Union[ArrayLike, Sequence, Mapping]:
         """Convert input params to valid params."""
         if param_list is None:
             param_list = self.dynamic_params
         if len(self.dynamic_param_groups) > 1:
-            valid_params = []
-            for g, params_g in zip(self.dynamic_param_groups, params):
-                param_list_g = tuple(p for p in param_list if p.group == g)
-                valid_params.append(self._transform_params(params_g, param_list_g, "to_valid"))
-            return valid_params
-        return self._transform_params(params, param_list, "to_valid")
+            if group is None:
+                valid_params = []
+                for g, params_g in zip(self.dynamic_param_groups, params):
+                    param_list_g = tuple(p for p in param_list if p.group == g)
+                    valid_params.append(
+                        self._transform_params(self, params_g, param_list_g, "to_valid")
+                    )
+                return valid_params
+            else:
+                param_list = tuple(p for p in param_list if p.group == group)
+        return self._transform_params(self, params, param_list, "to_valid")
 
     def from_valid(
-        self, valid_params: Union[ArrayLike, Sequence, Mapping], param_list=None
+        self, valid_params: Union[ArrayLike, Sequence, Mapping], param_list=None, group=None
     ) -> Union[ArrayLike, Sequence, Mapping]:
         """Convert valid params to input params."""
         if param_list is None:
             param_list = self.dynamic_params
         if len(self.dynamic_param_groups) > 1:
-            params = []
-            for g, valid_params_g in zip(self.dynamic_param_groups, valid_params):
-                param_list_g = tuple(p for p in param_list if p.group == g)
-                params.append(self._transform_params(valid_params_g, param_list_g, "from_valid"))
-            return params
-        return self._transform_params(valid_params, param_list, "from_valid")
+            if group is None:
+                params = []
+                for g, valid_params_g in zip(self.dynamic_param_groups, valid_params):
+                    param_list_g = tuple(p for p in param_list if p.group == g)
+                    params.append(
+                        self._transform_params(self, valid_params_g, param_list_g, "from_valid")
+                    )
+                return params
+            else:
+                param_list = tuple(p for p in param_list if p.group == group)
+        return self._transform_params(self, valid_params, param_list, "from_valid")
 
     @property
     def node_str(self) -> str:
