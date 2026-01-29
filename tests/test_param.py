@@ -119,7 +119,9 @@ def test_bad_init():
 
     # Bad pointer init
     p = Param("p")
-    Param("test", p, shape=(2,))  # check does not raise
+    point = Param("test", p, shape=(2,))  # check does not raise
+    with pytest.raises(ParamTypeError):
+        point.shape = ()
     Param("test", p, dynamic=True)
     Param("test", p, dynamic=False)
     with pytest.raises(ParamTypeError):
@@ -216,6 +218,8 @@ def test_param_to(value, valid):
 def test_param_shape():
     p = Param("p", [1, 2])
     assert p.shape == (2,)
+    p.batch_shape = (4,)
+    assert p.batch_shape == (4,)
 
     with pytest.raises(ValueError):
         p.shape = (3, 2)

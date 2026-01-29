@@ -31,6 +31,7 @@ def test_module_creation():
 
 
 def test_module_graphviz(sim):
+    sim.helper.h1.to_static(None)
     graph = sim.graphviz(saveto="test_graph.pdf")
     assert graph is not None, "should return a graphviz object"
     assert os.path.exists("test_graph.pdf")

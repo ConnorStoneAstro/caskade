@@ -144,7 +144,7 @@ class Param(Node):
                 "fillcolor": "white",
                 "shape": "box",
             }
-        elif self.static:
+        else:
             if self.__value is None:
                 return {
                     "style": "filled",
@@ -158,7 +158,6 @@ class Param(Node):
                 "fillcolor": "lightgrey",
                 "shape": "box",
             }
-        return super().graphviz_style
 
     @property
     def node_type(self):
@@ -435,9 +434,9 @@ class Param(Node):
                 self._h5group.create_dataset(
                     "value",
                     data=value,
-                    chunks=True if self.value is not None else False,
-                    maxshape=(None,) + self.shape if self.value is not None else None,
-                    compression="gzip" if self.value is not None else None,
+                    chunks=False if isinstance(value, str) else True,
+                    maxshape=None if isinstance(value, str) else (None,) + self.shape,
+                    compression=None if isinstance(value, str) else "gzip",
                 )
             else:
                 self._h5group.create_dataset(
@@ -468,7 +467,11 @@ class Param(Node):
         super()._append_state_hdf5(h5group)
         if not hasattr(self, "appended"):
             self.appended = True
-            if self.value is not None:
+            try:
+                value = self.value
+            except:
+                value = None
+            if value is not None:
                 h5group["value"].resize((h5group["value"].shape[0] + 1,) + self.shape)
                 h5group["value"][-1] = self.value
 
