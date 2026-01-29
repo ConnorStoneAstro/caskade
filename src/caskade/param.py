@@ -300,20 +300,13 @@ class Param(Node):
 
     @property
     def batch_shape(self) -> tuple[int, ...]:
-        if self._batch_shape is not None:
-            return self._batch_shape
-        value = self.value
+        try:
+            value = self.value
+        except:
+            value = None
         if value is None:
             return ()
         return tuple(value.shape[: len(value.shape) - len(self.shape)])
-
-    @batch_shape.setter
-    def batch_shape(self, batch_shape: tuple[int, ...]):
-        if self.pointer:
-            raise ParamTypeError(
-                f"Cannot set batch shape of parameter {self.name} with type 'pointer'"
-            )
-        self._batch_shape = batch_shape
 
     @property
     def group(self) -> int:
