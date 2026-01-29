@@ -113,7 +113,8 @@ class Param(Node):
         self.group = group
         self.valid = valid
         self.units = units
-        self.batch_shape = batch_shape
+        if batch_shape is not None:
+            self.batch_shape = batch_shape
 
     @property
     def dynamic(self) -> bool:

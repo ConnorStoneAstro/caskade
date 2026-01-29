@@ -119,14 +119,11 @@ def test_bad_init():
 
     # Bad pointer init
     p = Param("p")
-    with pytest.raises(ParamTypeError):
-        Param("test", p, shape=(2,))
+    Param("test", p, shape=(2,))  # check does not raise
+    Param("test", p, dynamic=True)
+    Param("test", p, dynamic=False)
     with pytest.raises(ParamTypeError):
         Param("test", p, batch_shape=(2,))
-    with pytest.raises(ParamTypeError):
-        Param("test", p, dynamic=True)
-    with pytest.raises(ParamTypeError):
-        Param("test", p, dynamic=False)
 
 
 @pytest.mark.parametrize("value", [None, 1, (1, 2)])
