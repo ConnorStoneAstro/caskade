@@ -1,3 +1,4 @@
+import os
 import pytest
 
 from caskade import (
@@ -7,78 +8,23 @@ from caskade import (
     Module,
     backend,
     ValidContext,
-    ParamConfigurationError,
     FillParamsArrayError,
     FillParamsSequenceError,
     FillParamsMappingError,
 )
 
 
-def test_node_tuple_creation():
+@pytest.mark.parametrize("node_type", [NodeTuple, NodeList])
+def test_node_collection_creation(node_type):
 
     # Minimal creation
-    n1 = NodeTuple()
-    assert n1.name == "NodeTuple"
-    assert len(n1) == 0
-
-    # Creation with list of param nodes
-    params = [Param("ptest1", 1), Param("ptest2", 2)]
-    n2 = NodeTuple(params)
-    assert len(n2) == 2
-    assert n2[0] is params[0]
-    assert n2.ptest1 is params[0]
-    assert n2[1] is params[1]
-    assert n2.ptest2 is params[1]
-
-    # Creation with list of module nodes
-    modules = [Module("mtest1"), Module("mtest2"), Module("mtest3")]
-    n3 = NodeTuple(modules)
-    assert len(n3) == 3
-    assert n3[0] is modules[0]
-    assert n3.mtest1 is modules[0]
-    assert n3[1] is modules[1]
-    assert n3["mtest2"] is modules[1]
-    assert n3[2] is modules[2]
-    assert n3["mtest3"] is modules[2]
-
-    # Adding node tuples
-    n4 = n1 + n2 + n3
-    assert len(n4) == 5
-    assert n4[0] is params[0]
-    assert n4[1] is params[1]
-    assert n4[2] is modules[0]
-    assert n4[3] is modules[1]
-    assert n4[4] is modules[2]
-
-    # Check repr
-    assert isinstance(repr(n4), str)
-    assert "[5]" in repr(n4)
-
-    # Check copy
-    with pytest.raises(NotImplementedError):
-        n4.copy()
-    with pytest.raises(NotImplementedError):
-        n4.deepcopy()
-
-    # Check bad init
-    with pytest.raises(TypeError):
-        NodeTuple(modules + [1])
-
-    # Check to static/dynamic
-    n4.to_dynamic()
-    n4.to_static()
-
-
-def test_node_list_creation():
-
-    # Minimal creation
-    n1 = NodeList()
-    assert n1.name.startswith("NodeList")
+    n1 = node_type()
+    assert n1.name.startswith(node_type.__name__)
     assert len(n1) == 0
 
     # Creation with list of param nodes
     params = [Param("ptest1"), Param("ptest2")]
-    n2 = NodeList(params)
+    n2 = node_type(params)
     assert len(n2) == 2
     assert n2[0] is params[0]
     assert n2.ptest1 is params[0]
@@ -87,7 +33,7 @@ def test_node_list_creation():
 
     # Creation with list of module nodes
     modules = [Module("mtest1"), Module("mtest2"), Module("mtest3")]
-    n3 = NodeList(modules)
+    n3 = node_type(modules)
     assert len(n3) == 3
     assert n3[0] is modules[0]
     assert n3.mtest1 is modules[0]
@@ -109,6 +55,19 @@ def test_node_list_creation():
     assert isinstance(repr(n4), str)
     assert "[5]" in repr(n4)
 
+    # Check to static/dynamic
+    n4.to_dynamic(False)
+    assert len(n4.static_params) == 0
+    n4.to_static(False)
+    assert len(n4.static_params) == 2
+    assert len(n4.pointer_params) == 0
+
+    # Graphviz
+    graph = n4.graphviz(saveto="test_graph.pdf")
+    assert graph is not None, "should return a graphviz object"
+    assert os.path.exists("test_graph.pdf")
+    os.remove("test_graph.pdf")
+
     # Check copy
     with pytest.raises(NotImplementedError):
         n4.copy()
@@ -117,9 +76,13 @@ def test_node_list_creation():
 
     # Check bad init
     with pytest.raises(TypeError):
-        NodeList(modules + [1])
-    with pytest.raises(TypeError):
-        n4.append(1)
+        node_type(modules + [1])
+    if "List" in node_type.__name__:
+        with pytest.raises(TypeError):
+            n4.append(1)
+    else:
+        with pytest.raises(AttributeError):
+            n4.append(1)
 
 
 @pytest.mark.parametrize("node_type", [NodeTuple, NodeList])

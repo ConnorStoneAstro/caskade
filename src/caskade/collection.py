@@ -30,7 +30,7 @@ class NodeCollection(Node, GetSetValues):
         node_list = self.children.values() if children_only else self.topological_ordering()
         for node in node_list:
             if isinstance(node, Param) and not node.pointer:
-                node.to_dynamic()
+                node.to_static()
 
     @property
     def dynamic_params(self) -> tuple[Param]:
