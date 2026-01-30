@@ -78,7 +78,7 @@ def test_active_state(value, dynamic):
         with pytest.raises(ActiveStateError):
             p.to_static()
         with pytest.raises(ActiveStateError):
-            p.to_pointer()
+            p.to_pointer(lambda p: p.o.value)
 
     # Live param
     if p.static and p.value is None:
@@ -215,6 +215,27 @@ def test_param_to(value, valid):
     p = p.to(dtype=backend.module.float64, device=device)
 
 
+def test_to_pointer():
+    p = Param("p")
+    o = Param("o", 1)
+
+    def pointfunc(P):
+        return P.o.value
+
+    pointfunc.params = o
+
+    p.to_pointer(pointfunc)
+
+    assert np.allclose(p.npvalue, 1)
+
+    def badpointfunc(P):
+        return P.O.value
+
+    p.to_pointer(badpointfunc)
+
+    assert p.batch_shape == ()
+
+
 def test_param_shape():
     p = Param("p", [1, 2], shape=(2,))
     assert p.shape == (2,)
@@ -231,6 +252,10 @@ def test_param_shape():
         p.to_dynamic(np.ones((3, 2)))
 
     p.batch_shape = None  # Reset to now follow value
+
+    with pytest.raises(ParamConfigurationError):
+        p.to_dynamic(np.ones((3, 3)))
+
     p.value = np.ones((3, 2))
 
     with pytest.raises(ValueError):
