@@ -5,7 +5,7 @@ from caskade import backend
 import numpy as np
 
 if sys.platform.startswith("win"):
-    pytest.skip(reason="Windows cant run these tests")
+    pytest.skip(reason="Windows cant run these tests", allow_module_level=True)
 
 
 # This forces the test to run in a separate subprocess
