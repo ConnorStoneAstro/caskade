@@ -2,6 +2,13 @@ import os
 import sys
 import pytest
 
+if "win" in sys.platform:
+
+    def dummyfork():
+        return 123456789
+
+    os.fork = dummyfork
+
 
 # This forces the test to run in a separate subprocess
 @pytest.mark.skipif("win" in sys.platform.lower(), reason="does not run on windows")
