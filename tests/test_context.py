@@ -1,4 +1,16 @@
-from caskade import Module, Param, forward, ActiveContext, OverrideParam, backend
+import pytest
+from caskade import Module, Param, forward, ActiveContext, OverrideParam, backend, ActiveStateError
+
+
+def test_context_in_context(sim):
+    with ActiveContext(sim):
+        with pytest.raises(ActiveStateError):
+            with ActiveContext(sim):
+                pass
+
+        with pytest.raises(ActiveStateError):
+            with ActiveContext(sim.helper):
+                pass
 
 
 def test_active_context():

@@ -8,8 +8,6 @@ from caskade import (
     ActiveStateError,
     ActiveContext,
     ParamConfigurationError,
-    InvalidValueWarning,
-    forward,
     backend,
     ValidContext,
 )
