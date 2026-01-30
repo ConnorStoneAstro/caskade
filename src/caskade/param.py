@@ -11,14 +11,16 @@ from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError
 from .warnings import InvalidValueWarning
 
 
-def valid_shape(shape, value_shape):
+def valid_shape(batch_shape, shape, value_shape):
     if shape is None:  # no shape to compare
         return True
-    if value_shape == shape:  # shapes match
-        return True
-    if value_shape[len(value_shape) - len(shape) :] == shape:  # endswith
-        return True
-    return False
+    if batch_shape is None:
+        if value_shape == shape:  # shapes match
+            return True
+        if value_shape[len(value_shape) - len(shape) :] == shape:  # endswith
+            return True
+        return False
+    return value_shape == (batch_shape + shape)
 
 
 NULL = object()
@@ -192,9 +194,13 @@ class Param(Node):
 
         if value is not None:
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
-            if not valid_shape(self._shape, tuple(value.shape)):
+            if not valid_shape(self._batch_shape, self._shape, tuple(value.shape)):
+                if self.batched:
+                    shape = f"{self._shape} with batch dims {self._batch_shape}"
+                else:
+                    shape = str(self._shape)
                 raise ParamConfigurationError(
-                    f"Value shape {value.shape} does not match param shape {self._shape}! Cannot update value. ({self.name})"
+                    f"Value shape {value.shape} does not match param shape {shape}! Cannot update value. ({self.name})"
                 )
         self.__value = value
         self.node_type = "dynamic"
@@ -222,9 +228,13 @@ class Param(Node):
 
         if value is not None:
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
-            if not valid_shape(self._shape, tuple(value.shape)):
+            if not valid_shape(self._batch_shape, self._shape, tuple(value.shape)):
+                if self.batched:
+                    shape = f"{self._shape} with batch dims {self._batch_shape}"
+                else:
+                    shape = str(self._shape)
                 raise ParamConfigurationError(
-                    f"Value shape {value.shape} does not match param shape {self._shape}! Cannot update value. ({self.name})"
+                    f"Value shape {value.shape} does not match param shape {shape}! Cannot update value. ({self.name})"
                 )
 
         self.__value = value
@@ -286,7 +296,7 @@ class Param(Node):
             shape = tuple(shape)
         except TypeError:
             raise ParamConfigurationError(f"Param shape must be iterable of ints ({self.name})")
-        if value is None or valid_shape(shape, tuple(value.shape)):
+        if value is None or valid_shape(self._batch_shape, shape, tuple(value.shape)):
             self._shape = shape
             return
 
@@ -296,10 +306,12 @@ class Param(Node):
 
     @property
     def batched(self) -> bool:
-        return self.batch_shape is not None and len(self.batch_shape) > 0
+        return len(self.batch_shape) > 0
 
     @property
     def batch_shape(self) -> tuple[int, ...]:
+        if self._batch_shape is not None:
+            return self._batch_shape
         try:
             value = self.value
         except:
@@ -307,6 +319,14 @@ class Param(Node):
         if value is None:
             return ()
         return tuple(value.shape[: len(value.shape) - len(self.shape)])
+
+    @batch_shape.setter
+    def batch_shape(self, batch_shape: tuple[int]):
+        if self.pointer:
+            raise ParamTypeError(
+                f"Cannot set batch_shape of parameter {self.name} with node type 'pointer'"
+            )
+        self._batch_shape = batch_shape
 
     @property
     def group(self) -> int:

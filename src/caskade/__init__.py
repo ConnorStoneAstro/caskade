@@ -23,6 +23,7 @@ from .errors import (
     FillParamsMappingError,
 )
 from .warnings import CaskadeWarning, InvalidValueWarning, SaveStateWarning
+from . import utils
 
 
 __version__ = VERSION
@@ -58,4 +59,5 @@ __all__ = (
     "CaskadeWarning",
     "InvalidValueWarning",
     "SaveStateWarning",
+    "utils",
 )

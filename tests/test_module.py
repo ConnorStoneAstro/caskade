@@ -255,14 +255,19 @@ def test_valid(sim, params_type, group):
         sim.workers[i].w1.group = i * group
 
     init_params = sim.get_values()
+
+    round_trip_params = sim.from_valid(sim.to_valid(init_params))
+
     with ValidContext(sim):
         params = sim.get_values(params_type)
         sim.set_values(params)
 
     if group == 0:
+        assert backend.module.allclose(init_params, round_trip_params)
         assert backend.module.allclose(init_params, sim.get_values())
     else:
         assert len(sim.dynamic_param_groups) > 1
         final_params = sim.get_values()
         for i in range(len(sim.dynamic_param_groups)):
+            assert backend.module.allclose(init_params[i], round_trip_params[i])
             assert backend.module.allclose(init_params[i], final_params[i])

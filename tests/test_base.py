@@ -25,6 +25,9 @@ def test_creation():
     with pytest.raises(NodeConfigurationError):
         Node("node 1")
 
+    # Link on creation
+    Node("linker", link=node)
+
 
 def test_linking(node_graph):
     a, b, c, d, e, f, g = node_graph
@@ -33,6 +36,14 @@ def test_linking(node_graph):
     nchild = len(a.children)
     a.link(b)
     assert len(a.children) == nchild
+
+    # Bad links
+    with pytest.raises(GraphError):
+        a.link("c", b)  # key already used
+    with pytest.raises(GraphError):
+        a.link("link", g)  # key is attribute
+    with pytest.raises(GraphError):
+        a.link("bad name", g)  # Name not python identifier
 
     # Double link
     with pytest.raises(GraphError):
@@ -66,6 +77,7 @@ def test_linking(node_graph):
     assert e in a.topological_ordering()
     with pytest.raises(AttributeError):
         a.e
+    a.unlink((b, c))
 
 
 def test_graphviz(node_graph):

@@ -124,6 +124,8 @@ def test_bad_init():
         point.shape = ()
     Param("test", p, dynamic=True)
     Param("test", p, dynamic=False)
+    with pytest.raises(ParamTypeError):
+        Param("test", p, batch_shape=(2,))
 
 
 @pytest.mark.parametrize("value", [None, 1, (1, 2)])
@@ -214,12 +216,21 @@ def test_param_to(value, valid):
 
 
 def test_param_shape():
-    p = Param("p", [1, 2])
+    p = Param("p", [1, 2], shape=(2,))
     assert p.shape == (2,)
+
+    p.batch_shape = (4,)
+    assert p.batch_shape == (4,)
 
     with pytest.raises(ValueError):
         p.shape = (3, 2)
 
+    with pytest.raises(ParamConfigurationError):
+        p.value = np.ones((3, 2))
+    with pytest.raises(ParamConfigurationError):
+        p.to_dynamic(np.ones((3, 2)))
+
+    p.batch_shape = None  # Reset to now follow value
     p.value = np.ones((3, 2))
 
     with pytest.raises(ValueError):
