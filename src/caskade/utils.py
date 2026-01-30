@@ -1,11 +1,6 @@
 import torch
 import numpy as np
 
-try:
-    import jax.numpy as jnp
-except ImportError:
-    jnp = None
-
 
 def broadcast_cat_torch(tensors, dim=-1):
     """
@@ -106,6 +101,8 @@ def broadcast_cat_jax(arrays, dim=-1):
     Returns:
         jnp.ndarray: The concatenated array.
     """
+    import jax.numpy as jnp
+
     if not arrays:
         raise ValueError("arrays argument must be a non-empty sequence")
 

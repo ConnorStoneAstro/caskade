@@ -216,10 +216,6 @@ class Module(Node):
             B = tuple(params.shape[:-1]) if batch else ()
             pos = 0
             for param in param_list:
-                if not isinstance(param.shape, tuple):
-                    raise ParamConfigurationError(
-                        f"Param {param.name} has no shape. Parameters must have a shape to use {backend.array_type.__name__} input."
-                    )
                 if param.online:
                     shape = param.shape
                 else:

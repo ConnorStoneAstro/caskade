@@ -88,12 +88,13 @@ def test_input_methods(sim, params_type):
     assert backend.module.allclose(val, backend.make_array(781))
     # Check last arg vs kwarg
     assert backend.module.allclose(val, sim.run_sim(10, 11, params=p0))
+    # Try no input
+    assert backend.module.allclose(sim.sub_sim(), backend.as_array(9))
     # Check last arg vs no arg
+    sim.to_static()  # Make sure to hit both conditions for test
     sim.to_static(False)
     assert backend.module.allclose(val, sim.run_sim(10, 11))
     assert backend.module.allclose(val, sim.run_sim(10, 11, ()))
-    # Try no input
-    assert backend.module.allclose(sim.sub_sim(), backend.as_array(9))
 
 
 @pytest.mark.parametrize("params_type", ["array", "list", "dict"])
