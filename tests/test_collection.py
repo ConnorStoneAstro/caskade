@@ -6,6 +6,7 @@ from caskade import (
     Param,
     Module,
     backend,
+    ValidContext,
     ParamConfigurationError,
     FillParamsArrayError,
     FillParamsSequenceError,
@@ -257,3 +258,59 @@ def test_collection_fill(node_type):
     NL.set_values(backend.as_array([7, 8, 9]))
     with pytest.raises(FillParamsArrayError):
         NL.set_values(backend.as_array([7, 8]))
+
+
+@pytest.mark.parametrize("group", [0, 1])
+@pytest.mark.parametrize("params_type", ["array", "list", "dict"])
+def test_valid_list(node_list, params_type, group):
+    node_list.to_dynamic(False)
+
+    node_list[2].helper.h1.group = group
+    for i in range(5):
+        node_list[1].workers[i].w1.group = i * group
+
+    init_params = node_list.get_values()
+
+    round_trip_params = node_list.from_valid(node_list.to_valid(init_params))
+
+    with ValidContext(node_list):
+        params = node_list.get_values(params_type)
+        node_list.set_values(params)
+
+    if group == 0:
+        assert backend.module.allclose(init_params, round_trip_params)
+        assert backend.module.allclose(init_params, node_list.get_values())
+    else:
+        assert len(node_list.dynamic_param_groups) > 1
+        final_params = node_list.get_values()
+        for i in range(len(node_list.dynamic_param_groups)):
+            assert backend.module.allclose(init_params[i], round_trip_params[i])
+            assert backend.module.allclose(init_params[i], final_params[i])
+
+
+@pytest.mark.parametrize("group", [0, 1])
+@pytest.mark.parametrize("params_type", ["array", "list", "dict"])
+def test_valid_tuple(node_tuple, params_type, group):
+    node_tuple.to_dynamic(False)
+
+    node_tuple[2].helper.h1.group = group
+    for i in range(5):
+        node_tuple[1].workers[i].w1.group = i * group
+
+    init_params = node_tuple.get_values()
+
+    round_trip_params = node_tuple.from_valid(node_tuple.to_valid(init_params))
+
+    with ValidContext(node_tuple):
+        params = node_tuple.get_values(params_type)
+        node_tuple.set_values(params)
+
+    if group == 0:
+        assert backend.module.allclose(init_params, round_trip_params)
+        assert backend.module.allclose(init_params, node_tuple.get_values())
+    else:
+        assert len(node_tuple.dynamic_param_groups) > 1
+        final_params = node_tuple.get_values()
+        for i in range(len(node_tuple.dynamic_param_groups)):
+            assert backend.module.allclose(init_params[i], round_trip_params[i])
+            assert backend.module.allclose(init_params[i], final_params[i])

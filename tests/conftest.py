@@ -1,7 +1,7 @@
 import itertools
 import numpy as np
 
-from caskade import Node, Param, Module, forward, backend
+from caskade import Node, Param, Module, forward, backend, NodeList, NodeTuple
 import pytest
 
 
@@ -186,9 +186,20 @@ def hierarchical_sim():
             return self.sub_sim(a) + self.helper.get_help(helper)
 
     H = Helper()
-    sim = Simulator(H, Worker(H, name="worker"), name="sim")
+    sim = Simulator(H, Worker(H, name="worker"), name="hsim")
     sim.worker.w1 = 4 * np.ones(5)
     assert sim.worker.w1.batched
     sim.worker.w2 = np.array([[5, 6], [7, 8]]) * np.ones((5, 2, 2))
     assert sim.worker.w2.batched
     return sim
+
+
+#####################################################################
+@pytest.fixture
+def node_list(sim, hierarchical_sim):
+    return NodeList([Param("loneparam", np.ones((2, 2, 2))), sim, hierarchical_sim])
+
+
+@pytest.fixture
+def node_tuple(sim, hierarchical_sim):
+    return NodeTuple([Param("loneparam", np.ones((2, 2, 2))), sim, hierarchical_sim])
