@@ -194,6 +194,84 @@ def hierarchical_sim():
     return sim
 
 
+@pytest.fixture
+def multi_hierarchical_sim():
+    if backend.backend != "torch":
+        pytest.skip()
+
+    class Helper(Module):
+        def __init__(self, h1=1, h2=(2, 3), name=None):
+            super().__init__(name)
+            self.h1 = Param("h1", h1, shape=())
+            self.h2 = Param("h2", h2, shape=(2,))
+
+        @forward
+        def get_help(self, x, h1, h2):
+            return backend.sum(x + h1 + h2)
+
+    class SubWorker(Module):
+        def __init__(self, helper: Helper, sw1=10, sw2=(11, 12, 13), name=None):
+            super().__init__(name)
+            self.helper = helper
+            self.sw1 = Param("sw1", sw1, shape=())
+            self.sw2 = Param("sw2", sw2, shape=(3,))
+
+        @forward
+        def mywork(self, sw1, sw2):
+            return backend.sum(sw1 + sw2)
+
+    class Worker(Module):
+        def __init__(
+            self, helper: Helper, subworker: SubWorker, w1=4, w2=[[5, 6], [7, 8]], name=None
+        ):
+            super().__init__(name)
+            self.helper = helper
+            self.hierarchical_link("subworker", subworker)
+            self.w1 = Param("w1", w1, shape=())
+            self.w2 = Param("w2", w2, shape=(2, 2))
+
+        @forward
+        def sub_work(self, w2, subworker_params, subworker_dims):
+            batched_subworker = backend.module.vmap(
+                self.subworker.mywork, in_dims=(subworker_dims,)
+            )
+            print("subworker params", subworker_params)
+            return backend.sum(w2) + batched_subworker(subworker_params)
+
+        @forward
+        def do_work(self, a, w1, w2):
+            return backend.sum(a + w1 + w2) + self.sub_work() + self.helper.get_help(a + w1)
+
+    class Simulator(Module):
+        def __init__(self, helper: Helper, worker: Worker, s1=9, name=None):
+            super().__init__(name)
+            self.helper = helper
+            self.hierarchical_link("worker", worker)
+            self.s1 = Param("s1", s1, shape=())
+
+        @forward
+        def sub_sim(self, a, s1, worker_params, worker_dims):
+            batched_worker = backend.module.vmap(self.worker.do_work, in_dims=(None, worker_dims))
+            print("worker_params", worker_params)
+            return s1 + batched_worker(a, worker_params).sum()
+
+        @forward
+        def run_sim(self, helper, a):
+            return self.sub_sim(a) + self.helper.get_help(helper)
+
+    H = Helper()
+    sim = Simulator(H, Worker(H, SubWorker(H, name="subworker"), name="worker"), name="hsim")
+    sim.worker.w1 = 4 * np.ones(5)
+    assert sim.worker.w1.batched
+    sim.worker.w2 = np.array([[5, 6], [7, 8]]) * np.ones((5, 2, 2))
+    assert sim.worker.w2.batched
+    sim.worker.subworker.sw2 = np.ones((6, 5, 4, 3))
+    assert sim.worker.subworker.sw2.batched
+    sim.helper.h1 = np.ones(6)
+    assert sim.helper.h1.batched
+    return sim
+
+
 #####################################################################
 @pytest.fixture
 def node_list(sim, hierarchical_sim):

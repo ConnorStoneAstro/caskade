@@ -83,7 +83,6 @@ class GetSetValues:
                 if param.online:
                     shape = param.shape
                 else:
-                    print(param.memos)
                     depth = max(memo.count("|") for memo in param.memos)
                     shape = param.batch_shape[-depth:] + param.shape
                 # Handle scalar parameters
@@ -121,7 +120,7 @@ class GetSetValues:
 
         param_list = self.dynamic_params if dynamic else self.static_params
 
-        with Memo(self, "semi_set_active"):
+        with Memo(self, self.name + ":semi_set_active"):
             if len(self.dynamic_param_groups) > 1:
                 for group, params_g in zip(self.dynamic_param_groups, params):
                     param_list_g = tuple(p for p in param_list if p.group == group)
@@ -162,7 +161,7 @@ class GetSetValues:
         self._check_values(param_list, scheme)
         x = []
         if scheme.lower() in ["array", "tensor"]:
-            with Memo(self, "semi_get_active"):
+            with Memo(self, self.name + ":semi_get_active"):
                 for param in param_list:
                     if param.online:
                         B = param.batch_shape
@@ -209,7 +208,7 @@ class GetSetValues:
             batch = len(init_params.shape) > 1
             B = tuple(init_params.shape[:-1]) if batch else ()
             pos = 0
-            with Memo(self, "semi_trans_active"):
+            with Memo(self, self.name + ":semi_trans_active"):
                 for param in param_list:
                     if param.online:
                         shape = param.shape

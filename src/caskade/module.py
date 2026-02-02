@@ -77,7 +77,7 @@ class Module(Node, GetSetValues):
         return self.static_params + self.dynamic_params + self.pointer_params
 
     def update_graph(self):
-        """Maintain a tuple of dynamic and live parameters at all points lower
+        """Maintain a tuple of dynamic, static, and pointer parameters at all points lower
         in the DAG."""
         T = self.topological_ordering()
         self.dynamic_params = tuple(filter(lambda n: isinstance(n, Param) and n.dynamic, T))
@@ -107,28 +107,30 @@ class Module(Node, GetSetValues):
     def static(self) -> bool:
         return not self.dynamic
 
-    def to_dynamic(self, children_only=True, **kwargs):
+    def to_dynamic(self, children_only=True):
         """Change all parameters to dynamic parameters.
 
         Parameters
         ----------
         children_only: (bool, optional)
-            If True, only convert the children of this module to dynamic. If False,
-            convert all parameters in the graph below this module. Defaults to True.
+            If True, only convert the children of this module to dynamic. If
+            False, convert all parameters in the graph below this module.
+            Defaults to True.
         """
         node_list = self.children.values() if children_only else self.topological_ordering()
         for node in node_list:
             if isinstance(node, Param) and not node.pointer:
                 node.to_dynamic()
 
-    def to_static(self, children_only=True, **kwargs):
+    def to_static(self, children_only=True):
         """Change all parameters to static parameters.
 
         Parameters
         ----------
         children_only: (bool, optional)
-            If True, only convert children of this module. If False, convert
-            all parameters in the graph below this module. Defaults to True.
+            If True, only convert children of this module to static. If False,
+            convert all parameters in the graph below this module. Defaults to
+            True.
         """
         node_list = self.children.values() if children_only else self.topological_ordering()
         for node in node_list:
@@ -137,24 +139,17 @@ class Module(Node, GetSetValues):
 
     def fill_params(self, params: Union[ArrayLike, Sequence, Mapping], dynamic=True):
         """
-        Fill the dynamic/static parameters of the module with the input values from
-        params.
+        Fill the dynamic/static parameters of the module with the input values
+        from params.
 
         Parameters
         ----------
         params: (Union[ArrayLike, Sequence, Mapping])
             The input values to fill the dynamic parameters with. The input can
-            be an ArrayLike, a Sequence, or a Mapping. If the input is
-            array-like, the values are filled in order of the dynamic
-            parameters. `params` should be a flattened array-like object with
-            all parameters concatenated in the order of the dynamic parameters.
-            If `len(params.shape)>1` then all dimensions but the last one are
-            considered batch dimensions. If the input is a Sequence, the values
-            are filled in order of the dynamic parameters. If the input is a
-            Mapping, the values are filled by matching the keys of the Mapping
-            to the names of the dynamic parameters. Note that the system does
-            not check for missing keys in the dictionary, but you will get an
-            error eventually if a value is missing.
+            be an ArrayLike, a Sequence, or a Mapping.
+        dynamic: bool
+            Operate on dynamic parameters (True, default) or static parameters
+            (False).
         """
         if not self.active:
             raise ActiveStateError(f"Module {self.name} must be active to fill params")
@@ -170,17 +165,19 @@ class Module(Node, GetSetValues):
             self._set_values(params_g, param_list_g, attribute="_value")
 
     def clear_state(self):
-        """Clear the active state `_value` for all params if this Module.
-        This should not be used by a user under normal circumstances."""
+        """
+        Clear the active state `_value` for all params below this Module in the
+        DAG. This should not be used by a user under normal circumstances."""
 
         for param in self.all_params:
             param._value = None
 
     def fill_kwargs(self, keys: tuple[str]) -> dict[str, ArrayLike]:
         """
-        Fill the kwargs for an ``@forward`` method with the values of the dynamic
-        parameters. The requested keys are matched to names of ``Param`` objects
-        owned by the ``Module``.
+        Fill the kwargs for an ``@forward`` method with the values of the
+        dynamic parameters. The requested keys are matched to names of ``Param``
+        objects owned by the ``Module``. This should not be used by the user
+        under normal circumstances.
         """
         kwargs = {}
         for key in keys:

@@ -4,7 +4,7 @@ from .mixins import GetSetValues
 
 
 class NodeCollection(Node, GetSetValues):
-    def to_dynamic(self, children_only=True, **kwargs):
+    def to_dynamic(self, children_only=True):
         """Change all parameters to dynamic parameters.
 
         Parameters
@@ -18,7 +18,7 @@ class NodeCollection(Node, GetSetValues):
             if isinstance(node, Param) and not node.pointer:
                 node.to_dynamic()
 
-    def to_static(self, children_only=True, **kwargs):
+    def to_static(self, children_only=True):
         """Change all parameters to static parameters.
 
         Parameters

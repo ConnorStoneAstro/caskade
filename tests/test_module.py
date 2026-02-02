@@ -107,6 +107,24 @@ def test_input_methods_hierarchical(hierarchical_sim, params_type):
     assert np.allclose(backend.to_numpy(val), 781.0)
     # Check last arg vs kwarg
     assert np.allclose(backend.to_numpy(val), backend.to_numpy(sim.run_sim(10, 11, params=p0)))
+    # Check doubling
+    if params_type == "array":
+        assert np.allclose(2 * backend.to_numpy(val), sim.run_sim(20, 22, 2 * p0))
+
+
+@pytest.mark.parametrize("params_type", ["array"])  # ["array", "list", "dict"])
+def test_input_methods_multi_hierarchical(multi_hierarchical_sim, params_type):
+    sim = multi_hierarchical_sim
+    sim.to_dynamic(False)
+    p0 = sim.get_values(params_type)
+    assert p0.shape[0] == 6
+    val = sim.run_sim(10, 11, p0[0])
+    # Check value
+    assert np.allclose(backend.to_numpy(val), 3676.0)
+    # Check last arg vs kwarg
+    assert np.allclose(backend.to_numpy(val), backend.to_numpy(sim.run_sim(10, 11, params=p0[0])))
+    # Check doubling
+    assert np.allclose(2 * backend.to_numpy(val), sim.run_sim(20, 22, 2 * p0[0]))
 
 
 def nested_double(params):
@@ -246,9 +264,17 @@ def test_module_and_collection():
     assert not N.static
 
 
+def test_meta_link():
+    a = Module()
+    b = Module()
+    a.meta.b = b
+    assert len(a.children) == 0
+    assert len(b.parents) == 0
+
+
 @pytest.mark.parametrize("group", [0, 1])
 @pytest.mark.parametrize("params_type", ["array", "list", "dict"])
-def test_valid(sim, params_type, group):
+def test_valid(sim, params_type, group, capsys):
     sim.to_dynamic(False)
 
     sim.helper.h1.group = group
@@ -272,3 +298,39 @@ def test_valid(sim, params_type, group):
         for i in range(len(sim.dynamic_param_groups)):
             assert backend.module.allclose(init_params[i], round_trip_params[i])
             assert backend.module.allclose(init_params[i], final_params[i])
+
+    # Ensure no spurious output
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+
+@pytest.mark.parametrize("group", [0, 1])
+@pytest.mark.parametrize("params_type", ["array", "list", "dict"])
+def test_valid(hierarchical_sim, params_type, group, capsys):
+    sim = hierarchical_sim
+    sim.to_dynamic(False)
+
+    sim.helper.h1.group = group
+    sim.worker.w2.group = 2 * group
+
+    init_params = sim.get_values()
+
+    round_trip_params = sim.from_valid(sim.to_valid(init_params))
+
+    with ValidContext(sim):
+        params = sim.get_values(params_type)
+        sim.set_values(params)
+
+    if group == 0:
+        assert backend.module.allclose(init_params, round_trip_params)
+        assert backend.module.allclose(init_params, sim.get_values())
+    else:
+        assert len(sim.dynamic_param_groups) > 1
+        final_params = sim.get_values()
+        for i in range(len(sim.dynamic_param_groups)):
+            assert backend.module.allclose(init_params[i], round_trip_params[i])
+            assert backend.module.allclose(init_params[i], final_params[i])
+
+    # Ensure no spurious output
+    captured = capsys.readouterr()
+    assert captured.out == ""

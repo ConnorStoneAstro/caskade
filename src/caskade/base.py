@@ -133,30 +133,31 @@ class Node:
         key: Union[str, tuple, "Node"],
         child: Optional[Union["Node", tuple]] = None,
     ):
-        """Link the current ``Node`` object to another ``Node`` object as a child.
+        """
+        Link the current ``Node`` object to another ``Node`` object as a child.
 
         Parameters
         ----------
         key: (Union[str, Node])
-            The key to link the child node with.
+            The key to link the child node with. This will also become the
+            attribute to access the child node. After linking you will have
+            `node.key == child`
         child: (Optional[Node], optional)
-            The child ``Node`` object to link to. Defaults to None in which
-            case the key is used as the child.
+            The child ``Node`` object to link to. Defaults to None in which case
+            the key is used as the child and the child.name is used as the key.
 
         Examples
         --------
 
-        Example making some ``Node`` objects and then linking/unlinking them. demonstrating multiple ways to link/unlink::
+        Example making some ``Node`` objects and then linking/unlinking them.
+        demonstrating multiple ways to link/unlink::
 
-            n1 = Node()
-            n2 = Node()
+            n1 = Node() n2 = Node()
 
             n1.link("subnode", n2) # may use any str as the key
             n1.unlink("subnode")
 
-            # Alternately, link by object
-            n1.link(n2)
-            n1.unlink(n2)
+            # Alternately, link by object n1.link(n2) n1.unlink(n2)
         """
         if (
             isinstance(key, (tuple, list))
@@ -181,8 +182,10 @@ class Node:
         self.__setattr__(key, child)
 
     def hierarchical_link(self, key: str, child: "Node"):
-        """Link the current ``Node`` object to another ``Node`` object as a child
-        in a hierarchical manner.
+        """
+        Link the current ``Node`` object to another ``Node`` object as a child
+        in a hierarchical manner. See `link` for more detail on linking. A
+        hierarchical link will allow batching internally to the simulator.
 
         Parameters
         ----------

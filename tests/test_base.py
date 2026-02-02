@@ -29,6 +29,14 @@ def test_creation():
     Node("linker", link=node)
 
 
+def test_meta_link():
+    a = Node()
+    b = Node()
+    a.meta.b = b
+    assert len(a.children) == 0
+    assert len(b.parents) == 0
+
+
 def test_linking(node_graph):
     a, b, c, d, e, f, g = node_graph
 

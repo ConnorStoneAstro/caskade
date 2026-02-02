@@ -172,7 +172,7 @@ class Param(Node):
         if pre_type != self.node_type:
             self.update_graph()
 
-    def to_dynamic(self, value=NULL, **kwargs):
+    def to_dynamic(self, value=NULL):
         """Change this parameter to a dynamic parameter. If a value is provided,
         this will be set as the dynamic value."""
         # While active no value can be set
@@ -206,7 +206,7 @@ class Param(Node):
         self.node_type = "dynamic"
         self.is_valid()
 
-    def to_static(self, value=NULL, **kwargs):
+    def to_static(self, value=NULL):
         """Change this parameter to a static parameter. If a value is provided
         this will be set as the static value."""
         # While active no value can be set
@@ -241,7 +241,7 @@ class Param(Node):
         self.is_valid()
         self.node_type = "static"
 
-    def to_pointer(self, value, link=(), **kwargs):
+    def to_pointer(self, value, link=()):
         """Change this parameter to a pointer parameter. If a value is provided
         this will be set as the pointer. Either provide a Param object to point
         to its value, or provide a callable function to be called at runtime. It
@@ -556,6 +556,7 @@ class Param(Node):
         self.is_valid()
 
     def is_valid(self, value=None) -> bool:
+        """Check if a given value is valid given this parameters allowed (valid) range."""
         if self.cyclic or self.pointer:
             return True
         if value is None:
