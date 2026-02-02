@@ -49,6 +49,7 @@ dev = [
     "matplotlib",
     "emcee",
     "scipy",
+    "ipywidgets",
     "jax",
     "jaxlib",
 ]
