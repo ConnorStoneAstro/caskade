@@ -51,9 +51,10 @@ def forward(method):
         if self.online:
             with ExitStack() as stack:
                 # User override of parameters for single function call
-                for kwarg, kval in kwargs.items():
+                for kwarg, kval in list(kwargs.items()):
                     if kwarg in self.children and isinstance(self.children[kwarg], Param):
                         stack.enter_context(OverrideParam(self.children[kwarg], kval))
+                        del kwargs[kwarg]
                 kwargs = {**self.fill_kwargs(method_params), **kwargs}
                 return method(self, *args, **kwargs)
 
