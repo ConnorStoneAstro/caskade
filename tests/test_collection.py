@@ -1,3 +1,4 @@
+import os
 import pytest
 
 from caskade import (
@@ -6,78 +7,24 @@ from caskade import (
     Param,
     Module,
     backend,
-    ParamConfigurationError,
+    ValidContext,
     FillParamsArrayError,
     FillParamsSequenceError,
     FillParamsMappingError,
 )
 
 
-def test_node_tuple_creation():
+@pytest.mark.parametrize("node_type", [NodeTuple, NodeList])
+def test_node_collection_creation(node_type):
 
     # Minimal creation
-    n1 = NodeTuple()
-    assert n1.name == "NodeTuple"
-    assert len(n1) == 0
-
-    # Creation with list of param nodes
-    params = [Param("ptest1", 1), Param("ptest2", 2)]
-    n2 = NodeTuple(params)
-    assert len(n2) == 2
-    assert n2[0] is params[0]
-    assert n2.ptest1 is params[0]
-    assert n2[1] is params[1]
-    assert n2.ptest2 is params[1]
-
-    # Creation with list of module nodes
-    modules = [Module("mtest1"), Module("mtest2"), Module("mtest3")]
-    n3 = NodeTuple(modules)
-    assert len(n3) == 3
-    assert n3[0] is modules[0]
-    assert n3.mtest1 is modules[0]
-    assert n3[1] is modules[1]
-    assert n3["mtest2"] is modules[1]
-    assert n3[2] is modules[2]
-    assert n3["mtest3"] is modules[2]
-
-    # Adding node tuples
-    n4 = n1 + n2 + n3
-    assert len(n4) == 5
-    assert n4[0] is params[0]
-    assert n4[1] is params[1]
-    assert n4[2] is modules[0]
-    assert n4[3] is modules[1]
-    assert n4[4] is modules[2]
-
-    # Check repr
-    assert isinstance(repr(n4), str)
-    assert "[5]" in repr(n4)
-
-    # Check copy
-    with pytest.raises(NotImplementedError):
-        n4.copy()
-    with pytest.raises(NotImplementedError):
-        n4.deepcopy()
-
-    # Check bad init
-    with pytest.raises(TypeError):
-        NodeTuple(modules + [1])
-
-    # Check to static/dynamic
-    n4.to_dynamic()
-    n4.to_static()
-
-
-def test_node_list_creation():
-
-    # Minimal creation
-    n1 = NodeList()
-    assert n1.name.startswith("NodeList")
+    n1 = node_type()
+    assert n1.name.startswith(node_type.__name__)
     assert len(n1) == 0
 
     # Creation with list of param nodes
     params = [Param("ptest1"), Param("ptest2")]
-    n2 = NodeList(params)
+    n2 = node_type(params)
     assert len(n2) == 2
     assert n2[0] is params[0]
     assert n2.ptest1 is params[0]
@@ -86,7 +33,7 @@ def test_node_list_creation():
 
     # Creation with list of module nodes
     modules = [Module("mtest1"), Module("mtest2"), Module("mtest3")]
-    n3 = NodeList(modules)
+    n3 = node_type(modules)
     assert len(n3) == 3
     assert n3[0] is modules[0]
     assert n3.mtest1 is modules[0]
@@ -108,6 +55,19 @@ def test_node_list_creation():
     assert isinstance(repr(n4), str)
     assert "[5]" in repr(n4)
 
+    # Check to static/dynamic
+    n4.to_dynamic(False)
+    assert len(n4.static_params) == 0
+    n4.to_static(False)
+    assert len(n4.static_params) == 2
+    assert len(n4.pointer_params) == 0
+
+    # Graphviz
+    graph = n4.graphviz(saveto="test_graph.pdf")
+    assert graph is not None, "should return a graphviz object"
+    assert os.path.exists("test_graph.pdf")
+    os.remove("test_graph.pdf")
+
     # Check copy
     with pytest.raises(NotImplementedError):
         n4.copy()
@@ -116,9 +76,13 @@ def test_node_list_creation():
 
     # Check bad init
     with pytest.raises(TypeError):
-        NodeList(modules + [1])
-    with pytest.raises(TypeError):
-        n4.append(1)
+        node_type(modules + [1])
+    if "List" in node_type.__name__:
+        with pytest.raises(TypeError):
+            n4.append(1)
+    else:
+        with pytest.raises(AttributeError):
+            n4.append(1)
 
 
 @pytest.mark.parametrize("node_type", [NodeTuple, NodeList])
@@ -254,5 +218,62 @@ def test_collection_fill(node_type):
 
     NL[1].value = None
     NL[1].shape = None
-    with pytest.raises(ParamConfigurationError):
-        NL.set_values(backend.as_array([7, 8, 9]))
+    NL.set_values(backend.as_array([7, 8, 9]))
+    with pytest.raises(FillParamsArrayError):
+        NL.set_values(backend.as_array([7, 8]))
+
+
+@pytest.mark.parametrize("group", [0, 1])
+@pytest.mark.parametrize("params_type", ["array", "list", "dict"])
+def test_valid_list(node_list, params_type, group):
+    node_list.to_dynamic(False)
+
+    node_list[2].helper.h1.group = group
+    for i in range(5):
+        node_list[1].workers[i].w1.group = i * group
+
+    init_params = node_list.get_values()
+
+    round_trip_params = node_list.from_valid(node_list.to_valid(init_params))
+
+    with ValidContext(node_list):
+        params = node_list.get_values(params_type)
+        node_list.set_values(params)
+
+    if group == 0:
+        assert backend.module.allclose(init_params, round_trip_params)
+        assert backend.module.allclose(init_params, node_list.get_values())
+    else:
+        assert len(node_list.dynamic_param_groups) > 1
+        final_params = node_list.get_values()
+        for i in range(len(node_list.dynamic_param_groups)):
+            assert backend.module.allclose(init_params[i], round_trip_params[i])
+            assert backend.module.allclose(init_params[i], final_params[i])
+
+
+@pytest.mark.parametrize("group", [0, 1])
+@pytest.mark.parametrize("params_type", ["array", "list", "dict"])
+def test_valid_tuple(node_tuple, params_type, group):
+    node_tuple.to_dynamic(False)
+
+    node_tuple[2].helper.h1.group = group
+    for i in range(5):
+        node_tuple[1].workers[i].w1.group = i * group
+
+    init_params = node_tuple.get_values()
+
+    round_trip_params = node_tuple.from_valid(node_tuple.to_valid(init_params))
+
+    with ValidContext(node_tuple):
+        params = node_tuple.get_values(params_type)
+        node_tuple.set_values(params)
+
+    if group == 0:
+        assert backend.module.allclose(init_params, round_trip_params)
+        assert backend.module.allclose(init_params, node_tuple.get_values())
+    else:
+        assert len(node_tuple.dynamic_param_groups) > 1
+        final_params = node_tuple.get_values()
+        for i in range(len(node_tuple.dynamic_param_groups)):
+            assert backend.module.allclose(init_params[i], round_trip_params[i])
+            assert backend.module.allclose(init_params[i], final_params[i])

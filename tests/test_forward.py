@@ -205,7 +205,7 @@ def test_forward():
     main1.b = None
     main1.b.to_dynamic(None)
     main1.b.shape = None
-    with pytest.raises(ParamConfigurationError):
+    with pytest.raises(FillParamsArrayError):
         main1.testfun(1.0, params=backend.module.ones(4))
     result = main1.testfun(1.0, params=[backend.module.ones((2, 2))])
     assert result.shape == (2, 2)

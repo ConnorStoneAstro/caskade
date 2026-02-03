@@ -1,79 +1,55 @@
-from typing import Union, Sequence, Mapping
-
-from math import prod
-
 from .base import Node
-from .backend import backend, ArrayLike
-from .errors import (
-    ParamConfigurationError,
-    FillParamsArrayError,
-    FillParamsSequenceError,
-    FillParamsMappingError,
-)
+from .param import Param
+from .mixins import GetSetValues
 
 
-class NodeCollection(Node):
-    def to_dynamic(self, **kwargs):
-        for node in self:
-            if hasattr(node, "to_dynamic"):
-                node.to_dynamic(**kwargs)
+class NodeCollection(Node, GetSetValues):
+    def to_dynamic(self, children_only=True):
+        """Change all parameters to dynamic parameters.
 
-    def to_static(self, **kwargs):
-        for node in self:
-            if hasattr(node, "to_static"):
-                node.to_static(**kwargs)
+        Parameters
+        ----------
+        children_only: (bool, optional)
+            If True, only convert the children of this module to dynamic. If False,
+            convert all parameters in the graph below this module. Defaults to True.
+        """
+        node_list = self.children.values() if children_only else self.topological_ordering()
+        for node in node_list:
+            if isinstance(node, Param) and not node.pointer:
+                node.to_dynamic()
 
-    def set_values(
-        self, params: Union[ArrayLike, Sequence, Mapping], node_type="all", attribute="value"
-    ):
-        if node_type == "all":
-            node_type = "dynamic/static"
-        if isinstance(params, backend.array_type):
-            if params.shape[-1] == 0:
-                return  # No parameters to fill
-            # check for batch dimension
-            batch = len(params.shape) > 1
-            B = tuple(params.shape[:-1]) if batch else ()
-            pos = 0
-            for param in self:
-                if param.node_type not in node_type:
-                    continue
-                if not isinstance(param.shape, tuple):
-                    raise ParamConfigurationError(
-                        f"Param {param.name} has no shape. dynamic parameters must have a shape to use {backend.array_type.__name__} input."
-                    )
-                # Handle scalar parameters
-                size = max(1, prod(param.shape))
-                try:
-                    val = backend.view(params[..., pos : pos + size], B + param.shape)
-                    setattr(param, attribute, val)
-                except (RuntimeError, IndexError, ValueError, TypeError):
-                    raise FillParamsArrayError(self.name, params, self)
+    def to_static(self, children_only=True):
+        """Change all parameters to static parameters.
 
-                pos += size
-            if pos != params.shape[-1]:
-                raise FillParamsArrayError(self.name, params, self)
-        elif isinstance(params, Sequence):
-            if len(params) == 0:
-                return
-            elif len(params) == len(self):
-                param_list = filter(lambda p: p.node_type in node_type, self)
-                for param, value in zip(param_list, params):
-                    setattr(param, attribute, value)
-            else:
-                raise FillParamsSequenceError(self.name, params, self)
-        elif isinstance(params, Mapping):
-            params_names = set(params.keys())
-            for name, param in self.children.items():
-                if name in params:
-                    params_names.remove(name)
-                    setattr(param, attribute, params[name])
-            if len(params_names) > 0:
-                raise FillParamsMappingError(self.name, self.children, next(iter(params_names)))
-        else:
-            raise TypeError(
-                f"Input params type {type(params)} not supported. Should be {backend.array_type.__name__}, Sequence, or Mapping."
-            )
+        Parameters
+        ----------
+        children_only: (bool, optional)
+            If True, only convert children of this module. If False, convert
+            all parameters in the graph below this module. Defaults to True.
+        """
+        node_list = self.children.values() if children_only else self.topological_ordering()
+        for node in node_list:
+            if isinstance(node, Param) and not node.pointer:
+                node.to_static()
+
+    @property
+    def dynamic_params(self) -> tuple[Param]:
+        T = self.topological_ordering()
+        return tuple(filter(lambda n: isinstance(n, Param) and n.dynamic, T))
+
+    @property
+    def dynamic_param_groups(self) -> tuple[int]:
+        return tuple(sorted(set(p.group for p in self.dynamic_params)))
+
+    @property
+    def static_params(self) -> tuple[Param]:
+        T = self.topological_ordering()
+        return tuple(filter(lambda n: isinstance(n, Param) and n.static, T))
+
+    @property
+    def pointer_params(self) -> tuple[Param]:
+        T = self.topological_ordering()
+        return tuple(filter(lambda n: isinstance(n, Param) and n.pointer, T))
 
     def copy(self):
         raise NotImplementedError
@@ -103,7 +79,6 @@ class NodeCollection(Node):
 
 
 class NodeTuple(NodeCollection, tuple):
-    graphviz_types = {"ntuple": {"style": "solid", "color": "black", "shape": "tab"}}
 
     def __init__(self, iterable=None, name=None):
         tuple.__init__(iterable)
@@ -114,6 +89,10 @@ class NodeTuple(NodeCollection, tuple):
             if not isinstance(node, Node):
                 raise TypeError(f"NodeTuple elements must be Node objects, not {type(node)}")
             self.link(node)
+
+    @property
+    def graphviz_style(self):
+        return {"style": "solid", "color": "black", "shape": "tab"}
 
     def __getitem__(self, key):
         if isinstance(key, str):
@@ -126,7 +105,6 @@ class NodeTuple(NodeCollection, tuple):
 
 
 class NodeList(NodeCollection, list):
-    graphviz_types = {"nlist": {"style": "solid", "color": "black", "shape": "folder"}}
 
     def __init__(self, iterable=(), name=None):
         list.__init__(self, iterable)
@@ -134,6 +112,10 @@ class NodeList(NodeCollection, list):
         self.node_type = "nlist"
 
         self._link_nodes()
+
+    @property
+    def graphviz_style(self):
+        return {"style": "solid", "color": "black", "shape": "folder"}
 
     def _unlink_nodes(self):
         for node in self:

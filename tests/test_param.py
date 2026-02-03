@@ -15,285 +15,257 @@ from caskade import (
 )
 
 
-def test_param_creation():
+def test_param_creation(many_param, capsys):
+    p, name, value, shape, cyclic, valid, units, dynamic, group = many_param
 
-    # Minimal creation
-    p1 = Param("test")
-    assert p1.name == "test"
-    assert p1.dynamic
-    assert p1.value is None
+    if name is None:
+        assert p.name == "Param"
+    else:
+        assert p.name == name
 
-    # Name and value
-    p2 = Param("test", 1.0)
-    assert p2.name == "test"
-    assert p2.value.item() == 1.0
-    p3 = Param("test", backend.module.ones((1, 2, 3)))
-    p33 = Param("test", value=backend.module.ones((1, 2, 3)), dynamic=True)
-    assert backend.all(p3.value == p33.value)
-    p33v2 = Param("test", backend.module.ones((3, 2, 1)), dynamic=True)
-    assert p33v2.dynamic
-    assert p33v2.value.shape == (3, 2, 1)
-    p33v3 = Param("test", value=backend.module.ones((3, 2, 1)), dynamic=True)
-    assert p33v3.dynamic
-    assert p33v3.value.shape == (3, 2, 1)
+    if value is None:
+        assert p.value is None
+    else:
+        assert np.allclose(p.npvalue, np.array(value))
 
-    # Cant update value when active
-    with pytest.raises(ActiveStateError):
-        p3.active = True
-        p3.value = 1.0
-    with pytest.raises(ActiveStateError):
-        p33.active = True
-        p33.to_dynamic(1.0)
+    if shape == () and value == [1.0, 2.0]:
+        assert p.batched
+        assert p.batch_shape == (2,)
+    else:
+        assert not p.batched
+        assert p.batch_shape == ()
 
+    if shape is not None:
+        assert p.shape == shape
+
+    assert p.cyclic == cyclic
+
+    assert p.is_valid(p.value)
+    if value is not None:
+        assert np.allclose(p.npvalue, backend.to_numpy(p.from_valid(p.to_valid(p.value))))
+
+    assert p.units == units
+
+    if dynamic is not None:
+        assert p.dynamic is dynamic
+        assert p.static is not dynamic
+        assert p.pointer is False
+
+    assert p.group == group
+
+    assert p.name in p.node_str
+    assert p.name in str(p)
+    assert p.name in repr(p)
+
+    # Ensure no spurious output
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+
+@pytest.mark.parametrize("value", [None, 1, [1, 2]])
+@pytest.mark.parametrize("dynamic", [True, False])
+def test_active_state(value, dynamic):
+    p = Param("p", value, dynamic=dynamic)
+    M = Module()
+    M.p = p
+
+    with ActiveContext(M):
+        if not (p.static and p.value is None):
+            with pytest.raises(ActiveStateError):
+                p.value = 1
+        with pytest.raises(ActiveStateError):
+            p.to_dynamic()
+        with pytest.raises(ActiveStateError):
+            p.to_static()
+        with pytest.raises(ActiveStateError):
+            p.to_pointer(lambda p: p.o.value)
+
+    # Live param
+    if p.static and p.value is None:
+        with ActiveContext(M):
+            p.value = 1
+            assert p.value == 1
+        assert p.value is None
+
+
+def test_bad_init():
     # Missmatch value and shape
     with pytest.raises(ParamConfigurationError):
-        p4 = Param("test", 1.0, shape=(1, 2, 3))
+        Param("test", 1.0, shape=(1, 2, 3))
     with pytest.raises(ParamConfigurationError):
-        p44 = Param("test", value=1.0, dynamic=True, shape=(1, 2, 3))
-
-    # Cant set shape of pointer or function
-    p5 = Param("test", p3)
-    with pytest.raises(ParamTypeError):
-        p5.shape = (1, 2, 3)
-
-    # Function parameter
-    p6 = Param("test", lambda p: p["other"].value * 2)
-    p6.link("other", p2)
-    with pytest.raises(ParamTypeError):
-        p6.shape = (1, 2, 3)
+        Param("test", np.ones((3, 3)), shape=(2, 3))
+    with pytest.raises(ParamConfigurationError):
+        Param("test", np.ones((3, 3)), shape=(3, 2, 3))
 
     # Shape is not a tuple
     with pytest.raises(ParamConfigurationError):
-        p8 = Param("test", None, 7)
+        Param("test", None, 7)
 
-    # Attempt link with attribute name
-    with pytest.raises(LinkToAttributeError):
-        p6.link("link", p5)
+    # cyclic without full valid
+    with pytest.raises(ParamConfigurationError):
+        Param("test", cyclic=True)
+    with pytest.raises(ParamConfigurationError):
+        Param("test", cyclic=True, valid=(0, None))
+    with pytest.raises(ParamConfigurationError):
+        Param("test", cyclic=True, valid=(None, 1))
 
-    # Attempt link with existing name
-    with pytest.raises(GraphError):
-        p6.link("other", p5)
+    # Bad valid
+    with pytest.raises(ParamConfigurationError):
+        Param("test", valid=[0, 1])  # not tuple
+    with pytest.raises(ParamConfigurationError):
+        Param("test", valid=(1, 0))  # switch high/low
+    with pytest.raises(ParamConfigurationError):
+        Param("test", valid=(0, 1, 2))  # not length 2
 
-    # Metadata
-    p9 = Param("test", 1.0, units="none", cyclic=True, valid=(0, 1))
-    assert p9.units == "none"
-    assert p9.cyclic
-    assert p9.valid[0].item() == 0
-    assert p9.valid[1].item() == 1
-
-    # Set dynamic from other states
-    p13 = Param("test", 1.0)  # static
-    p13.to_dynamic(2.0)
-    assert p13.value.item() == 2.0
-    assert p13.dynamic
-    p14 = Param("test")  # dynamic
-    p14.to_dynamic(1.0)
-    assert p14.value.item() == 1.0
-    p15 = Param("test", p14)  # pointer
-    p15.to_dynamic(2.0)
-    assert p15.value.item() == 2.0
-    p16 = Param("test", 1.0)  # static
-    p16.to_dynamic()
-    assert p16.dynamic
-    assert p16.value.item() == 1.0
+    # Bad pointer init
+    p = Param("p")
+    point = Param("test", p, shape=(2,))  # check does not raise
+    with pytest.raises(ParamTypeError):
+        point.shape = ()
+    Param("test", p, dynamic=True)
+    Param("test", p, dynamic=False)
+    with pytest.raises(ParamTypeError):
+        Param("test", p, batch_shape=(2,))
 
 
-def test_param_to():
-    if backend.backend == "jax":
-        device = backend.jax.devices()[0]
-        backend.jax.config.update("jax_enable_x64", True)
+@pytest.mark.parametrize("value", [None, 1, (1, 2)])
+@pytest.mark.parametrize("dynamic", [None, True, False])
+def test_change_type(value, dynamic, capsys):
+    p = Param("test", value, dynamic=dynamic)
+
+    if value is not None:
+        assert np.allclose(p.npvalue, np.array(value))
     else:
-        device = "cpu"
+        assert p.value is None
 
-    # static
-    p = Param("test", 1.0, valid=(0, 2))
-    p = p.to(dtype=backend.module.float64, device=device)
-    # dynamic value
-    p = Param("test", value=1.0, dynamic=True, valid=(0, 2))
-    p = p.to(dtype=backend.module.float64, device=device)
-
-
-def test_params_sticky_to():
-    if backend.backend == "jax":
-        device = backend.jax.devices()[0]
-        backend.jax.config.update("jax_enable_x64", True)
+    p.to_dynamic()
+    assert p.dynamic
+    if value is not None:
+        assert np.allclose(p.npvalue, np.array(value))
     else:
-        device = "cpu"
-    # static
-    p = Param("test", 1.0, valid=(0, 2))
-    p = p.to(dtype=backend.module.float64, device=device)
-    p.value = 2.0  # value cast to float64
-    assert p.value.dtype == backend.module.float64
-    # dynamic value
-    p = Param("test", value=1.0, dynamic=True, dtype=backend.module.float32)
-    assert p.value.dtype == backend.module.float32
-    p = p.to(dtype=backend.module.float64, device=device)
-    assert p.value.dtype == backend.module.float64
-    p.to_dynamic(np.array([1.0, 2.0, 3.0], dtype=np.float32))
-    assert p.value.dtype == backend.module.float64
-    # neither dtype or value set
-    p = Param("test", valid=(0, 2))
-    assert p.dtype is None
-    assert p.device is None
-    p = p.to(dtype=backend.module.float64, device=device)
-    assert p.dtype == backend.module.float64
-    assert p.device == device
-    p = p.to()
-    p.value = 1.0
-    assert p.dtype == backend.module.float64
-    assert p.device == device
+        assert p.value is None
 
-
-def test_check_npvalue():
-    p = Param("test", [1.0, 2.0, 3.0, 4.0])
-    assert np.all(np.array([1.0, 2.0, 3.0, 4.0]) == p.npvalue)
-
-
-def test_value_setter():
-
-    # dynamic
-    p = Param("test", dynamic=True)
-    assert p.node_type == "dynamic"
-
-    # static
-    p.to_static(1.0)
-    assert p.node_type == "static"
-    assert p.value.item() == 1.0
-
-    p = Param("testshape", shape=(2,))
-    p.value = [1.0, 2.0]
-
-    # pointer
-    other = Param("other", 2.0)
-    p.value = other
-    assert p.node_type == "pointer"
-    assert p.shape == other.shape
-    p.to_pointer()
     p.to_static()
-    assert p.value.item() == 2.0
-    p.to_pointer()
-    assert p.node_type == "pointer"
-    assert p.value.item() == 2.0
-    p.to_pointer(other)
-    assert p.node_type == "pointer"
-    p.to_static()
-    p.unlink(other)
-    p.to_pointer()
-    assert p.node_type == "pointer"
-    with pytest.raises(TypeError):
-        p.value
+    assert p.static
+    if value is not None:
+        assert np.allclose(p.npvalue, np.array(value))
+    else:
+        assert p.value is None
 
-    # function
-    def test_times_2(p):
-        return p.other.value * 2
+    p.to_dynamic(3)
+    assert p.dynamic
+    assert p.value == 3
+    p.to_static(4)
+    assert p.static
+    assert p.value == 4
 
-    test_times_2.params = (other,)
-    p.value = test_times_2
-    assert p.node_type == "pointer"
-    assert p.value.item() == 4.0
+    p2 = Param("pointme", 5)
+    p.to_pointer(p2)
+    assert p.pointer
+    assert p.value == 5
 
-    # Invalid pointer
+    if dynamic:
+        p.to_dynamic()
+        assert p.dynamic
+        assert p.value == 5
+    else:
+        p.to_static()
+        assert p.static
+        assert p.value == 5
+
+    p.to_pointer(lambda a: a.p2.value)
+
+    if dynamic:
+        p.to_dynamic()
+        assert p.dynamic
+        assert p.value is None
+    else:
+        p.to_static()
+        assert p.static
+        assert p.value is None
+
+    # Ensure no spurious output
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+    # Invalid change type
     with pytest.raises(ParamTypeError):
         p.to_pointer(1.0)
-
-    # Invalid static value
     with pytest.raises(ParamTypeError):
-        p.to_static(other)
+        p.to_static(p2)
     with pytest.raises(ParamTypeError):
         p.to_static(lambda p: p.other.value)
-
-    # Cannot update while active
-    p.active = True
-    with pytest.raises(ActiveStateError):
-        p.to_dynamic(1.0)
-    with pytest.raises(ActiveStateError):
-        p.to_static(1.0)
-    with pytest.raises(ActiveStateError):
-        p.to_pointer(lambda p: p.other.value)
+    with pytest.raises(ParamTypeError):
+        p.to_dynamic(p2)
+    with pytest.raises(ParamTypeError):
+        p.to_dynamic(lambda p: p.other.value)
 
 
-def test_static_none_value():
-    p = Param("test", None, dynamic=False)
-    m = Module()
-    m.p = p
-    assert p.static
-    assert p.value is None
-    with ActiveContext(m):
-        p.value = 1.0  # should work since static value being set live in sim
-        assert p.value == 1.0
-    assert p.value is None
+@pytest.mark.parametrize("value", [None, 1, (1, 2)])
+@pytest.mark.parametrize("valid", [None, (0, None), (None, 3), (0, 3)])
+def test_param_to(value, valid):
+    if backend.backend == "jax":
+        device = backend.jax.devices()[0]
+        backend.jax.config.update("jax_enable_x64", True)
+    else:
+        device = "cpu"
+
+    p = Param("test", value, valid=valid)
+    p = p.to()
+    p = p.to(dtype=backend.module.float64, device=device)
+
+
+def test_to_pointer():
+    p = Param("p")
+    o = Param("o", 1)
+
+    def pointfunc(P):
+        return P.o.value
+
+    pointfunc.params = o
+
+    p.to_pointer(pointfunc)
+
+    assert np.allclose(p.npvalue, 1)
+
+    def badpointfunc(P):
+        return P.O.value
+
+    p.to_pointer(badpointfunc)
+
+    assert p.batch_shape == ()
 
 
 def test_param_shape():
-    p = Param("p", [1, 2])
+    p = Param("p", [1, 2], shape=(2,))
     assert p.shape == (2,)
+
+    p.batch_shape = (4,)
+    assert p.batch_shape == (4,)
 
     with pytest.raises(ValueError):
         p.shape = (3, 2)
 
+    with pytest.raises(ParamConfigurationError):
+        p.value = np.ones((3, 2))
+    with pytest.raises(ParamConfigurationError):
+        p.to_dynamic(np.ones((3, 2)))
+
+    p.batch_shape = None  # Reset to now follow value
+
+    with pytest.raises(ParamConfigurationError):
+        p.to_dynamic(np.ones((3, 3)))
+
     p.value = np.ones((3, 2))
 
     with pytest.raises(ValueError):
-        p.shape = (2,)
-    p.batched = True
+        p.shape = (3,)
     p.shape = (2,)
     assert p.batch_shape == (3,)
 
     p.value = lambda p: p.other.value
-    p.batched = False
-    assert p.shape is None
-
-
-def test_to_dynamic_static():
-
-    other = Param("other", 3.0)
-
-    # dynamic
-    p = Param("test")
-    p.to_dynamic()  # from dynamic
-    assert p.dynamic
-    p.to_dynamic(1.0)
-    with pytest.raises(ParamTypeError):
-        p.to_dynamic(other)
-    assert p.dynamic
-    p.to_dynamic()  # from dynamic with dynamic value
-    assert p.dynamic
-    p.value = 2.0
-    p.to_dynamic()  # from static
-    assert p.dynamic
-    assert p.value.item() == 2.0
-    p.value = lambda p: p["other"].value * 2
-    p.to_dynamic()  # from pointer, fails
-    assert p.dynamic
-    assert p.value is None
-    p.value = lambda p: p["other"].value * 2
-    p.link("other", other)
-    p.to_dynamic()  # from pointer, succeeds
-    assert p.dynamic
-    assert p.value.item() == 6.0
-
-    # static
-    p = Param("test", 1.0)
-    p.to_static()  # from static
-    assert p.static
-    p = Param("test")
-    p.to_dynamic(2.0)
-    p.to_static()  # from dynamic with dynamic value
-    assert p.static
-    assert p.value.item() == 2.0
-    p.value = lambda p: p["other"].value * 2
-    p.to_static()  # Unable to evaluate pointer, becomes None
-    assert p.value is None
-    p.value = lambda p: p["other"].value * 2
-    p.link("other", other)
-    p.to_static()  # from pointer, succeeds
-    assert p.static
-    assert p.value.item() == 6.0
-
-
-def test_units():
-    p = Param("test", units="m")
-    assert p.units == "m"
+    p.link("other", Param("other"))
+    assert p.shape == ()
 
 
 def test_valid():
@@ -339,12 +311,6 @@ def test_valid():
 
     p.value = 0.5
 
-    with pytest.raises(ParamConfigurationError):
-        p.valid = None
-    with pytest.raises(ParamConfigurationError):
-        p.valid = (1, None)
-    with pytest.raises(ParamConfigurationError):
-        p.valid = (None, 1)
     p.cyclic = False
     with pytest.raises(ParamConfigurationError):
         p.valid = (1, 0)
@@ -353,7 +319,6 @@ def test_valid():
     with pytest.raises(ParamConfigurationError):
         p.valid = [0, 1]
 
-    print(p.valid)
     with pytest.warns(InvalidValueWarning):
         p.value = -1
     with pytest.warns(InvalidValueWarning):

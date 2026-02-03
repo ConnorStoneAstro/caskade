@@ -1,9 +1,9 @@
 from ._version import version as VERSION  # noqa
 
-from .base import Node
+from .base import Node, Memo
 from .backend import backend, ArrayLike
 from .context import ActiveContext, ValidContext, OverrideParam
-from .decorators import forward, active_cache
+from .decorators import forward
 from .module import Module
 from .param import Param
 from .collection import NodeCollection, NodeList, NodeTuple
@@ -23,6 +23,7 @@ from .errors import (
     FillParamsMappingError,
 )
 from .warnings import CaskadeWarning, InvalidValueWarning, SaveStateWarning
+from . import utils
 
 
 __version__ = VERSION
@@ -30,6 +31,7 @@ __author__ = "Connor Stone and Alexandre Adam"
 
 __all__ = (
     "Node",
+    "Memo",
     "backend",
     "ArrayLike",
     "Module",
@@ -41,7 +43,6 @@ __all__ = (
     "ValidContext",
     "OverrideParam",
     "forward",
-    "active_cache",
     "test",
     "CaskadeException",
     "GraphError",
@@ -58,4 +59,5 @@ __all__ = (
     "CaskadeWarning",
     "InvalidValueWarning",
     "SaveStateWarning",
+    "utils",
 )

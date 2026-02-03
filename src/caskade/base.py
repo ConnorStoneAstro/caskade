@@ -2,15 +2,17 @@ import os
 from typing import Optional, Union, Any
 from warnings import warn
 from operator import attrgetter
+import keyword
 
 try:
     import h5py
 except ImportError:
     h5py = None
 
-from .backend import backend
-from .errors import GraphError, NodeConfigurationError, LinkToAttributeError, BackendError
+from .errors import GraphError, NodeConfigurationError, LinkToAttributeError
 from .warnings import SaveStateWarning
+
+__all__ = ("Node",)
 
 
 def attrsetter(obj, attr, value):
@@ -22,6 +24,10 @@ def attrsetter(obj, attr, value):
         attrsetter(getattr(obj, parts[0]), parts[1], value)
     else:
         setattr(obj, attr, value)
+
+
+def is_valid_name(name):
+    return name.isidentifier() and not keyword.iskeyword(name)
 
 
 class meta:
@@ -55,8 +61,6 @@ class Node:
        n1.unlink("subnode") # alternately n1.unlink(n2) to unlink by object
     """
 
-    graphviz_types = {"node": {"style": "solid", "color": "black", "shape": "circle"}}
-
     def __init__(
         self,
         name: Optional[str] = None,
@@ -67,12 +71,15 @@ class Node:
             name = self.__class__.__name__
         if not isinstance(name, str):
             raise NodeConfigurationError(f"{self.__class__.__name__} name must be a string")
-        if "|" in name:
-            raise NodeConfigurationError(f"{self.__class__.__name__} cannot contain '|'")
+        if not is_valid_name(name):
+            raise NodeConfigurationError(
+                f"{self.__class__.__name__} name is invalid: '{name}'. Must be a valid Python identifier and not a reserved keyword."
+            )
         self._name = name
         self._children = {}
         self._parents = set()
-        self._active = False
+        self._subgraphs = set()
+        self._memos = set()
         self.node_type = "node"
         self.description = description
         self.meta = meta()
@@ -91,6 +98,10 @@ class Node:
     @property
     def parents(self) -> set["Node"]:
         return self._parents
+
+    @property
+    def subgraphs(self) -> set["Node"]:
+        return self._subgraphs
 
     def _link(self, key: str, child: "Node"):
         if self.active:
@@ -117,31 +128,36 @@ class Node:
         child.parents.add(self)
         self.update_graph()
 
-    def link(self, key: Union[str, tuple, "Node"], child: Optional[Union["Node", tuple]] = None):
-        """Link the current ``Node`` object to another ``Node`` object as a child.
+    def link(
+        self,
+        key: Union[str, tuple, "Node"],
+        child: Optional[Union["Node", tuple]] = None,
+    ):
+        """
+        Link the current ``Node`` object to another ``Node`` object as a child.
 
         Parameters
         ----------
         key: (Union[str, Node])
-            The key to link the child node with.
+            The key to link the child node with. This will also become the
+            attribute to access the child node. After linking you will have
+            `node.key == child`
         child: (Optional[Node], optional)
-            The child ``Node`` object to link to. Defaults to None in which
-            case the key is used as the child.
+            The child ``Node`` object to link to. Defaults to None in which case
+            the key is used as the child and the child.name is used as the key.
 
         Examples
         --------
 
-        Example making some ``Node`` objects and then linking/unlinking them. demonstrating multiple ways to link/unlink::
+        Example making some ``Node`` objects and then linking/unlinking them.
+        demonstrating multiple ways to link/unlink::
 
-            n1 = Node()
-            n2 = Node()
+            n1 = Node() n2 = Node()
 
             n1.link("subnode", n2) # may use any str as the key
             n1.unlink("subnode")
 
-            # Alternately, link by object
-            n1.link(n2)
-            n1.unlink(n2)
+            # Alternately, link by object n1.link(n2) n1.unlink(n2)
         """
         if (
             isinstance(key, (tuple, list))
@@ -158,13 +174,36 @@ class Node:
         if child is None:
             child = key
             key = child.name
+
+        if not is_valid_name(key):
+            raise NodeConfigurationError(
+                f"key is invalid: '{key}'. Must be a valid Python identifier and not a reserved keyword."
+            )
         self.__setattr__(key, child)
+
+    def hierarchical_link(self, key: str, child: "Node"):
+        """
+        Link the current ``Node`` object to another ``Node`` object as a child
+        in a hierarchical manner. See `link` for more detail on linking. A
+        hierarchical link will allow batching internally to the simulator.
+
+        Parameters
+        ----------
+        key: (str)
+            The key to link the child node with.
+        child: (Node)
+            The child ``Node`` object to link to.
+        """
+
+        self._subgraphs.add(child)
+        self.link(key, child)
 
     def _unlink(self, key: str):
         if self.active:
             raise GraphError(f"Cannot link/unlink nodes while the graph is active ({self.name})")
         self.children[key].parents.remove(self)
         self.children[key].update_graph()
+        self._subgraphs.discard(self.children[key])
         del self.children[key]
         self.update_graph()
 
@@ -215,20 +254,29 @@ class Node:
 
     @property
     def active(self) -> bool:
-        return self._active
+        return any(memo.startswith("active") for memo in self._memos)
 
-    @active.setter
-    def active(self, value: bool):
-        # Avoid unnecessary updates
-        if self._active is value:
-            return
+    @property
+    def online(self) -> bool:
+        return any(memo.endswith("_active") for memo in self._memos)
 
-        # Set self active level
-        self._active = value
+    @property
+    def memos(self) -> set[str]:
+        return self._memos
 
-        # Propagate active level to children
+    def add_memo(self, memo):
+        self._memos.add(memo)
+
+        # Propagate memo to children
         for child in self.children.values():
-            child.active = value
+            child.add_memo(memo + (f"|{child.name}" if child in self.subgraphs else ""))
+
+    def remove_memo(self, memo):
+        self._memos.discard(memo)
+
+        # Propagate removal to children
+        for child in self.children.values():
+            child.remove_memo(memo + (f"|{child.name}" if child in self.subgraphs else ""))
 
     def to(self, device=None, dtype=None):
         """
@@ -412,7 +460,11 @@ class Node:
             self._check_load_state_hdf5(loadfrom[self.name])
             self._load_state_hdf5(loadfrom[self.name], index=index, _done_load=set())
 
-    def graphviz(self, top_down: bool = True, saveto: Optional[str] = None) -> "graphviz.Digraph":
+    @property
+    def graphviz_style(self):
+        return {"style": "solid", "color": "black", "shape": "circle"}
+
+    def graphviz(self, saveto: Optional[str] = None) -> "graphviz.Digraph":
         """Return a graphviz object representing the graph below the current
         node in the DAG.
 
@@ -430,21 +482,28 @@ class Node:
         components = set()
 
         def add_node(node: Node, dot):
-            if node in components:
+            if node in components or node.online:
                 return
-            dot.attr("node", **node.graphviz_types[node.node_type])
+            dot.attr("node", **node.graphviz_style)
             dot.node(str(id(node)), repr(node))
             components.add(node)
 
             for child in node.children.values():
-                add_node(child, dot)
-                if top_down:
-                    dot.edge(str(id(node)), str(id(child)))
+                if child in node.subgraphs:
+                    with Memo(self, "semi_active"):
+                        with dot.subgraph(name=f"cluster_{id(child)}") as subdot:
+                            add_node(child, subdot)
                 else:
-                    dot.edge(str(id(child)), str(id(node)))
+                    add_node(child, dot)
+
+        def add_edges(node: Node, dot):
+            for child in node.children.values():
+                dot.edge(str(id(node)), str(id(child)))
+                add_edges(child, dot)
 
         dot = graphviz.Digraph(strict=True)
         add_node(self, dot)
+        add_edges(self, dot)
         if saveto is not None:
             filename, ext = os.path.splitext(saveto)
             dot.render(graphviz.escape(filename), format=ext.lstrip("."), cleanup=True)
@@ -503,3 +562,36 @@ class Node:
         if key in self.children:
             self._unlink(key)
         super().__delattr__(key)
+
+
+class Memo:
+    """
+    Sends a "memo" (a small message) to all nodes below the current one in the
+    graph. This can be used to communicate state changes in the graph with all
+    lower nodes. By default, the message will skip any subgraphs (hierarchical
+    graphs) but this can be changed to ensure all nodes hear the message.
+
+    Note that memos are stored as a python set, so duplicates will be merged.
+    Depending on your use case, it may be wise to ensure that your memo is
+    unique.
+
+    Parameters
+    ----------
+    module: Module
+        The caskade Module object that will propogate the memo
+    memo: str
+        The message to send down the graph
+    skip_subgraphs: bool
+        If True (default) any subgraphs, otherwise known as hierarchical graphs,
+        will not get the memo.
+    """
+
+    def __init__(self, module: Node, memo: str):
+        self.module = module
+        self.memo = memo
+
+    def __enter__(self):
+        self.module.add_memo(self.memo)
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.module.remove_memo(self.memo)

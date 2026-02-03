@@ -96,8 +96,8 @@ def test_full_integration_v2():
 
     main = MyMainSim("main", util, actions)
 
-    main.d_param = lambda p: p["utility u"].myutilityfunction(p["c"].value) * 2
-    main.d_param.link("utility u", util)
+    main.d_param = lambda p: p["utility_u"].myutilityfunction(p["c"].value) * 2
+    main.d_param.link("utility_u", util)
     main.d_param.link("c", main.c_param)
 
     #                      c for MyMainSim

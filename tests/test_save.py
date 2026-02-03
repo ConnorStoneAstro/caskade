@@ -45,6 +45,7 @@ def _build_test_module(blank=False):
     m2.p5_param = p5
     m3.p4 = p4
     m3.p5 = p5
+    m3.link(Param("badpointer", lambda p: p.oops.value))
 
     return main
 

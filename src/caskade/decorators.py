@@ -48,12 +48,13 @@ def forward(method):
 
     @functools.wraps(method)
     def wrapped(self, *args, **kwargs):
-        if self.active:
+        if self.online:
             with ExitStack() as stack:
                 # User override of parameters for single function call
-                for kwarg, kval in kwargs.items():
+                for kwarg, kval in list(kwargs.items()):
                     if kwarg in self.children and isinstance(self.children[kwarg], Param):
                         stack.enter_context(OverrideParam(self.children[kwarg], kval))
+                        del kwargs[kwarg]
                 kwargs = {**self.fill_kwargs(method_params), **kwargs}
                 return method(self, *args, **kwargs)
 
@@ -88,43 +89,5 @@ def forward(method):
             with ActiveContext(self):
                 kwargs = {**self.fill_kwargs(method_params), **kwargs}
                 return method(self, *args, **kwargs)
-
-    return wrapped
-
-
-def active_cache(method):
-    """
-    Decorator to enable caching for a method. This way the method will only be
-    called once in an active state, and the cache will be dropped when exiting.
-
-    Parameters
-    ----------
-    method: (Callable)
-        The method to be decorated.
-
-    Returns
-    -------
-    Callable
-        The decorated method with caching enabled.
-    """
-
-    NOVALUE = object()
-
-    cache = NOVALUE
-
-    def hook(self):
-        nonlocal cache
-        cache = NOVALUE
-        self.clear_state_hooks.remove(hook)
-
-    @functools.wraps(method)
-    def wrapped(self, *args, **kwargs):
-        nonlocal cache
-        if not self.active:
-            return method(self, *args, **kwargs)
-        elif cache is NOVALUE:
-            cache = method(self, *args, **kwargs)
-            self.clear_state_hooks.add(hook)
-        return cache
 
     return wrapped

@@ -1,4 +1,4 @@
-from typing import Optional, Union, Callable, Any
+from typing import Optional, Union, Callable, Any, Iterable
 from warnings import warn
 from math import prod
 
@@ -11,14 +11,16 @@ from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError
 from .warnings import InvalidValueWarning
 
 
-def valid_shape(shape, value_shape, batched):
+def valid_shape(batch_shape, shape, value_shape):
     if shape is None:  # no shape to compare
         return True
-    if value_shape == shape:  # shapes match
-        return True
-    if batched and value_shape[len(value_shape) - len(shape) :] == shape:  # endswith
-        return True
-    return False
+    if batch_shape is None:
+        if value_shape == shape:  # shapes match
+            return True
+        if value_shape[len(value_shape) - len(shape) :] == shape:  # endswith
+            return True
+        return False
+    return value_shape == (batch_shape + shape)
 
 
 NULL = object()
@@ -77,12 +79,6 @@ class Param(Node):
         inferred from the value.
     """
 
-    graphviz_types = {
-        "static": {"style": "filled", "color": "lightgrey", "shape": "box"},
-        "dynamic": {"style": "solid", "color": "black", "shape": "box"},
-        "pointer": {"style": "filled", "color": "lightgrey", "shape": "rarrow"},
-    }
-
     def __init__(
         self,
         name: str,
@@ -92,7 +88,8 @@ class Param(Node):
         valid: Optional[tuple[Union[ArrayLike, float, int, None]]] = None,
         units: Optional[str] = None,
         dynamic: Optional[bool] = None,
-        batched: bool = False,
+        group: int = 0,
+        batch_shape: Optional[tuple[int]] = None,
         dtype: Optional[Any] = None,
         device: Optional[Any] = None,
         **kwargs,
@@ -100,33 +97,26 @@ class Param(Node):
         self._node_type = "node"
         super().__init__(name=name, **kwargs)
         self._shape = None
+        self._batch_shape = None
         self._value = None
         self.__value = None
         self._valid = (None, None)
-        if value is None:
-            if shape is None:
-                shape = ()
-            if not isinstance(shape, (tuple, list)):
-                raise ParamConfigurationError("Shape must be a tuple")
-            self.shape = tuple(shape)
-        elif not isinstance(value, (Param, Callable)) and value is not None:
-            value = backend.as_array(value, dtype=dtype, device=device)
-            if not valid_shape(shape, value.shape, batched):
-                raise ParamConfigurationError(
-                    f"Shape {shape} does not match value shape {value.shape}"
-                )
+        self._group = 0
         self._dtype = dtype
         self._device = device
         self._cyclic = cyclic
-        self.batched = batched
+
         self.shape = shape
         if dynamic or (dynamic is None and value is None):
             self.to_dynamic()
         else:
             self.to_static()
         self.value = value
+        self.group = group
         self.valid = valid
         self.units = units
+        if batch_shape is not None:
+            self.batch_shape = batch_shape
 
     @property
     def dynamic(self) -> bool:
@@ -141,6 +131,37 @@ class Param(Node):
         return "static" in self.node_type
 
     @property
+    def graphviz_style(self):
+        if self.pointer:
+            return {
+                "style": "filled",
+                "color": "lightgrey",
+                "fillcolor": "lightgrey",
+                "shape": "rarrow",
+            }
+        elif self.dynamic:
+            return {
+                "style": "solid",
+                "color": "black",
+                "fillcolor": "white",
+                "shape": "box",
+            }
+        else:
+            if self.__value is None:
+                return {
+                    "style": "filled",
+                    "color": "black",
+                    "fillcolor": "grey90",
+                    "shape": "box",
+                }
+            return {
+                "style": "filled",
+                "color": "lightgrey",
+                "fillcolor": "lightgrey",
+                "shape": "box",
+            }
+
+    @property
     def node_type(self):
         return self._node_type
 
@@ -151,12 +172,12 @@ class Param(Node):
         if pre_type != self.node_type:
             self.update_graph()
 
-    def to_dynamic(self, value=NULL, **kwargs):
+    def to_dynamic(self, value=NULL):
         """Change this parameter to a dynamic parameter. If a value is provided,
         this will be set as the dynamic value."""
         # While active no value can be set
         if self.active:
-            raise ActiveStateError(f"Cannot set parameter {self.name} to dynamic while active.")
+            raise ActiveStateError(f"Cannot set parameter {self.name} dynamic value while active.")
 
         # Catch cases where input is invalid
         if isinstance(value, Param) or callable(value):
@@ -173,17 +194,24 @@ class Param(Node):
 
         if value is not None:
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
-            self._shape_from_value(tuple(value.shape))
+            if not valid_shape(self._batch_shape, self._shape, tuple(value.shape)):
+                if self.batched:
+                    shape = f"{self._shape} with batch dims {self._batch_shape}"
+                else:
+                    shape = str(self._shape)
+                raise ParamConfigurationError(
+                    f"Value shape {value.shape} does not match param shape {shape}! Cannot update value. ({self.name})"
+                )
         self.__value = value
         self.node_type = "dynamic"
         self.is_valid()
 
-    def to_static(self, value=NULL, **kwargs):
+    def to_static(self, value=NULL):
         """Change this parameter to a static parameter. If a value is provided
         this will be set as the static value."""
         # While active no value can be set
         if self.active:
-            raise ActiveStateError(f"Cannot set parameter {self.name} to static while active.")
+            raise ActiveStateError(f"Cannot set parameter {self.name} static value while active.")
 
         # Catch cases where input is invalid
         if isinstance(value, Param) or callable(value):
@@ -200,12 +228,20 @@ class Param(Node):
 
         if value is not None:
             value = backend.as_array(value, dtype=self._dtype, device=self._device)
-            self._shape_from_value(tuple(value.shape))
+            if not valid_shape(self._batch_shape, self._shape, tuple(value.shape)):
+                if self.batched:
+                    shape = f"{self._shape} with batch dims {self._batch_shape}"
+                else:
+                    shape = str(self._shape)
+                raise ParamConfigurationError(
+                    f"Value shape {value.shape} does not match param shape {shape}! Cannot update value. ({self.name})"
+                )
+
         self.__value = value
         self.is_valid()
         self.node_type = "static"
 
-    def to_pointer(self, value=NULL, link=(), **kwargs):
+    def to_pointer(self, value, link=()):
         """Change this parameter to a pointer parameter. If a value is provided
         this will be set as the pointer. Either provide a Param object to point
         to its value, or provide a callable function to be called at runtime. It
@@ -214,15 +250,6 @@ class Param(Node):
         # While active no value can be set
         if self.active:
             raise ActiveStateError(f"Cannot set parameter {self.name} to pointer while active")
-
-        if value is NULL:
-            if callable(self.__value):
-                self.node_type = "pointer"
-                return
-            if len(self.children) == 1:
-                value = next(iter(self.children.values()))
-            else:
-                value = None
 
         if isinstance(value, Param):
             self.link(value)
@@ -239,55 +266,70 @@ class Param(Node):
 
     @property
     def shape(self) -> Optional[tuple[int, ...]]:
+        if self._shape is not None:
+            return self._shape
+        value = self.value
+        if value is not None:
+            return tuple(value.shape)
+        return ()
+
+    @shape.setter
+    def shape(self, shape: Optional[Iterable]):
+        if self.pointer:
+            raise ParamTypeError(
+                f"Cannot set shape of parameter {self.name} with node type 'pointer'"
+            )
+        if shape is None:
+            self._shape = None
+            return
+        value = self.value
+        try:
+            shape = tuple(shape)
+        except TypeError:
+            raise ParamConfigurationError(f"Param shape must be iterable of ints ({self.name})")
+        if value is None or valid_shape(self._batch_shape, shape, tuple(value.shape)):
+            self._shape = shape
+            return
+
+        raise ValueError(
+            f"Shape {shape} does not match the shape of the value {value.shape}! Unable to set shape. ({self.name})"
+        )
+
+    @property
+    def batched(self) -> bool:
+        return len(self.batch_shape) > 0
+
+    @property
+    def batch_shape(self) -> tuple[int, ...]:
+        if self._batch_shape is not None:
+            return self._batch_shape
         try:
             value = self.value
         except:
             value = None
-        if value is not None and (self.pointer or self._shape is None):
-            return tuple(value.shape)
-        return self._shape
-
-    @shape.setter
-    def shape(self, shape):
-        if self.pointer:
-            raise ParamTypeError(f"Cannot set shape of parameter {self.name} with type 'pointer'")
-        if shape is None:
-            self._shape = None
-            return
-        shape = tuple(shape)
-        value = self.value
-        if value is not None:
-            print(shape, value.shape, self.batched)
-        if value is not None and not valid_shape(shape, value.shape, self.batched):
-            raise ValueError(f"Shape {shape} does not match the shape of the value {value.shape}")
-        self._shape = shape
-
-    @property
-    def batch_shape(self) -> tuple[int]:
-        if not self.batched:
+        if value is None:
             return ()
-        vshape = self.value.shape
-        return tuple(vshape[: len(vshape) - len(self.shape)])
+        return tuple(value.shape[: len(value.shape) - len(self.shape)])
+
+    @batch_shape.setter
+    def batch_shape(self, batch_shape: tuple[int]):
+        if self.pointer:
+            raise ParamTypeError(
+                f"Cannot set batch_shape of parameter {self.name} with node type 'pointer'"
+            )
+        self._batch_shape = batch_shape
 
     @property
-    def batched(self) -> bool:
-        return self._batched
+    def group(self) -> int:
+        return self._group
 
-    @batched.setter
-    def batched(self, value: bool):
-        self._batched = value
-        if not value:
-            try:
-                value = self.value
-                self.shape = value.shape
-            except:
-                pass
-
-    def _shape_from_value(self, value_shape):
-        if self._shape is None:
-            self._shape = value_shape
-        if not valid_shape(self._shape, value_shape, self.batched):
-            self._shape = value_shape
+    @group.setter
+    def group(self, group: int):
+        assert isinstance(group, int), f"Group must be an integer ({self.name})"
+        pregroup = self._group
+        self._group = group
+        if pregroup != self._group:
+            self.update_graph()
 
     @property
     def dtype(self) -> Optional[str]:
@@ -381,19 +423,24 @@ class Param(Node):
     def _save_state_hdf5(self, h5group, appendable: bool = False, _done_save: set = None):
         super()._save_state_hdf5(h5group, appendable=appendable, _done_save=_done_save)
         if "value" not in self._h5group:
-            if self.value is None:
+            try:
+                value = self.value
+            except:
+                value = None
+
+            if value is None:
                 value = "None"
             elif appendable:
-                value = backend.to_numpy(self.value.reshape(1, *self.value.shape))
+                value = backend.to_numpy(value.reshape(1, *value.shape))
             else:
-                value = backend.to_numpy(self.value)
+                value = backend.to_numpy(value)
             if appendable:
                 self._h5group.create_dataset(
                     "value",
                     data=value,
-                    chunks=True if self.value is not None else False,
-                    maxshape=(None,) + self.shape if self.value is not None else None,
-                    compression="gzip" if self.value is not None else None,
+                    chunks=False if isinstance(value, str) else True,
+                    maxshape=None if isinstance(value, str) else (None,) + self.shape,
+                    compression=None if isinstance(value, str) else "gzip",
                 )
             else:
                 self._h5group.create_dataset(
@@ -424,7 +471,11 @@ class Param(Node):
         super()._append_state_hdf5(h5group)
         if not hasattr(self, "appended"):
             self.appended = True
-            if self.value is not None:
+            try:
+                value = self.value
+            except:
+                value = None
+            if value is not None:
                 h5group["value"].resize((h5group["value"].shape[0] + 1,) + self.shape)
                 h5group["value"][-1] = self.value
 
@@ -505,6 +556,7 @@ class Param(Node):
         self.is_valid()
 
     def is_valid(self, value=None) -> bool:
+        """Check if a given value is valid given this parameters allowed (valid) range."""
         if self.cyclic or self.pointer:
             return True
         if value is None:
@@ -563,13 +615,10 @@ class Param(Node):
         """
         Returns a string representation of the node for graph visualization.
         """
-        if self.pointer:
-            try:
-                value = self.value
-            except:
-                value = None
-        else:
+        try:
             value = self.value
+        except:
+            value = None
         if value is not None:
             value = backend.to_numpy(value)
 
@@ -580,6 +629,8 @@ class Param(Node):
                 return f"{self.name}|{self.node_type}: {value}"
             else:
                 return f"{self.name}|{self.node_type}: {self.shape}"
+        elif self.static:
+            return f"{self.name}|{self.node_type}: live"
         return f"{self.name}|{self.node_type}"
 
     def __repr__(self) -> str:
