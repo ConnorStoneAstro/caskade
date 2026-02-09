@@ -12,20 +12,22 @@ from .warnings import InvalidValueWarning
 
 
 def valid_shape(batch_shape, shape, value_shape):
-    if shape is None:  # no shape to compare
+    # No shape to compare
+    if shape is None:
         return True
+
+    # Determine what to compare
     if batch_shape is None:
         value_shape = value_shape[len(value_shape) - len(shape) :]
     else:
         shape = batch_shape + shape
-    if value_shape == shape:  # shapes match
-        return True
-    if len(value_shape) != len(shape):  # definitely dont match
+
+    # Definitely dont match, wrong lengths
+    if len(value_shape) != len(shape):
         return False
-    for v, s in zip(value_shape, shape):
-        if s is not None and v != s:  # dont match, skip Nones
-            return False
-    return True
+
+    # Check for match or None
+    return all(s is None or v == s for v, s in zip(value_shape, shape))
 
 
 NULL = object()
