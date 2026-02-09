@@ -15,12 +15,17 @@ def valid_shape(batch_shape, shape, value_shape):
     if shape is None:  # no shape to compare
         return True
     if batch_shape is None:
-        if value_shape == shape:  # shapes match
-            return True
-        if value_shape[len(value_shape) - len(shape) :] == shape:  # endswith
-            return True
+        value_shape = value_shape[len(value_shape) - len(shape) :]
+    else:
+        shape = batch_shape + shape
+    if value_shape == shape:  # shapes match
+        return True
+    if len(value_shape) != len(shape):  # definitely dont match
         return False
-    return value_shape == (batch_shape + shape)
+    for v, s in zip(value_shape, shape):
+        if s is not None and v != s:  # dont match, skip Nones
+            return False
+    return True
 
 
 NULL = object()
@@ -266,9 +271,14 @@ class Param(Node):
 
     @property
     def shape(self) -> Optional[tuple[int, ...]]:
-        if self._shape is not None:
-            return self._shape
         value = self.value
+        if self._shape is not None:
+            Ns = len(self._shape)
+            if value is None:
+                return self._shape
+            return tuple(
+                value.shape[s_i - Ns] if s is None else s for s_i, s in enumerate(self._shape)
+            )
         if value is not None:
             return tuple(value.shape)
         return ()
@@ -286,7 +296,9 @@ class Param(Node):
         try:
             shape = tuple(shape)
         except TypeError:
-            raise ParamConfigurationError(f"Param shape must be iterable of ints ({self.name})")
+            raise ParamConfigurationError(
+                f"Param shape must be iterable of ints/None, not: {type(shape)}. ({self.name})"
+            )
         if value is None or valid_shape(self._batch_shape, shape, tuple(value.shape)):
             self._shape = shape
             return
