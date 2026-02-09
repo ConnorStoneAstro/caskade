@@ -254,7 +254,9 @@ class GetSetValues:
             return tuple(self.find_index(p) for p in param)
         elif isinstance(param, GetSetValues):
             return tuple(
-                self.find_index(c) for c in param.children if isinstance(c, Param) and c.dynamic
+                self.find_index(c)
+                for c in param.children.values()
+                if isinstance(c, Param) and c.dynamic
             )
 
         if len(self.dynamic_param_groups) > 1:
