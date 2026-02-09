@@ -272,18 +272,20 @@ class Param(Node):
         self.node_type = "pointer"
 
     @property
-    def shape(self) -> Optional[tuple[int, ...]]:
+    def shape(self) -> tuple[int, ...]:
         value = self.value
-        if self._shape is not None:
-            Ns = len(self._shape)
-            if value is None:
-                return self._shape
-            return tuple(
-                value.shape[s_i - Ns] if s is None else s for s_i, s in enumerate(self._shape)
-            )
-        if value is not None:
-            return tuple(value.shape)
-        return ()
+        # 1. Handle cases where no shape template is defined
+        if self._shape is None:
+            return tuple(value.shape) if value is not None else ()
+
+        # 2. If value is missing, return the template as-is
+        if value is None:
+            return self._shape
+
+        # 3. Fill wildcards (None) in _shape using the trailing dimensions of value
+        # Negative indexing handles the alignment automatically
+        n = len(self._shape)
+        return tuple(v if s is None else s for s, v in zip(self._shape, value.shape[-n:]))
 
     @shape.setter
     def shape(self, shape: Optional[Iterable]):
