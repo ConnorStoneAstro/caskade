@@ -127,6 +127,35 @@ def test_input_methods_multi_hierarchical(multi_hierarchical_sim, params_type):
     assert np.allclose(2 * backend.to_numpy(val), sim.run_sim(20, 22, 2 * p0[0]))
 
 
+def test_finders(sim):
+    sim.to_dynamic(False)
+    assert sim.find_param(0)[0] is sim.workers[0].w2
+    assert sim.find_param(0)[1] == (0, 0)
+    assert all(a[0] is b for a, b in zip(sim.find_param([19, -1]), [sim.helper.h1, sim.s1]))
+    with pytest.raises(IndexError):
+        sim.find_param(100)
+
+    assert sim.find_index(sim.workers[0].w2) == slice(0, 4)
+    assert sim.find_index((sim.helper.h1, sim.s1)) == (19, 27)
+    with pytest.raises(ValueError):
+        sim.find_index(Param("bad_param"))
+
+    sim.workers[1].w2.group = 1
+    sim.helper.h1.group = 1
+    sim.workers[4].w1.group = 1
+    assert sim.find_param(0, 1)[0] is sim.workers[1].w2
+    assert sim.find_param(0, 1)[1] == (0, 0)
+    assert all(a[0] is b for a, b in zip(sim.find_param([16, -1], 0), [sim.helper.h2, sim.s1]))
+    with pytest.raises(IndexError):
+        sim.find_param(25, 0)
+
+    assert sim.find_index(sim.workers[0].w2) == (0, slice(0, 4))
+    assert sim.find_index(sim.workers[1].w2) == (1, slice(0, 4))
+    assert sim.find_index((sim.helper.h1, sim.s1)) == ((1, 4), (0, 21))
+    with pytest.raises(ValueError):
+        sim.find_index(Param("bad_param"))
+
+
 def nested_double(params):
     new_params = {}
     for param in params:

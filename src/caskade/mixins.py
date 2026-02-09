@@ -1,5 +1,6 @@
 from typing import Optional, Mapping, Sequence, Union
 from math import prod
+import numpy as np
 
 from .param import Param
 from .errors import (
@@ -199,6 +200,81 @@ class GetSetValues:
                 if len(params[link]) == 0:
                     del params[link]
         return params
+
+    def _array_inspection(self, group: Optional[int] = None):
+        param_list = self.dynamic_params
+        param_list = tuple(p for p in param_list if (group is None or p.group == group))
+        self._check_values(param_list, "array")
+
+        x = []
+        with Memo(self, self.name + ":semi_findidx_active"):
+            for param in param_list:
+                if param.online:
+                    shape = param.shape
+                else:
+                    depth = max(memo.count("|") for memo in param.memos)
+                    shape = param.batch_shape[-depth:] + param.shape
+                if shape == ():
+                    x.append((param, ()))
+                else:
+                    for i in range(prod(shape)):
+                        x.append((param, tuple(itm.item() for itm in np.unravel_index(i, shape))))
+        return x
+
+    # Finders
+    #################################################################
+    def find_param(self, idx: Union[int, tuple[int]], group: Optional[int] = None):
+        """
+        Identify which param is associated with the provided index in the
+        dynamic params array.
+
+        Parameters
+        ----------
+        idx: Union[int, tuple[int]]
+            The index in the params array at which we wish to find the
+            associated param.
+        group: Optional[int]
+            If the dynamic params have multiple group values, then this argument
+            specifies which group to check.
+
+        Returns
+        -------
+        param_info: tuple[Param, Optional[tuple[int]]]
+            A tuple with the Param object and the index within the Param value
+            associated with idx (empty tuple if scalar). If idx is a tuple then
+            the result is a tuple of these results.
+        """
+        x = self._array_inspection(group)
+        if isinstance(idx, int):
+            return x[idx]
+        return tuple(x[i] for i in idx)
+
+    def find_index(self, param: Union[Param, tuple[Param], "Module"]):
+        if isinstance(param, (list, tuple)):
+            return tuple(self.find_index(p) for p in param)
+        elif isinstance(param, GetSetValues):
+            return tuple(
+                self.find_index(c) for c in param.children if isinstance(c, Param) and c.dynamic
+            )
+
+        if len(self.dynamic_param_groups) > 1:
+            for group in self.dynamic_param_groups:
+                x = self._array_inspection(group)
+                matches = tuple(m[0] for m in filter(lambda p: p[1][0] is param, enumerate(x)))
+                if len(matches) == 1:
+                    return (group, matches[0])
+                elif len(matches) > 1:
+                    return (group, slice(min(matches), max(matches) + 1))
+            else:
+                raise ValueError(f"Param {param.name} could not be found in dynamic params.")
+
+        x = self._array_inspection(None)
+        matches = tuple(m[0] for m in filter(lambda p: p[1][0] is param, enumerate(x)))
+        if len(matches) == 1:
+            return matches[0]
+        elif len(matches) > 1:
+            return slice(min(matches), max(matches) + 1)
+        raise ValueError(f"Param {param.name} could not be found in dynamic params.")
 
     # To/From Valid
     #################################################################
