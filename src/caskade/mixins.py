@@ -263,53 +263,41 @@ class GetSetValues:
             raise ValueError(f"unrecognized scheme: {scheme}")
 
     def find_index(self, param: Union[Param, tuple[Param], "Module"], scheme="array"):
+        # 1. Handle recursive structures
         if isinstance(param, (list, tuple)):
             return tuple(self.find_index(p, scheme) for p in param)
-        elif isinstance(param, GetSetValues):
+        if isinstance(param, GetSetValues):
             return tuple(
                 self.find_index(c, scheme)
                 for c in param.children.values()
                 if isinstance(c, Param) and c.dynamic
             )
 
-        if len(self.dynamic_param_groups) > 1:
-            for group in self.dynamic_param_groups:
-                if scheme == "array":
-                    x = self._array_inspection(group)
-                    matches = tuple(m[0] for m in filter(lambda p: p[1][0] is param, enumerate(x)))
-                    if len(matches) == 1:
-                        return (group, matches[0])
-                    elif len(matches) > 1:
-                        return (group, slice(min(matches), max(matches) + 1))
-                elif scheme == "list":
-                    param_list = tuple(p for p in self.dynamic_params if p.group == group)
-                    if param in param_list:
-                        return (group, param_list.index(param))
-                elif scheme == "dict":
-                    raise NotImplementedError(
-                        "find_index is not implemented for the dict scheme. The dict has the same structure as the graph and so may be inspected in a variety of other ways."
-                    )
-                else:
-                    raise ValueError(f"unrecognized scheme: {scheme}")
-            else:
-                raise ValueError(f"Param {param.name} could not be found in dynamic params.")
+        groups = self.dynamic_param_groups if len(self.dynamic_param_groups) > 1 else [None]
 
-        if scheme in ["array", "tensor"]:
-            x = self._array_inspection(None)
-            matches = tuple(m[0] for m in filter(lambda p: p[1][0] is param, enumerate(x)))
-            if len(matches) == 1:
-                return matches[0]
-            elif len(matches) > 1:
-                return slice(min(matches), max(matches) + 1)
-            raise ValueError(f"Param {param.name} could not be found in dynamic params.")
-        elif scheme == "list":
-            return self.dynamic_params.index(param)
-        elif scheme == "dict":
-            raise NotImplementedError(
-                "find_index is not implemented for the dict scheme. The dict has the same structure as the graph and so may be inspected in a variety of other ways."
-            )
-        else:
-            raise ValueError(f"unrecognized scheme: {scheme}")
+        for group in groups:
+            if scheme in ["array", "tensor"]:
+                inspection = self._array_inspection(group)
+                matches = [i for i, item in enumerate(inspection) if item[0] is param]
+
+                if not matches:
+                    continue
+                idx = matches[0] if len(matches) == 1 else slice(min(matches), max(matches) + 1)
+
+            elif scheme == "list":
+                param_list = [p for p in self.dynamic_params if group is None or p.group == group]
+                if param not in param_list:
+                    continue
+                idx = param_list.index(param)
+            elif scheme == "dict":
+                raise NotImplementedError("find_index is not implemented for the dict scheme.")
+            else:
+                raise ValueError(f"unrecognized scheme: {scheme}")
+
+            # Return with group prefix if we are in multi-group mode
+            return (group, idx) if len(self.dynamic_param_groups) > 1 else idx
+
+        raise ValueError(f"Param {param.name} could not be found in dynamic params.")
 
     # To/From Valid
     #################################################################
