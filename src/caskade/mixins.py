@@ -225,7 +225,7 @@ class GetSetValues:
     #################################################################
     def find_param(
         self, idx: Union[int, tuple[int]], group: Optional[int] = None, scheme: str = "array"
-    ):
+    ) -> tuple[Param, tuple[int]]:
         """
         Identify which param is associated with the provided index in the
         dynamic params array.
@@ -238,10 +238,13 @@ class GetSetValues:
         group: Optional[int]
             If the dynamic params have multiple group values, then this argument
             specifies which group to check.
+        scheme: str
+            Whether to search the array (default) params or list version of
+            params. dict is currently unsupported.
 
         Returns
         -------
-        param_info: tuple[Param, Optional[tuple[int]]]
+        param_info: tuple[Param, tuple[int]]
             A tuple with the Param object and the index within the Param value
             associated with idx (empty tuple if scalar). If idx is a tuple then
             the result is a tuple of these results.
@@ -262,7 +265,28 @@ class GetSetValues:
         else:
             raise ValueError(f"unrecognized scheme: {scheme}")
 
-    def find_index(self, param: Union[Param, tuple[Param], "Module"], scheme="array"):
+    def find_index(
+        self, param: Union[Param, tuple[Param], "Module"], scheme: str = "array"
+    ) -> Union[int, slice]:
+        """
+        Identify what index is associated with a param in the dynamic params
+        array.
+
+        Parameters
+        ----------
+        param: Union[Param, tuple[Param], Module]
+            The param for which to find the associated index.
+        scheme: str
+            Whether to search the array (default) params or list version of
+            params. dict is currently unsupported.
+
+        Returns
+        -------
+        param_info: Union[int, slice]
+            A int giving the index associated with the provided Param object. If
+            the param is multi-dimensional then the result will be a slice over
+            all indices associated with that param.
+        """
         # 1. Handle recursive structures
         if isinstance(param, (list, tuple)):
             return tuple(self.find_index(p, scheme) for p in param)
