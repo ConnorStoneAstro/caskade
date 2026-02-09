@@ -171,6 +171,8 @@ def test_finders(sim):
         sim.find_index(Param("bad_param"))
 
     assert sim.find_index(sim.workers[0].w2, scheme="list") == (0, 0)
+    with pytest.raises(ValueError):
+        sim.find_index(Param("bad_param"), scheme="list")
     with pytest.raises(NotImplementedError):
         sim.find_index(sim.s1, scheme="dict")
     with pytest.raises(ValueError):
