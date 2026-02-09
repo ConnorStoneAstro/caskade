@@ -135,11 +135,23 @@ def test_finders(sim):
     with pytest.raises(IndexError):
         sim.find_param(100)
 
+    assert sim.find_param(0, scheme="list") is sim.workers[0].w2
+    with pytest.raises(NotImplementedError):
+        sim.find_param(0, scheme="dict")
+    with pytest.raises(ValueError):
+        sim.find_param(0, scheme="funky")
+
     assert sim.find_index(sim.workers[0].w2) == slice(0, 4)
     assert sim.find_index((sim.helper.h1, sim.s1)) == (19, 27)
     assert sim.find_index(sim.helper) == (19, slice(20, 22))
     with pytest.raises(ValueError):
         sim.find_index(Param("bad_param"))
+
+    assert sim.find_index(sim.workers[0].w2, scheme="list") == 0
+    with pytest.raises(NotImplementedError):
+        sim.find_index(sim.s1, scheme="dict")
+    with pytest.raises(ValueError):
+        sim.find_index(sim.s1, scheme="funky")
 
     sim.workers[1].w2.group = 1
     sim.helper.h1.group = 1
@@ -155,6 +167,12 @@ def test_finders(sim):
     assert sim.find_index((sim.helper.h1, sim.s1)) == ((1, 4), (0, 21))
     with pytest.raises(ValueError):
         sim.find_index(Param("bad_param"))
+
+    assert sim.find_index(sim.workers[0].w2, scheme="list") == (0, 0)
+    with pytest.raises(NotImplementedError):
+        sim.find_index(sim.s1, scheme="dict")
+    with pytest.raises(ValueError):
+        sim.find_index(sim.s1, scheme="funky")
 
 
 def test_finders_hierarchical(hierarchical_sim):
