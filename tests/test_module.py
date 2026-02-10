@@ -127,6 +127,74 @@ def test_input_methods_multi_hierarchical(multi_hierarchical_sim, params_type):
     assert np.allclose(2 * backend.to_numpy(val), sim.run_sim(20, 22, 2 * p0[0]))
 
 
+def test_finders(sim):
+    sim.to_dynamic(False)
+    assert sim.find_param(0)[0] is sim.workers[0].w2
+    assert sim.find_param(0)[1] == (0, 0)
+    assert all(a[0] is b for a, b in zip(sim.find_param([19, -1]), [sim.helper.h1, sim.s1]))
+    with pytest.raises(IndexError):
+        sim.find_param(100)
+
+    assert sim.find_param(0, scheme="list") is sim.workers[0].w2
+    with pytest.raises(NotImplementedError):
+        sim.find_param(0, scheme="dict")
+    with pytest.raises(ValueError):
+        sim.find_param(0, scheme="funky")
+
+    assert sim.find_index(sim.workers[0].w2) == slice(0, 4)
+    assert sim.find_index((sim.helper.h1, sim.s1)) == (19, 27)
+    assert sim.find_index(sim.helper) == (19, slice(20, 22))
+    with pytest.raises(ValueError):
+        sim.find_index(Param("bad_param"))
+
+    assert sim.find_index(sim.workers[0].w2, scheme="list") == 0
+    with pytest.raises(ValueError):
+        sim.find_index(Param("bad_param"), scheme="list")
+    with pytest.raises(NotImplementedError):
+        sim.find_index(sim.s1, scheme="dict")
+    with pytest.raises(ValueError):
+        sim.find_index(sim.s1, scheme="funky")
+
+    sim.workers[1].w2.group = 1
+    sim.helper.h1.group = 1
+    sim.workers[4].w1.group = 1
+    assert sim.find_param(0, 1)[0] is sim.workers[1].w2
+    assert sim.find_param(0, 1)[1] == (0, 0)
+    assert all(a[0] is b for a, b in zip(sim.find_param([16, -1], 0), [sim.helper.h2, sim.s1]))
+    with pytest.raises(IndexError):
+        sim.find_param(25, 0)
+
+    assert sim.find_index(sim.workers[0].w2) == (0, slice(0, 4))
+    assert sim.find_index(sim.workers[1].w2) == (1, slice(0, 4))
+    assert sim.find_index((sim.helper.h1, sim.s1)) == ((1, 4), (0, 21))
+    with pytest.raises(ValueError):
+        sim.find_index(Param("bad_param"))
+
+    assert sim.find_index(sim.workers[0].w2, scheme="list") == (0, 0)
+    with pytest.raises(ValueError):
+        sim.find_index(Param("bad_param"), scheme="list")
+    with pytest.raises(NotImplementedError):
+        sim.find_index(sim.s1, scheme="dict")
+    with pytest.raises(ValueError):
+        sim.find_index(sim.s1, scheme="funky")
+
+
+def test_finders_hierarchical(hierarchical_sim):
+    sim = hierarchical_sim
+    sim.to_dynamic(False)
+    print(sim.param_order())
+    assert sim.find_param(0)[0] is sim.helper.h1
+    assert sim.find_param(0)[1] == ()
+    assert all(a[0] is b for a, b in zip(sim.find_param([19, -1]), [sim.worker.w2, sim.s1]))
+    with pytest.raises(IndexError):
+        sim.find_param(100)
+
+    assert sim.find_index(sim.worker.w2) == slice(8, 28)
+    assert sim.find_index((sim.helper.h1, sim.s1)) == (0, 28)
+    with pytest.raises(ValueError):
+        sim.find_index(Param("bad_param"))
+
+
 def nested_double(params):
     new_params = {}
     for param in params:

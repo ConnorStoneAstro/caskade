@@ -94,9 +94,18 @@ class Module(Node, GetSetValues):
         super().update_graph()
 
     def param_order(self):
-        return ", ".join(
-            tuple(f"{next(iter(p.parents)).name}: {p.name}" for p in self.dynamic_params)
-        )
+        res = []
+        for g in self.dynamic_param_groups:
+            res.append(
+                ", ".join(
+                    tuple(
+                        f"{next(iter(p.parents)).name}: {p.name}"
+                        for p in self.dynamic_params
+                        if p.group == g
+                    )
+                )
+            )
+        return "\n".join(res)
 
     @property
     def dynamic(self) -> bool:

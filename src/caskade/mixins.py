@@ -1,5 +1,6 @@
 from typing import Optional, Mapping, Sequence, Union
 from math import prod
+import numpy as np
 
 from .param import Param
 from .errors import (
@@ -199,6 +200,128 @@ class GetSetValues:
                 if len(params[link]) == 0:
                     del params[link]
         return params
+
+    def _array_inspection(self, group: Optional[int] = None):
+        param_list = self.dynamic_params
+        param_list = tuple(p for p in param_list if (group is None or p.group == group))
+        self._check_values(param_list, "array")
+
+        x = []
+        with Memo(self, self.name + ":semi_findidx_active"):
+            for param in param_list:
+                if param.online:
+                    shape = param.shape
+                else:
+                    depth = max(memo.count("|") for memo in param.memos)
+                    shape = param.batch_shape[-depth:] + param.shape
+                if shape == ():
+                    x.append((param, ()))
+                else:
+                    for i in range(prod(shape)):
+                        x.append((param, tuple(itm.item() for itm in np.unravel_index(i, shape))))
+        return x
+
+    # Finders
+    #################################################################
+    def find_param(
+        self, idx: Union[int, tuple[int]], group: Optional[int] = None, scheme: str = "array"
+    ) -> tuple[Param, tuple[int]]:
+        """
+        Identify which param is associated with the provided index in the
+        dynamic params array.
+
+        Parameters
+        ----------
+        idx: Union[int, tuple[int]]
+            The index in the params array at which we wish to find the
+            associated param.
+        group: Optional[int]
+            If the dynamic params have multiple group values, then this argument
+            specifies which group to check.
+        scheme: str
+            Whether to search the array (default) params or list version of
+            params. dict is currently unsupported.
+
+        Returns
+        -------
+        param_info: tuple[Param, tuple[int]]
+            A tuple with the Param object and the index within the Param value
+            associated with idx (empty tuple if scalar). If idx is a tuple then
+            the result is a tuple of these results.
+        """
+        if not isinstance(idx, int):
+            return tuple(self.find_param(i, group, scheme) for i in idx)
+
+        if scheme == "array":
+            x = self._array_inspection(group)
+            return x[idx]
+        elif scheme == "list":
+            param_list = tuple(p for p in self.dynamic_params if group is None or p.group == group)
+            return param_list[idx]
+        elif scheme == "dict":
+            raise NotImplementedError(
+                "find_param is not implemented for the dict scheme. The dict has the same structure as the graph and so may be inspected in a variety of other ways."
+            )
+        else:
+            raise ValueError(f"unrecognized scheme: {scheme}")
+
+    def find_index(
+        self, param: Union[Param, tuple[Param], "Module"], scheme: str = "array"
+    ) -> Union[int, slice]:
+        """
+        Identify what index is associated with a param in the dynamic params
+        array.
+
+        Parameters
+        ----------
+        param: Union[Param, tuple[Param], Module]
+            The param for which to find the associated index.
+        scheme: str
+            Whether to search the array (default) params or list version of
+            params. dict is currently unsupported.
+
+        Returns
+        -------
+        param_info: Union[int, slice]
+            A int giving the index associated with the provided Param object. If
+            the param is multi-dimensional then the result will be a slice over
+            all indices associated with that param.
+        """
+        # 1. Handle recursive structures
+        if isinstance(param, (list, tuple)):
+            return tuple(self.find_index(p, scheme) for p in param)
+        if isinstance(param, GetSetValues):
+            return tuple(
+                self.find_index(c, scheme)
+                for c in param.children.values()
+                if isinstance(c, Param) and c.dynamic
+            )
+
+        groups = self.dynamic_param_groups if len(self.dynamic_param_groups) > 1 else [None]
+
+        for group in groups:
+            if scheme in ["array", "tensor"]:
+                inspection = self._array_inspection(group)
+                matches = [i for i, item in enumerate(inspection) if item[0] is param]
+
+                if not matches:
+                    continue
+                idx = matches[0] if len(matches) == 1 else slice(min(matches), max(matches) + 1)
+
+            elif scheme == "list":
+                param_list = [p for p in self.dynamic_params if group is None or p.group == group]
+                if param not in param_list:
+                    continue
+                idx = param_list.index(param)
+            elif scheme == "dict":
+                raise NotImplementedError("find_index is not implemented for the dict scheme.")
+            else:
+                raise ValueError(f"unrecognized scheme: {scheme}")
+
+            # Return with group prefix if we are in multi-group mode
+            return (group, idx) if len(self.dynamic_param_groups) > 1 else idx
+
+        raise ValueError(f"Param {param.name} could not be found in dynamic params.")
 
     # To/From Valid
     #################################################################
