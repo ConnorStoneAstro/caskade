@@ -7,9 +7,7 @@ from caskade import (
     ActiveStateError,
     ParamConfigurationError,
     ParamTypeError,
-    GraphError,
     InvalidValueWarning,
-    LinkToAttributeError,
     ActiveContext,
     backend,
 )
@@ -56,6 +54,35 @@ def test_param_creation(many_param, capsys):
     assert p.name in p.node_str
     assert p.name in str(p)
     assert p.name in repr(p)
+
+    # Ensure no spurious output
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+
+def test_none_shape_param(capsys):
+    p = Param("p", np.ones((3, 4, 5)), shape=(None, 5))
+    assert p.shape == (4, 5)
+    assert p.batch_shape == (3,)
+    p.value = np.ones((2, 3, 5))
+    assert p.shape == (3, 5)
+    assert p.batch_shape == (2,)
+
+    p.value = None
+
+    assert p.shape == (None, 5)
+
+    with pytest.raises(ParamConfigurationError):
+        p.value = np.ones(5)
+    with pytest.raises(ParamConfigurationError):
+        p.value = np.ones((2, 2))
+
+    p.value = np.ones((4, 5))
+
+    with pytest.raises(ValueError):
+        p.shape = (4, 2)
+    with pytest.raises(ValueError):
+        p.shape = (3, 4, 5)
 
     # Ensure no spurious output
     captured = capsys.readouterr()

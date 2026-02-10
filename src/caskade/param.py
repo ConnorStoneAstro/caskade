@@ -12,15 +12,22 @@ from .warnings import InvalidValueWarning
 
 
 def valid_shape(batch_shape, shape, value_shape):
-    if shape is None:  # no shape to compare
+    # No shape to compare
+    if shape is None:
         return True
+
+    # Determine what to compare
     if batch_shape is None:
-        if value_shape == shape:  # shapes match
-            return True
-        if value_shape[len(value_shape) - len(shape) :] == shape:  # endswith
-            return True
+        value_shape = value_shape[len(value_shape) - len(shape) :]
+    else:
+        shape = batch_shape + shape
+
+    # Definitely dont match, wrong lengths
+    if len(value_shape) != len(shape):
         return False
-    return value_shape == (batch_shape + shape)
+
+    # Check for match or None
+    return all(s is None or v == s for v, s in zip(value_shape, shape))
 
 
 NULL = object()
@@ -265,13 +272,20 @@ class Param(Node):
         self.node_type = "pointer"
 
     @property
-    def shape(self) -> Optional[tuple[int, ...]]:
-        if self._shape is not None:
-            return self._shape
+    def shape(self) -> tuple[int, ...]:
         value = self.value
-        if value is not None:
-            return tuple(value.shape)
-        return ()
+        # 1. Handle cases where no shape template is defined
+        if self._shape is None:
+            return tuple(value.shape) if value is not None else ()
+
+        # 2. If value is missing, return the template as-is
+        if value is None:
+            return self._shape
+
+        # 3. Fill wildcards (None) in _shape using the trailing dimensions of value
+        # Negative indexing handles the alignment automatically
+        n = len(self._shape)
+        return tuple(v if s is None else s for s, v in zip(self._shape, value.shape[-n:]))
 
     @shape.setter
     def shape(self, shape: Optional[Iterable]):
@@ -286,7 +300,9 @@ class Param(Node):
         try:
             shape = tuple(shape)
         except TypeError:
-            raise ParamConfigurationError(f"Param shape must be iterable of ints ({self.name})")
+            raise ParamConfigurationError(
+                f"Param shape must be iterable of ints/None, not: {type(shape)}. ({self.name})"
+            )
         if value is None or valid_shape(self._batch_shape, shape, tuple(value.shape)):
             self._shape = shape
             return
