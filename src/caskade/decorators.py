@@ -106,8 +106,7 @@ class active_cache:
         If you are stacking multiple decorators on a method (such as `@forward`
         or `@jax.jit`), `@active_cache` MUST be the outermost (top) decorator.
 
-    Example:
-        ```python
+    Example::
         class FluxModel(Module):
             def __init__(self, nodes, x, M):
                 super().__init__()
