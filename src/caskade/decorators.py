@@ -146,7 +146,7 @@ class active_cache:
 
     def __set_name__(self, owner, name):
         """Injects the reset function when the class is created."""
-        if not hasattr(owner, "_cache_attrs"):
+        if "_cache_attrs" not in owner.__dict__:
             owner._cache_attrs = set()
         owner._cache_attrs.add(self.cache_attr)
 
