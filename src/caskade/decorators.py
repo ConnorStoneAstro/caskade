@@ -141,6 +141,9 @@ class active_cache:
         # Unique attribute name to store the single result
         self.cache_attr = f"_active_cache_{func.__name__}"
 
+        # Update wrapper to preserve function metadata
+        functools.update_wrapper(self, func)
+
     def __set_name__(self, owner, name):
         """Injects the reset function when the class is created."""
         if not hasattr(owner, "_cache_attrs"):
