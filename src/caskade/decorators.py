@@ -102,6 +102,11 @@ class active_cache:
     active simulation run. Once calculated, subsequent calls to the decorated
     method will return the stored value, ignoring any arguments passed to it.
 
+    **WARNING**:
+        If the method is called multiple times with different arguments in one
+        simulation, the cached result will still be returned, which may lead to
+        unexpected behavior. Use with caution!
+
     Note:
         If you are stacking multiple decorators on a method (such as `@forward`
         or `@jax.jit`), `@active_cache` MUST be the outermost (top) decorator.
@@ -129,7 +134,7 @@ class active_cache:
                 peak = jnp.max(sed)
                 return flux, peak
 
-        model = FluxModel()
+        model = FluxModel(np.linspace(400, 700, 10), x=1.0, M=np.random.rand(10))
 
         # Compute flux only calls compute_intrinsic_sed once due to caching
         flux, peak = model.compute_flux(wavelengths)
@@ -172,14 +177,15 @@ class active_cache:
 
         @functools.wraps(self.func)
         def wrapper(*args, **kwargs):
+            # If not in simulation, just call the function without caching
             if not instance.active:
                 return self.func(instance, *args, **kwargs)
-            # 1. If we already have the attribute, return it immediately
-            # (hasattr is used so that if the function returns None, it still caches)
+
+            # If we already have the attribute, return it immediately
             if hasattr(instance, self.cache_attr):
                 return getattr(instance, self.cache_attr)
 
-            # 2. Otherwise, run the function, save the output, and return it
+            # Run the function, save the output, and return it
             result = self.func(instance, *args, **kwargs)
             setattr(instance, self.cache_attr, result)
             return result
