@@ -147,10 +147,17 @@ class active_cache:
     def __set_name__(self, owner, name):
         """Injects the reset function when the class is created."""
         if "_cache_attrs" not in owner.__dict__:
-            owner._cache_attrs = set()
+            # Start with a copy of any inherited cache attributes from parent classes
+            inherited_attrs = set()
+            for base in owner.__bases__:
+                if hasattr(base, "_cache_attrs"):
+                    inherited_attrs.update(base._cache_attrs)
+
+            # Assign the independent set to this specific subclass
+            owner._cache_attrs = inherited_attrs
         owner._cache_attrs.add(self.cache_attr)
 
-        if not hasattr(owner, "reset_active_cache"):
+        if "reset_active_cache" not in owner.__dict__:
 
             def reset_active_cache(instance):
                 """Deletes the cached attributes to force a recalculation."""
