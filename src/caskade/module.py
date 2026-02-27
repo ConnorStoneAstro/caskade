@@ -181,6 +181,11 @@ class Module(Node, GetSetValues):
         for param in self.all_params:
             param._value = None
 
+    def remove_memo(self, memo):
+        if hasattr(self, "reset_active_cache") and memo == "active":
+            self.reset_active_cache()
+        return super().remove_memo(memo)
+
     def fill_kwargs(self, keys: tuple[str]) -> dict[str, ArrayLike]:
         """
         Fill the kwargs for an ``@forward`` method with the values of the
