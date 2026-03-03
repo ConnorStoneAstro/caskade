@@ -5,8 +5,31 @@ from .errors import ActiveStateError
 
 class ActiveContext:
     """
-    Context manager to activate a module for a simulation. Only inside an
-    ActiveContext is it possible to fill/clear the dynamic and live parameters.
+    Context manager to activate a module for a simulation.
+
+    Only inside an ``ActiveContext`` is it possible to fill or clear the
+    dynamic and live parameters. On entry, the module is marked as active
+    (or its current parameter state is saved if already active). On exit,
+    the state is restored.
+
+    Parameters
+    ----------
+    module : Module
+        The module to activate for the duration of the context.
+
+    Raises
+    ------
+    ActiveStateError
+        If the module is already running a simulation (``module.online``
+        is ``True``).
+
+    Examples
+    --------
+    Activate a module, fill parameters, and run a forward pass::
+
+        with ActiveContext(my_module):
+            my_module.fill_params(params)
+            result = my_module.my_forward(x)
     """
 
     def __init__(self, module: Module):
@@ -34,8 +57,23 @@ class ActiveContext:
 
 class ValidContext:
     """
-    Context manager to set valid values for parameters. Only inside a
-    ValidContext will parameters automatically be assumed valid.
+    Context manager to set valid values for parameters.
+
+    Only inside a ``ValidContext`` will parameters automatically be assumed
+    valid. The previous validity state is saved on entry and restored on
+    exit.
+
+    Parameters
+    ----------
+    module : Module
+        The module whose parameters should be treated as valid.
+
+    Examples
+    --------
+    Retrieve parameter values that are assumed valid::
+
+        with ValidContext(my_module):
+            valid_params = my_module.get_values()
     """
 
     def __init__(self, module: Module):
@@ -51,8 +89,25 @@ class ValidContext:
 
 class OverrideParam:
     """
-    Context manager to override a parameter value. Only inside an
-    OverrideParam will the parameter be set to the new value.
+    Context manager to override a parameter value.
+
+    Only inside an ``OverrideParam`` will the parameter be set to the new
+    value. The original value (and the values of any parent pointer
+    parameters) are saved on entry and restored on exit.
+
+    Parameters
+    ----------
+    param : Param
+        The parameter whose value should be temporarily overridden.
+    value : object
+        The temporary value to assign to *param*.
+
+    Examples
+    --------
+    Temporarily override a parameter for a forward pass::
+
+        with OverrideParam(my_param, new_value):
+            result = my_module.my_forward(x, params=params)
     """
 
     def __init__(self, param: Param, value):
