@@ -1,0 +1,25 @@
+strict digraph {
+	node [color=black shape=circle style=solid]
+	140112412668224 [label="Node(a)"]
+	node [color=black shape=circle style=solid]
+	140112412667600 [label="Node(b)"]
+	node [color=black shape=circle style=solid]
+	140112412668656 [label="Node(d)"]
+	node [color=black shape=circle style=solid]
+	140112412668752 [label="Node(e)"]
+	node [color=black shape=circle style=solid]
+	140112412668560 [label="Node(c)"]
+	node [color=black shape=circle style=solid]
+	140112412668848 [label="Node(f)"]
+	node [color=black shape=circle style=solid]
+	140112412668944 [label="Node(g)"]
+	140112412668224 -> 140112412667600
+	140112412667600 -> 140112412668656
+	140112412667600 -> 140112412668752
+	140112412668224 -> 140112412668560
+	140112412668560 -> 140112412668656
+	140112412668560 -> 140112412668848
+	140112412668848 -> 140112412668944
+	140112412668944 -> 140112412668752
+	140112412668224 -> 140112412668752
+}
