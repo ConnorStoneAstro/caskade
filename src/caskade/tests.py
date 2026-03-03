@@ -41,6 +41,19 @@ def _test_full_integration():
 
 
 def test():
-    """Basic integration test of caskade to ensure that the library is functioning correctly."""
+    """
+    Run a basic integration test to verify caskade is installed and working.
+
+    Exercises core functionality including Module and Param creation,
+    parameter linking, and forward method execution.
+
+    Examples
+    --------
+    ::
+
+        import caskade
+        caskade.test()
+        # Output: Success!
+    """
     _test_full_integration()
     print("Success!")
