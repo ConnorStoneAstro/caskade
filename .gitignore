@@ -165,4 +165,7 @@ cython_debug/
 # HDF5 files
 **.h5
 
-**settings.jsontest_graph
+**settings.json
+
+# Test artifacts
+test_graph
