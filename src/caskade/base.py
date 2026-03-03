@@ -207,8 +207,22 @@ class Node:
         del self.children[key]
         self.update_graph()
 
-    def unlink(self, key: Union[str, "Node", list, tuple]):
-        """Unlink the current ``Node`` object from another ``Node`` object which is a child."""
+    def unlink(self, key: Union[str, "Node", list, tuple, None] = None):
+        """Unlink the current ``Node`` object from another ``Node`` object which is a child.
+
+        Parameters
+        ----------
+        key: (str, Node, list, tuple, or None, optional)
+            The key, ``Node`` object, or collection of keys/nodes to unlink.
+            If a string, the child with that key is unlinked. If a ``Node``
+            object, the matching child is located and unlinked. If a list or
+            tuple, each element is unlinked in turn. If ``None`` (the
+            default), all children are unlinked.
+        """
+        if key is None:
+            for k in list(self.children):
+                self._unlink(k)
+            return
         if isinstance(key, Node):
             for node in self.children:
                 if self.children[node] is key:

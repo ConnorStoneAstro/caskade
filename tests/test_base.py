@@ -87,6 +87,12 @@ def test_linking(node_graph):
         a.e
     a.unlink((b, c))
 
+    # Check unlink with no arguments clears all children
+    a.link(e)
+    assert len(a.children) > 0
+    a.unlink()
+    assert len(a.children) == 0
+
 
 def test_graphviz(node_graph):
     a, *_ = node_graph
