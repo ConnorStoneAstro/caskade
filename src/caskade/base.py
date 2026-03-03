@@ -233,6 +233,8 @@ class Node:
             for k in key:
                 self.unlink(k)
             return
+        if key not in self.children:
+            raise KeyError(f"Child key '{key}' not found in parent {self.name}")
         self.__delattr__(key)
 
     def topological_ordering(self) -> tuple["Node"]:

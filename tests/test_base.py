@@ -85,6 +85,10 @@ def test_linking(node_graph):
     assert e in a.topological_ordering()
     with pytest.raises(AttributeError):
         a.e
+    with pytest.raises(KeyError):
+        a.unlink(e)
+    with pytest.raises(KeyError):
+        a.unlink("e")
     a.unlink((b, c))
 
     # Check unlink with no arguments clears all children
