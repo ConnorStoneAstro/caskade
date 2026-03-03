@@ -227,6 +227,8 @@ class Node:
                 if self.children[node] is key:
                     key = node
                     break
+            else:
+                raise KeyError(f"Node {key.name} not found in parent {self.name}")
         elif isinstance(key, (tuple, list)):
             for k in key:
                 self.unlink(k)
