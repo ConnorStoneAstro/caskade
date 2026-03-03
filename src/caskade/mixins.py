@@ -15,6 +15,14 @@ from .base import Node, Memo
 
 
 class GetSetValues:
+    """Mixin providing methods for getting and setting parameter values.
+
+    Provides array, list, and dict interfaces for reading and writing
+    dynamic (or static) parameter values on a ``Module`` or
+    ``NodeCollection``.  Also includes helpers for locating parameters
+    by index and for converting between raw and valid (transformed)
+    parameter spaces.
+    """
 
     @property
     def valid_context(self) -> bool:
@@ -115,7 +123,32 @@ class GetSetValues:
     def set_values(
         self, params: Union[ArrayLike, Sequence, Mapping], dynamic=True, attribute="value"
     ):
-        """Fill the dynamic values of the module with the input values from params."""
+        """Fill parameter values of the module from the provided data.
+
+        Parameters
+        ----------
+        params : Union[ArrayLike, Sequence, Mapping]
+            Values to assign to the parameters.  Accepted formats:
+
+            * **ArrayLike** – a flat (or batched) array whose last dimension
+              is concatenated parameter values in topological order.
+            * **Sequence** – one element per parameter, matched by position.
+            * **Mapping** – keys matching child names, values being the
+              parameter data (may be nested).
+
+            When multiple dynamic parameter groups exist, ``params`` should
+            be a sequence of per-group containers.
+        dynamic : bool, optional
+            If ``True`` (default), sets dynamic parameters; otherwise sets
+            static parameters.
+        attribute : str, optional
+            The ``Param`` attribute to write to, by default ``"value"``.
+
+        Raises
+        ------
+        ActiveStateError
+            If the module is currently in an active (tracing) state.
+        """
         if self.active:
             raise ActiveStateError(f"Cannot fill dynamic values when Module {self.name} is active")
 
@@ -149,6 +182,35 @@ class GetSetValues:
     def get_values(
         self, scheme="array", dynamic=True, attribute="value", group: Optional[int] = None
     ) -> Union[ArrayLike, list[ArrayLike], dict[str, Union[dict, ArrayLike]]]:
+        """Retrieve parameter values from the module.
+
+        Parameters
+        ----------
+        scheme : str, optional
+            Output format, one of ``"array"`` (default), ``"list"``, or
+            ``"dict"``.
+
+            * ``"array"`` / ``"tensor"`` – returns a single flat array with
+              all parameter values concatenated along the last axis.
+            * ``"list"`` – returns a list of raw parameter values.
+            * ``"dict"`` – returns a nested dictionary mirroring the graph
+              structure.
+        dynamic : bool, optional
+            If ``True`` (default), retrieves dynamic parameters; otherwise
+            retrieves static parameters.
+        attribute : str, optional
+            The ``Param`` attribute to read from, by default ``"value"``.
+        group : int or None, optional
+            Restrict to a specific parameter group.  When ``None`` (default)
+            and multiple groups exist, returns a list of per-group results.
+
+        Returns
+        -------
+        Union[ArrayLike, list[ArrayLike], dict[str, Union[dict, ArrayLike]]]
+            Parameter values in the format specified by *scheme*.  When
+            multiple groups exist and *group* is ``None``, a list of
+            per-group results is returned.
+        """
         if len(self.dynamic_param_groups) > 1 and group is None:
             values = []
             for g in self.dynamic_param_groups:
@@ -374,7 +436,28 @@ class GetSetValues:
     def to_valid(
         self, params: Union[ArrayLike, Sequence, Mapping], param_list=None, group=None
     ) -> Union[ArrayLike, Sequence, Mapping]:
-        """Convert input params to valid params."""
+        """Transform raw parameter values to the valid (constrained) space.
+
+        Applies each parameter's ``to_valid`` transformation so that
+        unconstrained optimiser values are mapped into their valid domain.
+
+        Parameters
+        ----------
+        params : Union[ArrayLike, Sequence, Mapping]
+            Raw parameter values in any supported format (array, sequence,
+            or mapping).
+        param_list : tuple of Param or None, optional
+            Subset of parameters to transform.  Defaults to all dynamic
+            parameters.
+        group : int or None, optional
+            Restrict to a specific parameter group.  When ``None`` and
+            multiple groups exist, all groups are transformed.
+
+        Returns
+        -------
+        Union[ArrayLike, Sequence, Mapping]
+            Transformed values in the same format as *params*.
+        """
         if param_list is None:
             param_list = self.dynamic_params
         if len(self.dynamic_param_groups) > 1:
@@ -393,7 +476,28 @@ class GetSetValues:
     def from_valid(
         self, valid_params: Union[ArrayLike, Sequence, Mapping], param_list=None, group=None
     ) -> Union[ArrayLike, Sequence, Mapping]:
-        """Convert valid params to input params."""
+        """Transform valid (constrained) parameter values back to raw space.
+
+        Applies each parameter's ``from_valid`` transformation, inverting
+        the mapping performed by :meth:`to_valid`.
+
+        Parameters
+        ----------
+        valid_params : Union[ArrayLike, Sequence, Mapping]
+            Parameter values in the valid (constrained) domain, in any
+            supported format (array, sequence, or mapping).
+        param_list : tuple of Param or None, optional
+            Subset of parameters to transform.  Defaults to all dynamic
+            parameters.
+        group : int or None, optional
+            Restrict to a specific parameter group.  When ``None`` and
+            multiple groups exist, all groups are transformed.
+
+        Returns
+        -------
+        Union[ArrayLike, Sequence, Mapping]
+            Inverse-transformed values in the same format as *valid_params*.
+        """
         if param_list is None:
             param_list = self.dynamic_params
         if len(self.dynamic_param_groups) > 1:
