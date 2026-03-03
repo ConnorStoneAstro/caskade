@@ -1,25 +1,30 @@
 strict digraph {
-	node [color=black shape=circle style=solid]
-	140379535175664 [label="Node(a)"]
-	node [color=black shape=circle style=solid]
-	140379535175040 [label="Node(b)"]
-	node [color=black shape=circle style=solid]
-	140379535176096 [label="Node(d)"]
-	node [color=black shape=circle style=solid]
-	140379535176192 [label="Node(e)"]
-	node [color=black shape=circle style=solid]
-	140379535176000 [label="Node(c)"]
-	node [color=black shape=circle style=solid]
-	140379535176288 [label="Node(f)"]
-	node [color=black shape=circle style=solid]
-	140379535176384 [label="Node(g)"]
-	140379535175664 -> 140379535175040
-	140379535175040 -> 140379535176096
-	140379535175040 -> 140379535176192
-	140379535175664 -> 140379535176000
-	140379535176000 -> 140379535176096
-	140379535176000 -> 140379535176288
-	140379535176288 -> 140379535176384
-	140379535176384 -> 140379535176192
-	140379535175664 -> 140379535176192
+	node [color=black shape=ellipse style=solid]
+	139987346403360 [label="Simulator(hsim)"]
+	node [color=black shape=ellipse style=solid]
+	139987346394960 [label="Helper(Helper)"]
+	node [color=lightgrey fillcolor=lightgrey shape=box style=filled]
+	139987346395344 [label=h1]
+	node [color=lightgrey fillcolor=lightgrey shape=box style=filled]
+	139987346400864 [label=h2]
+	subgraph cluster_139987346393808 {
+		node [color=black shape=ellipse style=solid]
+		139987346393808 [label="Worker(worker)"]
+		node [color=lightgrey fillcolor=lightgrey shape=box style=filled]
+		139987346393760 [label=w1]
+		node [color=lightgrey fillcolor=lightgrey shape=box style=filled]
+		139987346401104 [label=w2]
+	}
+	node [color=lightgrey fillcolor=lightgrey shape=box style=filled]
+	139987346926160 [label=s1]
+	139987346403360 -> 139987346394960
+	139987346394960 -> 139987346395344
+	139987346394960 -> 139987346400864
+	139987346403360 -> 139987346393808
+	139987346393808 -> 139987346394960
+	139987346394960 -> 139987346395344
+	139987346394960 -> 139987346400864
+	139987346393808 -> 139987346393760
+	139987346393808 -> 139987346401104
+	139987346403360 -> 139987346926160
 }
