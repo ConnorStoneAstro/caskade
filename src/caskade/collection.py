@@ -187,3 +187,68 @@ class NodeList(NodeCollection, list):
 
     def __imul__(self, other):
         raise NotImplementedError
+
+
+class NodeDict(NodeCollection, dict):
+
+    def __init__(self, mapping=None, name=None):
+        if mapping is None:
+            mapping = {}
+        dict.__init__(self, mapping)
+        Node.__init__(self, name=name)
+        self.node_type = "ndict"
+        self._link_nodes()
+
+    @property
+    def graphviz_style(self):
+        return {"style": "solid", "color": "black", "shape": "component"}
+
+    @property
+    def dynamic(self):
+        return any(node.dynamic for node in dict.values(self))
+
+    def _unlink_nodes(self):
+        for node in dict.values(self):
+            self.unlink(node)
+
+    def _link_nodes(self):
+        for key, node in dict.items(self):
+            if not isinstance(node, Node):
+                raise TypeError(f"NodeDict values must be Node objects, not {type(node)}")
+            self.link(key, node)
+
+    def __getitem__(self, key):
+        return dict.__getitem__(self, key)
+
+    def __setitem__(self, key, node):
+        self._unlink_nodes()
+        dict.__setitem__(self, key, node)
+        self._link_nodes()
+
+    def __delitem__(self, key):
+        self._unlink_nodes()
+        dict.__delitem__(self, key)
+        self._link_nodes()
+
+    def update(self, mapping=None, **kwargs):
+        self._unlink_nodes()
+        if mapping is not None:
+            dict.update(self, mapping)
+        if kwargs:
+            dict.update(self, kwargs)
+        self._link_nodes()
+
+    def pop(self, key, *args):
+        self._unlink_nodes()
+        node = dict.pop(self, key, *args)
+        self._link_nodes()
+        return node
+
+    def clear(self):
+        self._unlink_nodes()
+        dict.clear(self)
+
+    def setdefault(self, key, default=None):
+        if key not in self:
+            self[key] = default
+        return self[key]

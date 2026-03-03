@@ -3,7 +3,7 @@ from typing import Sequence, Mapping, Optional, Union, Any
 from .backend import ArrayLike
 from .base import Node
 from .param import Param
-from .collection import NodeTuple, NodeList
+from .collection import NodeTuple, NodeList, NodeDict
 from .mixins import GetSetValues
 from .errors import ActiveStateError, FillParamsError
 
@@ -236,6 +236,9 @@ class Module(Node, GetSetValues):
             ):
                 if len(value) > 0 and all(isinstance(v, Node) for v in value):
                     value = NodeTuple(value, name=key)
+            elif isinstance(value, dict) and not isinstance(value, NodeDict):
+                if len(value) > 0 and all(isinstance(v, Node) for v in value.values()):
+                    value = NodeDict(value, name=key)
         except AttributeError:
             pass
         super().__setattr__(key, value)

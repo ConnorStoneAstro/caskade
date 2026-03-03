@@ -6,7 +6,7 @@ from .context import ActiveContext, ValidContext, OverrideParam
 from .decorators import forward, active_cache
 from .module import Module
 from .param import Param
-from .collection import NodeCollection, NodeList, NodeTuple
+from .collection import NodeCollection, NodeList, NodeTuple, NodeDict
 from .tests import test
 from .errors import (
     CaskadeException,
@@ -39,6 +39,7 @@ __all__ = (
     "NodeCollection",
     "NodeList",
     "NodeTuple",
+    "NodeDict",
     "ActiveContext",
     "ValidContext",
     "OverrideParam",
