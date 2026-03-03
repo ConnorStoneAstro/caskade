@@ -220,8 +220,7 @@ class Node:
             default), all children are unlinked.
         """
         if key is None:
-            for k in list(self.children):
-                self._unlink(k)
+            self.unlink(list(self.children))
             return
         if isinstance(key, Node):
             for node in self.children:
