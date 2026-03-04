@@ -43,6 +43,6 @@ class SaveStateWarning(CaskadeWarning):
     """
     Warning issued when saving state encounters a non-fatal problem.
 
-    Raised when the state serialization completes but with potential data
+    Issued when the state serialization completes but with potential data
     loss or format issues that the user should be aware of.
     """
