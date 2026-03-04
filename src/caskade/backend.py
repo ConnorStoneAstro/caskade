@@ -7,7 +7,7 @@ primary interface for users.
 """
 import os
 import importlib
-from typing import Annotated
+from typing import Union
 
 from torch import Tensor
 import numpy as np
@@ -16,10 +16,7 @@ from . import utils
 #: Type alias for array types across backends.
 #: Resolves to ``torch.Tensor``, ``numpy.ndarray``, or ``jax.numpy.ndarray``
 #: depending on the active backend.
-ArrayLike = Annotated[
-    Tensor,
-    "One of: torch.Tensor, numpy.ndarray, jax.numpy.ndarray depending on the chosen backend.",
-]
+ArrayLike = Union[Tensor, np.ndarray, "jnp.Array"]
 
 
 class Backend:
