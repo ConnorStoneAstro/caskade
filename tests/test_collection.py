@@ -385,6 +385,21 @@ def test_node_dict_manipulation():
     nd3.to_dynamic()
     nd3.to_static()
 
+    # dynamic property
+    assert nd3.static
+    assert not nd3.dynamic
+    nd3.to_dynamic()
+    assert nd3.dynamic
+    assert not nd3.static
+
+    # Update with kwargs
+    nd4 = NodeDict({"p1": Param("p1")})
+    m_kw = Module("mkw")
+    nd4.update(mkw=m_kw)
+    assert len(nd4) == 2
+    assert nd4["mkw"] is m_kw
+    assert nd4.mkw is m_kw
+
     # mul raises NotImplementedError
     with pytest.raises(NotImplementedError):
         nd3 * 2
