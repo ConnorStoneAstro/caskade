@@ -333,6 +333,15 @@ class NodeDict(NodeCollection, dict):
         dict.clear(self)
 
     def setdefault(self, key, default=None):
-        if key not in self:
-            self[key] = default
-        return self[key]
+        # Preserve dict.setdefault API shape but enforce NodeDict invariants
+        if key in self:
+            return self[key]
+        if default is None:
+            raise TypeError(
+                "NodeDict.setdefault() requires a default Node when key is absent; "
+                "None is not a valid NodeDict value"
+            )
+        if not isinstance(default, Node):
+            raise TypeError(f"NodeDict values must be Node objects, not {type(default)}")
+        self[key] = default
+        return default
