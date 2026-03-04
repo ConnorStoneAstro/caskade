@@ -303,9 +303,9 @@ class Node:
         """
         Return a topological ordering of the graph below the current node.
 
-        Uses iterative-deepening depth-first search (post-order) to resolve
-        dependencies.  The result starts with this node and proceeds to its
-        descendants in dependency order.
+        Performs a recursive depth-first search with post-order traversal to
+        resolve dependencies. The result starts with this node and proceeds
+        to its descendants in dependency order.
 
         Returns
         -------
