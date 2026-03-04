@@ -166,3 +166,6 @@ cython_debug/
 **.h5
 
 **settings.json
+
+# Test artifacts
+test_graph

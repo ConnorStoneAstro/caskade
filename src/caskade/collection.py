@@ -4,6 +4,13 @@ from .mixins import GetSetValues
 
 
 class NodeCollection(Node, GetSetValues):
+    """Base mixin for collections of nodes that track parameters.
+
+    Provides shared functionality for traversing, querying, and converting
+    parameters within a graph of nodes. Subclasses such as ``NodeTuple`` and
+    ``NodeList`` combine this mixin with a standard Python sequence type.
+    """
+
     def to_dynamic(self, children_only=True):
         """Change all parameters to dynamic parameters.
 
@@ -34,20 +41,51 @@ class NodeCollection(Node, GetSetValues):
 
     @property
     def dynamic_params(self) -> tuple[Param]:
+        """All dynamic parameters in the graph below this node.
+
+        Returns
+        -------
+        tuple of Param
+            Dynamic (non-static, non-pointer) parameters found via
+            topological ordering.
+        """
         T = self.topological_ordering()
         return tuple(filter(lambda n: isinstance(n, Param) and n.dynamic, T))
 
     @property
     def dynamic_param_groups(self) -> tuple[int]:
+        """Sorted unique group identifiers of all dynamic parameters.
+
+        Returns
+        -------
+        tuple of int
+            Sorted group indices present among the dynamic parameters.
+        """
         return tuple(sorted(set(p.group for p in self.dynamic_params)))
 
     @property
     def static_params(self) -> tuple[Param]:
+        """All static parameters in the graph below this node.
+
+        Returns
+        -------
+        tuple of Param
+            Static (non-dynamic, non-pointer) parameters found via
+            topological ordering.
+        """
         T = self.topological_ordering()
         return tuple(filter(lambda n: isinstance(n, Param) and n.static, T))
 
     @property
     def pointer_params(self) -> tuple[Param]:
+        """All pointer parameters in the graph below this node.
+
+        Returns
+        -------
+        tuple of Param
+            Parameters that act as pointers to other parameters, found via
+            topological ordering.
+        """
         T = self.topological_ordering()
         return tuple(filter(lambda n: isinstance(n, Param) and n.pointer, T))
 
@@ -59,10 +97,24 @@ class NodeCollection(Node, GetSetValues):
 
     @property
     def dynamic(self):
+        """Whether any node in this collection has dynamic parameters.
+
+        Returns
+        -------
+        bool
+            ``True`` if at least one contained node is dynamic.
+        """
         return any(node.dynamic for node in self)
 
     @property
     def static(self):
+        """Whether all nodes in this collection are static.
+
+        Returns
+        -------
+        bool
+            ``True`` if no contained node is dynamic.
+        """
         return not self.dynamic
 
     def __mul__(self, other):
@@ -79,6 +131,19 @@ class NodeCollection(Node, GetSetValues):
 
 
 class NodeTuple(NodeCollection, tuple):
+    """Immutable, ordered collection of nodes.
+
+    Behaves like a standard ``tuple`` but also participates in the caskade
+    node graph.  All elements must be ``Node`` instances and are automatically
+    linked as children upon construction.
+
+    Parameters
+    ----------
+    iterable : iterable of Node, optional
+        Nodes to include in the tuple.
+    name : str, optional
+        Human-readable name for this collection node.
+    """
 
     def __init__(self, iterable=None, name=None):
         tuple.__init__(iterable)
@@ -105,6 +170,19 @@ class NodeTuple(NodeCollection, tuple):
 
 
 class NodeList(NodeCollection, list):
+    """Mutable, ordered collection of nodes.
+
+    Behaves like a standard ``list`` but also participates in the caskade
+    node graph.  All elements must be ``Node`` instances.  Graph links are
+    automatically updated whenever the list is modified.
+
+    Parameters
+    ----------
+    iterable : iterable of Node, optional
+        Nodes to include in the list.  Defaults to an empty iterable.
+    name : str, optional
+        Human-readable name for this collection node.
+    """
 
     def __init__(self, iterable=(), name=None):
         list.__init__(self, iterable)
@@ -128,32 +206,38 @@ class NodeList(NodeCollection, list):
             self.link(node)
 
     def append(self, node):
+        """Append a node to the list and update graph links."""
         self._unlink_nodes()
         super().append(node)
         self._link_nodes()
 
     def insert(self, index, node):
+        """Insert a node at the given index and update graph links."""
         self._unlink_nodes()
         super().insert(index, node)
         self._link_nodes()
 
     def extend(self, iterable):
+        """Extend the list with nodes from an iterable and update graph links."""
         self._unlink_nodes()
         super().extend(iterable)
         self._link_nodes()
 
     def clear(self):
+        """Remove all nodes from the list and update graph links."""
         self._unlink_nodes()
         super().clear()
         self._link_nodes()
 
     def pop(self, index=-1):
+        """Remove and return a node at the given index, updating graph links."""
         self._unlink_nodes()
         node = super().pop(index)
         self._link_nodes()
         return node
 
     def remove(self, value):
+        """Remove the first occurrence of a node and update graph links."""
         self._unlink_nodes()
         super().remove(value)
         self._link_nodes()

@@ -12,10 +12,19 @@ def forward(method):
     """
     Decorator to define a forward method for a module.
 
+    Manages parameter passing and activation for the decorated method. When
+    called, it automatically fills keyword arguments from the module's
+    ``Param`` children and handles parameter overrides and active context.
+
     Parameters
     ----------
     method: (Callable)
         The forward method to be decorated.
+
+    Returns
+    -------
+    Callable
+        The decorated forward method.
 
     Examples
     --------
@@ -35,11 +44,6 @@ def forward(method):
         E = ExampleSim(a=1, b=None, c=3)
         print(E.example_func(4, params=[5]))
         # Output: 10
-
-    Returns
-    -------
-    Callable
-        The decorated forward method.
     """
 
     # Get arguments from function signature
@@ -102,16 +106,21 @@ class active_cache:
     active simulation run. Once calculated, subsequent calls to the decorated
     method will return the stored value, ignoring any arguments passed to it.
 
-    **WARNING**:
-        If the method is called multiple times with different arguments in one
-        simulation, the cached result will still be returned, which may lead to
-        unexpected behavior. Use with caution!
+    Warnings
+    --------
+    If the method is called multiple times with different arguments in one
+    simulation, the cached result will still be returned, which may lead to
+    unexpected behavior. Use with caution!
 
-    Note:
-        If you are stacking multiple decorators on a method (such as `@forward`
-        or `@jax.jit`), `@active_cache` MUST be the outermost (top) decorator.
+    Notes
+    -----
+    If you are stacking multiple decorators on a method (such as ``@forward``
+    or ``@jax.jit``), ``@active_cache`` MUST be the outermost (top) decorator.
 
-    Example::
+    Examples
+    --------
+    ::
+
         class FluxModel(Module):
             def __init__(self, nodes, x, M):
                 super().__init__()
