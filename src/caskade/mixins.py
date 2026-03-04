@@ -436,10 +436,14 @@ class GetSetValues:
     def to_valid(
         self, params: Union[ArrayLike, Sequence, Mapping], param_list=None, group=None
     ) -> Union[ArrayLike, Sequence, Mapping]:
-        """Transform raw parameter values to the valid (constrained) space.
+        """Map parameter values from their natural range to an unconstrained space.
 
-        Applies each parameter's ``to_valid`` transformation so that
-        unconstrained optimiser values are mapped into their valid domain.
+        Takes parameter values that lie within each parameter's valid range
+        (e.g. 0–1 for an axis ratio) and maps them into the unconstrained
+        domain ``(-inf, inf)``.  The inverse mapping :meth:`from_valid` will
+        map any value in ``(-inf, inf)`` back into the original valid range.
+        This is useful for interfacing with samplers and optimizers that
+        require unconstrained parameters.
 
         Parameters
         ----------
@@ -476,16 +480,18 @@ class GetSetValues:
     def from_valid(
         self, valid_params: Union[ArrayLike, Sequence, Mapping], param_list=None, group=None
     ) -> Union[ArrayLike, Sequence, Mapping]:
-        """Transform valid (constrained) parameter values back to raw space.
+        """Map parameter values from the unconstrained space back to their natural range.
 
-        Applies each parameter's ``from_valid`` transformation, inverting
-        the mapping performed by :meth:`to_valid`.
+        Takes values in the unconstrained domain ``(-inf, inf)`` (as
+        produced by :meth:`to_valid` or proposed by an optimizer/sampler)
+        and maps them back into each parameter's original valid range
+        (e.g. 0–1 for an axis ratio).
 
         Parameters
         ----------
         valid_params : Union[ArrayLike, Sequence, Mapping]
-            Parameter values in the valid (constrained) domain, in any
-            supported format (array, sequence, or mapping).
+            Parameter values in the unconstrained ``(-inf, inf)`` domain,
+            in any supported format (array, sequence, or mapping).
         param_list : tuple of Param or None, optional
             Subset of parameters to transform.  Defaults to all dynamic
             parameters.

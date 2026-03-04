@@ -57,23 +57,27 @@ class ActiveContext:
 
 class ValidContext:
     """
-    Context manager to set valid values for parameters.
+    Context manager that transforms parameter values to an unconstrained space.
 
-    Only inside a ``ValidContext`` will parameters automatically be assumed
-    valid. The previous validity state is saved on entry and restored on
-    exit.
+    Inside a ``ValidContext``, all parameter values are automatically
+    mapped into the range ``(-inf, inf)`` via each parameter's
+    ``to_valid`` / ``from_valid`` transformations. This is useful when
+    interfacing with samplers or optimizers that expect unconstrained
+    parameters—any value they propose will be mapped back into the
+    parameter's original valid range on exit.
 
     Parameters
     ----------
     module : Module
-        The module whose parameters should be treated as valid.
+        The module whose parameters should be transformed.
 
     Examples
     --------
-    Retrieve parameter values that are assumed valid::
+    Get unconstrained parameter values for use with an optimizer::
 
         with ValidContext(my_module):
-            valid_params = my_module.get_values()
+            unconstrained_params = my_module.get_values()
+            # unconstrained_params live in (-inf, inf)
     """
 
     def __init__(self, module: Module):
@@ -104,10 +108,20 @@ class OverrideParam:
 
     Examples
     --------
-    Temporarily override a parameter for a forward pass::
+    Override a parameter inside a ``@forward`` method so that it uses
+    ``new_value`` regardless of what was passed via ``params``::
 
-        with OverrideParam(my_param, new_value):
-            result = my_module.my_forward(x, params=params)
+        class MySim(Module):
+            def __init__(self):
+                super().__init__()
+                self.a = Param("a", None)
+                self.b = Param("b", None)
+
+            @forward
+            def __call__(self, x, a=None, b=None):
+                with OverrideParam(self.b, 5.0):
+                    # b will always be 5.0 here, ignoring params
+                    return x + a + self.b.value
     """
 
     def __init__(self, param: Param, value):

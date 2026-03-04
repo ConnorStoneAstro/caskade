@@ -469,10 +469,12 @@ class Param(Node):
 
     @property
     def group(self) -> int:
-        """The optimization group index of this parameter.
+        """The group index of this parameter.
 
-        Parameters with the same group index are treated as belonging to
-        the same optimization group during fitting.
+        Parameters that share the same group index are collected together
+        into a single ``params`` object when calling a simulator's
+        ``@forward`` method, as well as when using ``get_values`` or
+        ``set_values``.
 
         Returns
         -------
