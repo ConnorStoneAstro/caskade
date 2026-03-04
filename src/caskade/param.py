@@ -12,6 +12,27 @@ from .warnings import InvalidValueWarning
 
 
 def valid_shape(batch_shape, shape, value_shape):
+    """Check whether a value's shape is compatible with a parameter's shape.
+
+    Validates that ``value_shape`` is consistent with the declared ``shape``
+    and optional ``batch_shape``. Dimensions set to ``None`` in ``shape``
+    act as wildcards and match any size.
+
+    Parameters
+    ----------
+    batch_shape : tuple of int or None
+        Leading batch dimensions, or ``None`` if the parameter is not batched.
+    shape : tuple of int or None, or None
+        Expected event dimensions. Individual entries may be ``None``
+        (wildcard). If the entire argument is ``None``, any shape is accepted.
+    value_shape : tuple of int
+        The actual shape of the value to validate.
+
+    Returns
+    -------
+    bool
+        ``True`` if the shapes are compatible, ``False`` otherwise.
+    """
     # No shape to compare
     if shape is None:
         return True
@@ -127,14 +148,37 @@ class Param(Node):
 
     @property
     def dynamic(self) -> bool:
+        """Whether this parameter is dynamic.
+
+        Returns
+        -------
+        bool
+            ``True`` if the parameter's value is provided at runtime.
+        """
         return "dynamic" in self.node_type
 
     @property
     def pointer(self) -> bool:
+        """Whether this parameter is a pointer.
+
+        Returns
+        -------
+        bool
+            ``True`` if the parameter points to another ``Param`` or a
+            callable that is evaluated at runtime.
+        """
         return "pointer" in self.node_type
 
     @property
     def static(self) -> bool:
+        """Whether this parameter is static.
+
+        Returns
+        -------
+        bool
+            ``True`` if the parameter holds a fixed value that does not
+            change at runtime.
+        """
         return "static" in self.node_type
 
     @property
@@ -170,6 +214,13 @@ class Param(Node):
 
     @property
     def node_type(self):
+        """The current type of this parameter node.
+
+        Returns
+        -------
+        str
+            One of ``"static"``, ``"dynamic"``, or ``"pointer"``.
+        """
         return self._node_type
 
     @node_type.setter
@@ -180,8 +231,26 @@ class Param(Node):
             self.update_graph()
 
     def to_dynamic(self, value=NULL):
-        """Change this parameter to a dynamic parameter. If a value is provided,
-        this will be set as the dynamic value."""
+        """Change this parameter to a dynamic parameter.
+
+        If a value is provided, it is stored as the default dynamic value.
+        When called without arguments the existing value (if any) is kept.
+
+        Parameters
+        ----------
+        value : ArrayLike, float, int, None, or sentinel, optional
+            The default value for the dynamic parameter. Must not be a
+            ``Param`` or callable. By default the current value is retained.
+
+        Raises
+        ------
+        ActiveStateError
+            If the parameter is currently active.
+        ParamTypeError
+            If *value* is a ``Param`` or callable.
+        ParamConfigurationError
+            If the value shape does not match the declared shape.
+        """
         # While active no value can be set
         if self.active:
             raise ActiveStateError(f"Cannot set parameter {self.name} dynamic value while active.")
@@ -214,8 +283,26 @@ class Param(Node):
         self.is_valid()
 
     def to_static(self, value=NULL):
-        """Change this parameter to a static parameter. If a value is provided
-        this will be set as the static value."""
+        """Change this parameter to a static parameter.
+
+        If a value is provided, it is stored as the fixed static value.
+        When called without arguments the existing value (if any) is kept.
+
+        Parameters
+        ----------
+        value : ArrayLike, float, int, None, or sentinel, optional
+            The constant value for the static parameter. Must not be a
+            ``Param`` or callable. By default the current value is retained.
+
+        Raises
+        ------
+        ActiveStateError
+            If the parameter is currently active.
+        ParamTypeError
+            If *value* is a ``Param`` or callable.
+        ParamConfigurationError
+            If the value shape does not match the declared shape.
+        """
         # While active no value can be set
         if self.active:
             raise ActiveStateError(f"Cannot set parameter {self.name} static value while active.")
@@ -249,11 +336,27 @@ class Param(Node):
         self.node_type = "static"
 
     def to_pointer(self, value, link=()):
-        """Change this parameter to a pointer parameter. If a value is provided
-        this will be set as the pointer. Either provide a Param object to point
-        to its value, or provide a callable function to be called at runtime. It
-        is also possible to provide a tuple of nodes to link to while creating
-        the pointer."""
+        """Change this parameter to a pointer parameter.
+
+        The parameter's value will be computed at runtime by dereferencing
+        another ``Param`` or by calling a user-supplied function.
+
+        Parameters
+        ----------
+        value : Param or callable
+            A ``Param`` whose value will be mirrored, or a callable
+            ``f(param) -> ArrayLike`` evaluated at runtime.
+        link : Node or tuple of Node, optional
+            Additional nodes to link into the graph when creating the
+            pointer. Defaults to an empty tuple.
+
+        Raises
+        ------
+        ActiveStateError
+            If the parameter is currently active.
+        ParamTypeError
+            If *value* is not a ``Param`` or callable.
+        """
         # While active no value can be set
         if self.active:
             raise ActiveStateError(f"Cannot set parameter {self.name} to pointer while active")
@@ -273,6 +376,17 @@ class Param(Node):
 
     @property
     def shape(self) -> tuple[int, ...]:
+        """The event (non-batch) shape of the parameter value.
+
+        Wildcard dimensions (``None``) in the declared shape are resolved
+        using the current value. If no shape was declared, the shape of the
+        current value is returned directly.
+
+        Returns
+        -------
+        tuple of int
+            The resolved shape of the parameter.
+        """
         value = self.value
         # 1. Handle cases where no shape template is defined
         if self._shape is None:
@@ -313,10 +427,28 @@ class Param(Node):
 
     @property
     def batched(self) -> bool:
+        """Whether this parameter carries batch dimensions.
+
+        Returns
+        -------
+        bool
+            ``True`` if ``batch_shape`` is non-empty.
+        """
         return len(self.batch_shape) > 0
 
     @property
     def batch_shape(self) -> tuple[int, ...]:
+        """The batch dimensions of the parameter value.
+
+        Batch dimensions are the leading dimensions of the value that
+        precede the event ``shape``. If an explicit batch shape was set it
+        is returned directly; otherwise it is inferred from the value.
+
+        Returns
+        -------
+        tuple of int
+            The batch shape, or ``()`` if the parameter is not batched.
+        """
         if self._batch_shape is not None:
             return self._batch_shape
         try:
@@ -337,6 +469,18 @@ class Param(Node):
 
     @property
     def group(self) -> int:
+        """The group index of this parameter.
+
+        Parameters that share the same group index are collected together
+        into a single ``params`` object when calling a simulator's
+        ``@forward`` method, as well as when using ``get_values`` or
+        ``set_values``.
+
+        Returns
+        -------
+        int
+            The group index (default ``0``).
+        """
         return self._group
 
     @group.setter
@@ -349,6 +493,16 @@ class Param(Node):
 
     @property
     def dtype(self) -> Optional[str]:
+        """The data type of the parameter value.
+
+        If no explicit dtype was set, the dtype is inferred from the
+        current value.
+
+        Returns
+        -------
+        dtype or None
+            The data type, or ``None`` if unknown.
+        """
         if self._dtype is None:
             try:
                 return self.value.dtype
@@ -358,6 +512,16 @@ class Param(Node):
 
     @property
     def device(self) -> Optional[str]:
+        """The device on which the parameter value resides.
+
+        If no explicit device was set, the device is inferred from the
+        current value.
+
+        Returns
+        -------
+        device or None
+            The device, or ``None`` if unknown.
+        """
         if self._device is None:
             try:
                 return self.value.device
@@ -367,6 +531,17 @@ class Param(Node):
 
     @property
     def value(self) -> Union[ArrayLike, None]:
+        """The current value of the parameter.
+
+        For static and dynamic parameters the stored value is returned.
+        For pointer parameters the linked callable is evaluated. During an
+        active simulation the result is cached.
+
+        Returns
+        -------
+        ArrayLike or None
+            The parameter value, or ``None`` if no value has been set.
+        """
         if self._value is not None:
             return self._value
         if self.pointer:
@@ -394,6 +569,13 @@ class Param(Node):
 
     @property
     def npvalue(self) -> ndarray:
+        """The current value converted to a NumPy array.
+
+        Returns
+        -------
+        numpy.ndarray
+            The value as a NumPy ``ndarray``.
+        """
         return backend.to_numpy(self.value)
 
     def to(self, device=None, dtype=None) -> "Param":
@@ -429,6 +611,16 @@ class Param(Node):
 
     @property
     def cyclic(self) -> bool:
+        """Whether the parameter has cyclic (periodic) boundary conditions.
+
+        When ``True``, values wrap around the ``valid`` range (e.g. an
+        angle from 0 to 2π).
+
+        Returns
+        -------
+        bool
+            ``True`` if the parameter is cyclic.
+        """
         return self._cyclic
 
     @cyclic.setter
@@ -527,6 +719,14 @@ class Param(Node):
 
     @property
     def valid(self) -> tuple[Optional[ArrayLike], Optional[ArrayLike]]:
+        """The valid range of the parameter value.
+
+        Returns
+        -------
+        tuple of (ArrayLike or None, ArrayLike or None)
+            ``(lower_bound, upper_bound)``. Either bound may be ``None``
+            indicating no constraint on that side.
+        """
         return self._valid
 
     @valid.setter
@@ -572,7 +772,21 @@ class Param(Node):
         self.is_valid()
 
     def is_valid(self, value=None) -> bool:
-        """Check if a given value is valid given this parameters allowed (valid) range."""
+        """Check whether a value lies within the allowed range.
+
+        Parameters
+        ----------
+        value : ArrayLike or None, optional
+            The value to check. If ``None`` (default), the parameter's
+            current value is used.
+
+        Returns
+        -------
+        bool
+            ``True`` if the value is within the valid range or if no
+            constraints are set. ``False`` otherwise; a warning is also
+            emitted.
+        """
         if self.cyclic or self.pointer:
             return True
         if value is None:
