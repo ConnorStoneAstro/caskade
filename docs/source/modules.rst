@@ -75,9 +75,10 @@ Graph Communication
 Backend
 -------
 
-.. autoclass:: caskade.backend.__class__
+.. autoclass:: caskade.backend.Backend
    :members:
 
+.. autodata:: caskade.backend.backend
 Exceptions
 ----------
 
