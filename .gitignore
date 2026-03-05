@@ -166,3 +166,5 @@ cython_debug/
 **.h5
 
 **settings.json
+test_graph
+test_graph_dict

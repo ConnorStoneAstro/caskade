@@ -5,8 +5,31 @@ from .errors import ActiveStateError
 
 class ActiveContext:
     """
-    Context manager to activate a module for a simulation. Only inside an
-    ActiveContext is it possible to fill/clear the dynamic and live parameters.
+    Context manager to activate a module for a simulation.
+
+    Only inside an ``ActiveContext`` is it possible to fill or clear the
+    dynamic and live parameters. On entry, the module is marked as active
+    (or its current parameter state is saved if already active). On exit,
+    the state is restored.
+
+    Parameters
+    ----------
+    module : Module
+        The module to activate for the duration of the context.
+
+    Raises
+    ------
+    ActiveStateError
+        If the module is already running a simulation (``module.online``
+        is ``True``).
+
+    Examples
+    --------
+    Activate a module, fill parameters, and run a forward pass::
+
+        with ActiveContext(my_module):
+            my_module.fill_params(params)
+            result = my_module.my_forward(x)
     """
 
     def __init__(self, module: Module):
@@ -34,8 +57,27 @@ class ActiveContext:
 
 class ValidContext:
     """
-    Context manager to set valid values for parameters. Only inside a
-    ValidContext will parameters automatically be assumed valid.
+    Context manager that transforms parameter values to an unconstrained space.
+
+    Inside a ``ValidContext``, all parameter values are automatically
+    mapped into the range ``(-inf, inf)`` via each parameter's
+    ``to_valid`` / ``from_valid`` transformations. This is useful when
+    interfacing with samplers or optimizers that expect unconstrained
+    parameters—any value they propose will be mapped back into the
+    parameter's original valid range on exit.
+
+    Parameters
+    ----------
+    module : Module
+        The module whose parameters should be transformed.
+
+    Examples
+    --------
+    Get unconstrained parameter values for use with an optimizer::
+
+        with ValidContext(my_module):
+            unconstrained_params = my_module.get_values()
+            # unconstrained_params live in (-inf, inf)
     """
 
     def __init__(self, module: Module):
@@ -51,8 +93,35 @@ class ValidContext:
 
 class OverrideParam:
     """
-    Context manager to override a parameter value. Only inside an
-    OverrideParam will the parameter be set to the new value.
+    Context manager to override a parameter value.
+
+    Only inside an ``OverrideParam`` will the parameter be set to the new
+    value. The original value (and the values of any parent pointer
+    parameters) are saved on entry and restored on exit.
+
+    Parameters
+    ----------
+    param : Param
+        The parameter whose value should be temporarily overridden.
+    value : object
+        The temporary value to assign to *param*.
+
+    Examples
+    --------
+    Override a parameter inside a ``@forward`` method so that it uses
+    ``new_value`` regardless of what was passed via ``params``::
+
+        class MySim(Module):
+            def __init__(self):
+                super().__init__()
+                self.a = Param("a", None)
+                self.b = Param("b", None)
+
+            @forward
+            def __call__(self, x, a=None, b=None):
+                with OverrideParam(self.b, 5.0):
+                    # b will always be 5.0 here, ignoring params
+                    return x + a + self.b.value
     """
 
     def __init__(self, param: Param, value):
