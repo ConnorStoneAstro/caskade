@@ -292,6 +292,19 @@ class NodeList(NodeCollection, list):
 
 
 class NodeDict(NodeCollection, dict):
+    """Mutable, keyed collection of nodes.
+
+    Behaves like a standard ``dict`` but also participates in the caskade
+    node graph.  All elements must be ``Node`` instances.  Graph links are
+    automatically updated whenever the dict is modified.
+
+    Parameters
+    ----------
+    mapping : mapping of str to Node, optional
+        Nodes to include in the dict.  Defaults to an empty dict.
+    name : str, optional
+        Human-readable name for this collection of nodes.
+    """
 
     def __init__(self, mapping=None, name=None):
         if mapping is None:
@@ -337,6 +350,7 @@ class NodeDict(NodeCollection, dict):
             self._link_nodes()
 
     def update(self, mapping=None, **kwargs):
+        """Update the dict with another mapping (i.e. dict) and update graph links."""
         self._unlink_nodes()
         try:
             if mapping is not None:
@@ -347,6 +361,7 @@ class NodeDict(NodeCollection, dict):
             self._link_nodes()
 
     def pop(self, key, *args):
+        """Remove and return a node from the dict and update graph links."""
         self._unlink_nodes()
         try:
             node = dict.pop(self, key, *args)
@@ -354,19 +369,25 @@ class NodeDict(NodeCollection, dict):
             self._link_nodes()
         return node
 
+    def popitem(self):
+        """Remove and return an arbitrary (key, node) pair from the dict (the last one inserted) and update graph links."""
+        self._unlink_nodes()
+        try:
+            key, node = dict.popitem(self)
+        finally:
+            self._link_nodes()
+        return key, node
+
     def clear(self):
+        """Remove all nodes from the dict and update graph links."""
         self._unlink_nodes()
         dict.clear(self)
 
-    def setdefault(self, key, default=None):
+    def setdefault(self, key, default):
+        """If key is in the dictionary, return its value. If not, insert key with a value of default and return default. Update graph links."""
         # Preserve dict.setdefault API shape but enforce NodeDict invariants
         if key in self:
             return self[key]
-        if default is None:
-            raise TypeError(
-                "NodeDict.setdefault() requires a default Node when key is absent; "
-                "None is not a valid NodeDict value"
-            )
         if not isinstance(default, Node):
             raise TypeError(f"NodeDict values must be Node objects, not {type(default)}")
         self[key] = default

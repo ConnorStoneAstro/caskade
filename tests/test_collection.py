@@ -379,6 +379,8 @@ def test_node_dict_manipulation():
     existing = nd2["p1"]
     nd2.setdefault("p1", Param("p1_other"))
     assert nd2["p1"] is existing
+    with pytest.raises(TypeError):
+        nd2.setdefault("bad_key", "not a node")
 
     # Check to static/dynamic
     nd3 = NodeDict({"p1": Param("p1", 1), "p2": Param("p2", 2)})
