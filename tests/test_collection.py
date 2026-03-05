@@ -365,6 +365,10 @@ def test_node_dict_manipulation():
     assert len(nd) == 4
     assert "m2" not in nd
 
+    # Popitem
+    key, _ = nd.popitem()
+    assert key not in nd
+
     # Clear
     nd.clear()
     assert len(nd) == 0
