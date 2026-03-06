@@ -272,31 +272,39 @@ class Node:
         del self.children[key]
         self.update_graph()
 
-    def unlink(self, key: Union[str, "Node", list, tuple]):
-        """
-        Unlink one or more child nodes from this node.
+    def unlink(self, key: Union[str, "Node", list, tuple, None] = None):
+        """Unlink one or more ``Node`` objects from this ``Node``.
 
         Parameters
         ----------
-        key : str, Node, list, or tuple
-            Identifier of the child(ren) to remove.  May be a link key
-            string, the child ``Node`` object itself, or a list/tuple of
-            keys or nodes to unlink in bulk.
-
+        key: (str, Node, list, tuple, or None, optional)
+            The key, ``Node`` object, or collection of keys/nodes to unlink.
+            If a string, the child with that key is unlinked. If a ``Node``
+            object, the matching child is located and unlinked. If a list or
+            tuple, each element is unlinked in turn. If ``None`` (the
+            default), all children are unlinked.
+            
         Raises
         ------
         GraphError
             If the graph is currently active.
         """
+        if key is None:
+            self.unlink(list(self.children))
+            return
         if isinstance(key, Node):
             for node in self.children:
                 if self.children[node] is key:
                     key = node
                     break
+            else:
+                raise KeyError(f"Node {key.name} not found in parent {self.name}")
         elif isinstance(key, (tuple, list)):
             for k in key:
                 self.unlink(k)
             return
+        if key not in self.children:
+            raise KeyError(f"Child key '{key}' not found in parent {self.name}")
         self.__delattr__(key)
 
     def topological_ordering(self) -> tuple["Node"]:
