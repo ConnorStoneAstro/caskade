@@ -760,7 +760,7 @@ class TestGroupsEdgeCases:
         m = Module("m")
         m.a = Param("a", 1.0, dynamic=True, group=0)
         m.b = Param("b", None, dynamic=True, group=1)
-        with pytest.raises(ParamConfigurationError):
+        with pytest.raises(ParamConfigurationError, match="b"):
             m.get_values()
 
 
