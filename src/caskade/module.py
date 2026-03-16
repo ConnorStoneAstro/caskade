@@ -170,7 +170,7 @@ class Module(Node, GetSetValues):
         for group, params_g in zip(self.dynamic_param_groups, params):
             param_list_g = tuple(p for p in param_list if p.group == group)
             if self.valid_context:
-                params_g = self.from_valid(params_g, param_list_g)
+                params_g = self.from_valid(params_g, param_list_g, group=group)
             self._set_values(params_g, param_list_g, attribute="_value")
 
     def clear_state(self):
