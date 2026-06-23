@@ -2,7 +2,8 @@ import glob
 import pytest
 import runpy
 import subprocess
-import os
+import os, sys
+import numpy as np
 import caskade as ck
 import matplotlib
 
@@ -42,9 +43,11 @@ def cleanup_py_scripts(nbpath):
 
 @pytest.mark.filterwarnings("ignore:FigureCanvasAgg")
 @pytest.mark.parametrize("nb_path", notebooks)
-def test_notebook(nb_path):
+def test_notebook(nb_path, monkeypatch):
     if ck.backend.backend != "torch":
         pytest.skip("Requires torch backend")
+    monkeypatch.setitem(sys.modules, "jax.numpy", np)
+    monkeypatch.setitem(sys.modules, "jax", np)
     convert_notebook_to_py(nb_path)
     try:
         runpy.run_path(nb_path.replace(".ipynb", ".py"), run_name="__main__")
