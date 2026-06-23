@@ -40,4 +40,4 @@ python:
   install:
     - requirements: docs/requirements.txt # Path to your requirements.txt file
     - method: pip
-      path: . # Install the package itself
+      path: .[dev,torch,jax] # Install the package itself
