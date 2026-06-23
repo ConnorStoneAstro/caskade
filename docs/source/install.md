@@ -15,7 +15,6 @@ To get the ``numpy`` version, just directly pip install:
 pip install caskade
 ```
 
-> **Note:** PyTorch is not compatible with Python 3.12 on all systems, you may need 3.9 - 3.11
 
 ## Install with PyTorch backend
 
@@ -26,6 +25,7 @@ pip install caskade[torch]
 This will simply install ``torch`` along with ``numpy``. You can also always just
 pip install ``torch`` yourself after a basic ``caskade`` install.
 
+> **Note:** PyTorch is not compatible with Python 3.12 on all systems, you may need 3.9 - 3.11
 
 ## Install with JAX backend
 
