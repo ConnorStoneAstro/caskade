@@ -4,10 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "caskade"
-dynamic = [
-        "dependencies",
-        "version"
-]
+dynamic = ["version"]
 authors = [
   { name="Connor Stone", email="connorstone628@gmail.com" },
   { name="Alexandre Adam", email="alexandre.adam@mila.quebec" },
