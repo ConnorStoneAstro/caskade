@@ -16,7 +16,22 @@ __all__ = ("Node",)
 
 
 def attrsetter(obj, attr, value):
-    """Set an attribute on an object."""
+    """
+    Set an attribute on an object, supporting nested dot-separated paths.
+
+    If the value is the string ``"NONE"``, it is converted to ``None``.
+    Dot-separated attribute paths (e.g. ``"a.b.c"``) are resolved
+    recursively so that the final attribute is set on the correct object.
+
+    Parameters
+    ----------
+    obj : object
+        The target object on which to set the attribute.
+    attr : str
+        The attribute name or dot-separated path (e.g. ``"sub.attr"``).
+    value : Any
+        The value to assign. The string ``"NONE"`` is treated as ``None``.
+    """
     if isinstance(value, str) and value == "NONE":
         value = None
     if "." in attr:
@@ -27,11 +42,31 @@ def attrsetter(obj, attr, value):
 
 
 def is_valid_name(name):
+    """
+    Check whether a string is a valid Python identifier and not a keyword.
+
+    Parameters
+    ----------
+    name : str
+        The candidate name to validate.
+
+    Returns
+    -------
+    bool
+        ``True`` if *name* is a valid Python identifier and is not a
+        reserved keyword, ``False`` otherwise.
+    """
     return name.isidentifier() and not keyword.iskeyword(name)
 
 
 class meta:
-    """Meta information for a ``Node`` object."""
+    """
+    Container for meta information attached to a ``Node`` object.
+
+    Each ``Node`` instance carries a ``meta`` attribute that is an instance
+    of this class.  Arbitrary attributes may be set on it to store
+    auxiliary metadata without polluting the node's own namespace.
+    """
 
     pass
 
@@ -67,6 +102,21 @@ class Node:
         link: Optional[Union["Node", tuple["Node"]]] = None,
         description: str = "",
     ):
+        """
+        Initialise a new ``Node``.
+
+        Parameters
+        ----------
+        name : str, optional
+            Human-readable name for this node.  Must be a valid Python
+            identifier and not a reserved keyword.  Defaults to the class
+            name.
+        link : Node or tuple of Node, optional
+            One or more child nodes to link immediately after construction.
+            Each child is linked using its ``name`` as the key.
+        description : str, optional
+            Free-form text describing the purpose of this node.
+        """
         if name is None:
             name = self.__class__.__name__
         if not isinstance(name, str):
@@ -89,18 +139,22 @@ class Node:
 
     @property
     def name(self) -> str:
+        """str : The name of this node."""
         return self._name
 
     @property
     def children(self) -> dict[str, "Node"]:
+        """dict[str, Node] : Mapping of link keys to child nodes."""
         return self._children
 
     @property
     def parents(self) -> set["Node"]:
+        """set[Node] : Set of parent nodes that link to this node."""
         return self._parents
 
     @property
     def subgraphs(self) -> set["Node"]:
+        """set[Node] : Subset of children linked hierarchically."""
         return self._subgraphs
 
     def _link(self, key: str, child: "Node"):
@@ -149,15 +203,18 @@ class Node:
         Examples
         --------
 
-        Example making some ``Node`` objects and then linking/unlinking them.
+        Example making some ``Node`` objects and then linking/unlinking them,
         demonstrating multiple ways to link/unlink::
 
-            n1 = Node() n2 = Node()
+            n1 = Node()
+            n2 = Node()
 
-            n1.link("subnode", n2) # may use any str as the key
+            n1.link("subnode", n2)  # may use any str as the key
             n1.unlink("subnode")
 
-            # Alternately, link by object n1.link(n2) n1.unlink(n2)
+            # Alternatively, link by object
+            n1.link(n2)
+            n1.unlink(n2)
         """
         if (
             isinstance(key, (tuple, list))
@@ -189,10 +246,18 @@ class Node:
 
         Parameters
         ----------
-        key: (str)
+        key : str
             The key to link the child node with.
-        child: (Node)
+        child : Node
             The child ``Node`` object to link to.
+
+        Examples
+        --------
+        ::
+
+            parent = Node(name="parent")
+            child = Node(name="child")
+            parent.hierarchical_link("child", child)
         """
 
         self._subgraphs.add(child)
@@ -207,23 +272,54 @@ class Node:
         del self.children[key]
         self.update_graph()
 
-    def unlink(self, key: Union[str, "Node", list, tuple]):
-        """Unlink the current ``Node`` object from another ``Node`` object which is a child."""
+    def unlink(self, key: Union[str, "Node", list, tuple, None] = None):
+        """Unlink one or more ``Node`` objects from this ``Node``.
+
+        Parameters
+        ----------
+        key: (str, Node, list, tuple, or None, optional)
+            The key, ``Node`` object, or collection of keys/nodes to unlink.
+            If a string, the child with that key is unlinked. If a ``Node``
+            object, the matching child is located and unlinked. If a list or
+            tuple, each element is unlinked in turn. If ``None`` (the
+            default), all children are unlinked.
+            
+        Raises
+        ------
+        GraphError
+            If the graph is currently active.
+        """
+        if key is None:
+            self.unlink(list(self.children))
+            return
         if isinstance(key, Node):
             for node in self.children:
                 if self.children[node] is key:
                     key = node
                     break
+            else:
+                raise KeyError(f"Node {key.name} not found in parent {self.name}")
         elif isinstance(key, (tuple, list)):
             for k in key:
                 self.unlink(k)
             return
+        if key not in self.children:
+            raise KeyError(f"Child key '{key}' not found in parent {self.name}")
         self.__delattr__(key)
 
     def topological_ordering(self) -> tuple["Node"]:
         """
         Return a topological ordering of the graph below the current node.
-        Uses Iterative Deepening DFS (Post-Order) to resolve dependencies.
+
+        Performs a recursive depth-first search with post-order traversal to
+        resolve dependencies. The result starts with this node and proceeds
+        to its descendants in dependency order.
+
+        Returns
+        -------
+        tuple[Node]
+            All nodes reachable from (and including) this node, ordered so
+            that every parent appears before its children.
         """
         visited = set()
         stack = []
@@ -254,17 +350,29 @@ class Node:
 
     @property
     def active(self) -> bool:
+        """bool : ``True`` if the node is currently in an active simulation run."""
         return any(memo.startswith("active") for memo in self._memos)
 
     @property
     def online(self) -> bool:
+        """bool : ``True`` if the node is online within a hierarchical sub-graph."""
         return any(memo.endswith("_active") for memo in self._memos)
 
     @property
     def memos(self) -> set[str]:
+        """set[str] : Current set of memo strings held by this node."""
         return self._memos
 
     def add_memo(self, memo):
+        """
+        Add a memo string and propagate it to all children.
+
+        Parameters
+        ----------
+        memo : str
+            The memo message to add.  Children in ``subgraphs`` receive
+            the memo with the child name appended (``memo|child_name``).
+        """
         self._memos.add(memo)
 
         # Propagate memo to children
@@ -272,6 +380,15 @@ class Node:
             child.add_memo(memo + (f"|{child.name}" if child in self.subgraphs else ""))
 
     def remove_memo(self, memo):
+        """
+        Remove a memo string and propagate removal to all children.
+
+        Parameters
+        ----------
+        memo : str
+            The memo message to remove.  The same propagation rules as
+            ``add_memo`` apply.
+        """
         self._memos.discard(memo)
 
         # Propagate removal to children
@@ -405,7 +522,26 @@ class Node:
             child._append_state_hdf5(h5group[key])
 
     def append_state(self, saveto: Union[str, "File"]):
-        """Append the state of the node and its children to an existing HDF5 file."""
+        """
+        Append the current state to an existing HDF5 file.
+
+        The file must have been previously created by ``save_state`` with
+        ``appendable=True``.  The graph structure in the file is verified
+        before appending.
+
+        Parameters
+        ----------
+        saveto : str or File
+            Path to an HDF5 file (``'.h5'`` or ``'.hdf5'``) or an open
+            HDF5 ``File`` object.
+
+        Raises
+        ------
+        GraphError
+            If the graph structure no longer matches the file.
+        NotImplementedError
+            If the file path does not end with a supported extension.
+        """
         if isinstance(saveto, str):
             if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
                 with h5py.File(saveto, "a") as h5file:
@@ -446,7 +582,28 @@ class Node:
             child._load_state_hdf5(h5group[key], index=index, _done_load=_done_load)
 
     def load_state(self, loadfrom: Union[str, "File"], index: int = -1, **kwargs):
-        """Load the state of the node and its children."""
+        """
+        Load node state (and children) from an HDF5 file.
+
+        Parameters
+        ----------
+        loadfrom : str or File
+            Path to an HDF5 file (``'.h5'`` or ``'.hdf5'``) or an open
+            HDF5 ``File`` object.
+        index : int, optional
+            Sample index to load when the file was saved in appendable
+            mode.  Defaults to ``-1`` (last sample).
+        **kwargs
+            Additional keyword arguments forwarded to ``h5py.File``
+            (e.g. ``driver``).
+
+        Raises
+        ------
+        GraphError
+            If the graph structure no longer matches the file.
+        NotImplementedError
+            If the file path does not end with a supported extension.
+        """
         if isinstance(loadfrom, str):
             if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
                 with h5py.File(loadfrom, "r", **{"driver": "core", **kwargs}) as h5file:
@@ -465,17 +622,20 @@ class Node:
         return {"style": "solid", "color": "black", "shape": "circle"}
 
     def graphviz(self, saveto: Optional[str] = None) -> "graphviz.Digraph":
-        """Return a graphviz object representing the graph below the current
-        node in the DAG.
+        """
+        Return a graphviz ``Digraph`` representing the DAG below this node.
 
         Parameters
         ----------
-        top_down: (bool, optional)
-            Whether to draw the graph top-down (current node at top) or
-            bottom-up (current node at bottom). Defaults to True.
-        saveto: (Optional[str], optional)
-            If provided, save the graph to this file. The file extension
-            determines the format (e.g. '.pdf', '.png'). Defaults to None.
+        saveto : str, optional
+            If provided, save the rendered graph to this file path.  The
+            file extension determines the output format (e.g. ``'.pdf'``,
+            ``'.png'``).  Defaults to ``None``.
+
+        Returns
+        -------
+        graphviz.Digraph
+            The constructed directed-graph object.
         """
         import graphviz  # noqa
 
@@ -514,8 +674,17 @@ class Node:
         return f"{self.name}|{self.node_type}"
 
     def graph_dict(self) -> dict[str, dict]:
-        """Return a dictionary representation of the graph below the current
-        node."""
+        """
+        Return a nested dictionary representation of the graph.
+
+        Each key is a string of the form ``"name|node_type"`` and the value
+        is a dict containing the same structure for that node's children.
+
+        Returns
+        -------
+        dict[str, dict]
+            Nested dictionary mirroring the DAG hierarchy.
+        """
         rep = self.node_str
         graph = {
             rep: {},
@@ -525,7 +694,27 @@ class Node:
         return graph
 
     def graph_print(self, dag: dict, depth: int = 0, indent: int = 4, result: str = "") -> str:
-        """Print the graph dictionary in a human-readable format."""
+        """
+        Recursively render a graph dictionary as an indented string.
+
+        Parameters
+        ----------
+        dag : dict[str, dict]
+            A nested dictionary as returned by ``graph_dict``.
+        depth : int, optional
+            Current indentation depth (used during recursion).  Defaults
+            to ``0``.
+        indent : int, optional
+            Number of spaces per indentation level.  Defaults to ``4``.
+        result : str, optional
+            Accumulator string (used during recursion).  Defaults to
+            ``""``.
+
+        Returns
+        -------
+        str
+            A human-readable, indented representation of the graph.
+        """
         for key in dag:
             result = f"{result}{' ' * indent * depth}{key}\n"
             result = self.graph_print(dag[key], depth + 1, indent, result) + "\n"

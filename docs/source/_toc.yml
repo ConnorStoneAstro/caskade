@@ -12,6 +12,18 @@ chapters:
   - file: contributing
   - file: license
   - file: modules
+    sections:
+      - file: api/module
+      - file: api/param
+      - file: api/decorators
+      - file: api/context
+      - file: api/collections
+      - file: api/memo
+      - file: api/exceptions
+      - file: api/warnings
+      - file: api/utilities
+      - file: api/node
+      - file: api/backend
   # - file: frequently_asked_questions
   # - file: citation
   # - file: glossary

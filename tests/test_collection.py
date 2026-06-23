@@ -4,6 +4,7 @@ import pytest
 from caskade import (
     NodeList,
     NodeTuple,
+    NodeDict,
     Param,
     Module,
     backend,
@@ -172,15 +173,19 @@ def test_collection_in_module():
 
     l1 = [Param("ptest1"), Param("ptest2"), Module("mtest1"), Module("mtest2")]
     t1 = (Param("ptest3"), Param("ptest4"), Module("mtest3"), Module("mtest4"))
+    d1 = {"ptest5": Param("ptest5"), "ptest6": Param("ptest6"), "mtest5": Module("mtest5")}
 
     m1 = Module("test")
     m1.l = l1
     m1.t = t1
+    m1.d = d1
 
     assert m1["l"][2] == l1[2]
     assert m1["t"][2] == t1[2]
     assert m1.l[3] == l1[3]
     assert m1.t[3] == t1[3]
+    assert m1["d"]["ptest5"] == d1["ptest5"]
+    assert m1.d["mtest5"] == d1["mtest5"]
 
 
 @pytest.mark.parametrize("node_type", [NodeTuple, NodeList])
@@ -277,3 +282,140 @@ def test_valid_tuple(node_tuple, params_type, group):
         for i in range(len(node_tuple.dynamic_param_groups)):
             assert backend.module.allclose(init_params[i], round_trip_params[i])
             assert backend.module.allclose(init_params[i], final_params[i])
+
+
+def test_node_dict_creation():
+
+    # Minimal creation
+    n1 = NodeDict()
+    assert n1.name.startswith("NodeDict")
+    assert len(n1) == 0
+
+    # Creation with dict of param nodes
+    params = {"p1": Param("p1"), "p2": Param("p2")}
+    n2 = NodeDict(params)
+    assert len(n2) == 2
+    assert n2["p1"] is params["p1"]
+    assert n2.p1 is params["p1"]
+    assert n2["p2"] is params["p2"]
+
+    # Creation with dict of module nodes
+    modules = {"m1": Module("m1"), "m2": Module("m2"), "m3": Module("m3")}
+    n3 = NodeDict(modules)
+    assert len(n3) == 3
+    assert n3["m1"] is modules["m1"]
+    assert n3.m1 is modules["m1"]
+    assert n3["m2"] is modules["m2"]
+
+    # Check repr
+    assert isinstance(repr(n3), str)
+    assert "[3]" in repr(n3)
+
+    # Check to static/dynamic
+    n2.to_dynamic(False)
+    assert len(n2.static_params) == 0
+    n2.to_static(False)
+    assert len(n2.static_params) == 2
+    assert len(n2.pointer_params) == 0
+
+    # Graphviz
+    graph = n3.graphviz(saveto="test_graph_dict.pdf")
+    assert graph is not None, "should return a graphviz object"
+    assert os.path.exists("test_graph_dict.pdf")
+    os.remove("test_graph_dict.pdf")
+
+    # Check copy
+    with pytest.raises(NotImplementedError):
+        n3.copy()
+    with pytest.raises(NotImplementedError):
+        n3.deepcopy()
+
+    # Check bad init
+    with pytest.raises(TypeError):
+        NodeDict({"bad": 1})
+
+
+def test_node_dict_manipulation():
+
+    params = {"p1": Param("p1", 1), "p2": Param("p2", 2)}
+    modules = {"m1": Module("m1"), "m2": Module("m2"), "m3": Module("m3")}
+    nd = NodeDict(params)
+
+    # Set item
+    p3 = Param("p3", 3)
+    nd["p3"] = p3
+    assert len(nd) == 3
+    assert nd["p3"] is p3
+    assert nd.p3 is p3
+
+    # Update
+    nd.update(modules)
+    assert len(nd) == 6
+    assert nd["m1"] is modules["m1"]
+    assert nd.m1 is modules["m1"]
+
+    # Pop
+    popped = nd.pop("m3")
+    assert popped is modules["m3"]
+    assert len(nd) == 5
+    assert "m3" not in nd
+
+    # Del item
+    del nd["m2"]
+    assert len(nd) == 4
+    assert "m2" not in nd
+
+    # Popitem
+    key, _ = nd.popitem()
+    assert key not in nd
+
+    # Clear
+    nd.clear()
+    assert len(nd) == 0
+
+    # Setdefault
+    nd2 = NodeDict({"p1": Param("p1")})
+    p_new = Param("p_new")
+    nd2.setdefault("new_key", p_new)
+    assert nd2["new_key"] is p_new
+    assert len(nd2) == 2
+    # setdefault should not overwrite existing
+    existing = nd2["p1"]
+    nd2.setdefault("p1", Param("p1_other"))
+    assert nd2["p1"] is existing
+    with pytest.raises(TypeError):
+        nd2.setdefault("bad_key", "not a node")
+
+    # Check to static/dynamic
+    nd3 = NodeDict({"p1": Param("p1", 1), "p2": Param("p2", 2)})
+    nd3.to_dynamic()
+    nd3.to_static()
+
+    # dynamic property
+    assert nd3.static
+    assert not nd3.dynamic
+    nd3.to_dynamic()
+    assert nd3.dynamic
+    assert not nd3.static
+
+    # Update with kwargs
+    nd4 = NodeDict({"p1": Param("p1")})
+    m_kw = Module("mkw")
+    nd4.update(mkw=m_kw)
+    assert len(nd4) == 2
+    assert nd4["mkw"] is m_kw
+    assert nd4.mkw is m_kw
+
+    # mul raises NotImplementedError
+    with pytest.raises(NotImplementedError):
+        nd3 * 2
+
+
+def test_node_dict_param_values():
+    nd = NodeDict({"p1": Param("p1"), "p2": Param("p2"), "p3": Param("p3")})
+
+    nd.set_values([1, 2, 3])
+
+    assert nd["p1"].value.item() == 1.0
+    assert nd["p2"].value.item() == 2.0
+    assert nd["p3"].value.item() == 3.0
