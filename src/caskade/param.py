@@ -584,9 +584,9 @@ class Param(Node):
 
         Parameters
         ----------
-        device: (Optional[torch.device], optional)
+        device: (optional)
             The device to move the values to. Defaults to None.
-        dtype: (Optional[torch.dtype], optional)
+        dtype: (optional)
             The desired data type. Defaults to None.
         """
         if device is not None:

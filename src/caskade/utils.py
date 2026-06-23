@@ -1,4 +1,3 @@
-import torch
 import numpy as np
 
 
@@ -23,6 +22,8 @@ def broadcast_cat_torch(tensors, dim=-1):
     Tensor
         The concatenated tensor.
     """
+    import torch
+
     if not tensors:
         raise ValueError("tensors argument must be a non-empty sequence")
 
