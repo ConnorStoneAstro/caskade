@@ -6,8 +6,8 @@
 [![PyPI - Version](https://img.shields.io/pypi/v/caskade)](https://pypi.org/project/caskade/)
 [![Documentation Status](https://readthedocs.org/projects/caskade/badge/?version=latest)](https://caskade.readthedocs.io/en/latest/?badge=latest)
 
-Build scientific simulators, treating them as a directed acyclic graph. Handles
-argument passing for complex nested simulators.
+Build scientific simulators, treating them abstractly as a directed acyclic
+graph. Handles argument passing for complex nested simulators.
 
 ## Install
 
