@@ -1,15 +1,17 @@
 import os
 import importlib
-from typing import Annotated
+from typing import TYPE_CHECKING, TypeVar
 
-from torch import Tensor
 import numpy as np
 from . import utils
 
-ArrayLike = Annotated[
-    Tensor,
-    "One of: torch.Tensor, numpy.ndarray, jax.numpy.ndarray depending on the chosen backend.",
-]
+if TYPE_CHECKING:
+    import torch  # type: ignore
+    import jax.numpy as jnp  # type: ignore
+
+    ArrayLike = TypeVar("ArrayLike", np.ndarray, "torch.Tensor", "jnp.ndarray")
+else:
+    ArrayLike = TypeVar("ArrayLike")
 
 
 class Backend:
@@ -23,7 +25,15 @@ class Backend:
     @backend.setter
     def backend(self, backend):
         if backend is None:
-            backend = os.getenv("CASKADE_BACKEND", "torch")
+            backend = os.getenv("CASKADE_BACKEND", "none").lower()
+            if backend == "none":  # Try to find available backend
+                if importlib.util.find_spec("torch") is not None:
+                    backend = "torch"
+                elif importlib.util.find_spec("jax") is not None:
+                    backend = "jax"
+                else:
+                    backend = "numpy"
+
         self.module = self._load_backend(backend)
         self._backend = backend
 

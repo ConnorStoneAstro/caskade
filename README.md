@@ -22,14 +22,21 @@ argument passing for complex nested simulators.
 pip install caskade
 ```
 
-More details on the [docs page](https://caskade.readthedocs.io/en/latest/install.html). 
-if you want to use `caskade` with `jax` then run:
+This will give you the numpy version of ``caskade``. More details on the [docs page](https://caskade.readthedocs.io/en/latest/install.html). 
+if you want to use ``caskade`` with ``jax`` then run:
 
 ```bash
 pip install caskade[jax]
 ```
 
-Alternately, just pip install `jax`/`jaxlib` separately as they are the only extra requirements.
+if you want to use ``caskade`` with ``torch`` then run:
+
+```bash
+pip install caskade[torch]
+```
+
+Don't worry if you got the wrong one. Just install the appropriate
+``jax``/``torch`` directly if you want to add the option.
 
 ## Usage
 
