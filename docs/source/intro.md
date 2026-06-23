@@ -15,13 +15,19 @@ argument passing for complex nested simulators.
 pip install caskade
 ```
 
-if you want to use `caskade` with `jax` then run:
+if you want to use ``caskade`` with ``jax`` or ``torch`` then run:
 
 ```bash
 pip install caskade[jax]
 ```
 
-Alternately, just pip install `jax`/`jaxlib` separately as they are the only extra requirements.
+or 
+
+```bash
+pip install caskade[torch]
+```
+
+Alternately, just pip install ``jax``/``torch`` separately as they are the only extra requirements.
 
 ## Usage
 
