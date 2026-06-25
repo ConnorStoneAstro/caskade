@@ -1,6 +1,6 @@
 import os
-import importlib
-from typing import Annotated
+import importlib, importlib.util
+from typing import TYPE_CHECKING, TypeVar
 
 from torch import Tensor
 import numpy as np
