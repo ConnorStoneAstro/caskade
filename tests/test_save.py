@@ -1,4 +1,4 @@
-from caskade import Module, Param, GraphError, SaveStateWarning, backend, BackendError
+from caskade import Module, Param, GraphError, SaveStateWarning
 import numpy as np
 import gc
 import h5py

@@ -1,4 +1,3 @@
-import torch
 import numpy as np
 
 
@@ -9,15 +8,22 @@ def broadcast_cat_torch(tensors, dim=-1):
     It behaves like torch.cat, but first broadcasts the tensors to match
     on all dimensions EXCEPT the concatenation dimension.
 
-    Args:
-        tensors (sequence of Tensors): Tensors to concatenate.
-        dim (int): The dimension along which to concatenate.
-                   Must be a negative index to ensure consistency across
-                   tensors of different ranks (e.g., -1 for the last dimension).
+    Parameters
+    ----------
+    tensors : sequence of Tensors
+        Tensors to concatenate.
+    dim : int
+        The dimension along which to concatenate.
+        Must be a negative index to ensure consistency across
+        tensors of different ranks (e.g., -1 for the last dimension).
 
-    Returns:
-        Tensor: The concatenated tensor.
+    Returns
+    -------
+    Tensor
+        The concatenated tensor.
     """
+    import torch
+
     if not tensors:
         raise ValueError("tensors argument must be a non-empty sequence")
 
@@ -94,12 +100,17 @@ def broadcast_cat_jax(arrays, dim=-1):
     Behaves like jnp.concatenate, but first broadcasts the arrays to match
     on all dimensions EXCEPT the concatenation dimension.
 
-    Args:
-        arrays (sequence of jnp.ndarray): Arrays to concatenate.
-        dim (int): The dimension along which to concatenate.
+    Parameters
+    ----------
+    arrays : sequence of jnp.ndarray
+        Arrays to concatenate.
+    dim : int
+        The dimension along which to concatenate.
 
-    Returns:
-        jnp.ndarray: The concatenated array.
+    Returns
+    -------
+    jnp.ndarray
+        The concatenated array.
     """
     import jax.numpy as jnp
 
@@ -161,12 +172,17 @@ def broadcast_cat_numpy(arrays, dim=-1):
     Behaves like np.concatenate, but first broadcasts the arrays to match
     on all dimensions EXCEPT the concatenation dimension.
 
-    Args:
-        arrays (sequence of np.ndarray): Arrays to concatenate.
-        dim (int): The dimension along which to concatenate.
+    Parameters
+    ----------
+    arrays : sequence of np.ndarray
+        Arrays to concatenate.
+    dim : int
+        The dimension along which to concatenate.
 
-    Returns:
-        np.ndarray: The concatenated array.
+    Returns
+    -------
+    np.ndarray
+        The concatenated array.
     """
     if not arrays:
         raise ValueError("arrays argument must be a non-empty sequence")

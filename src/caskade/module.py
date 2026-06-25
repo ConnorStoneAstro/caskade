@@ -3,7 +3,7 @@ from typing import Sequence, Mapping, Optional, Union, Any
 from .backend import ArrayLike
 from .base import Node
 from .param import Param
-from .collection import NodeTuple, NodeList
+from .collection import NodeTuple, NodeList, NodeDict
 from .mixins import GetSetValues
 from .errors import ActiveStateError, FillParamsError
 
@@ -60,6 +60,17 @@ class Module(Node, GetSetValues):
     )  # These tuples will not be converted to NodeTuple objects
 
     def __init__(self, name: Optional[str] = None, **kwargs):
+        """
+        Initialize a Module node.
+
+        Parameters
+        ----------
+        name : str, optional
+            The name of this module node. If not provided, a name is
+            automatically assigned by the base ``Node`` class.
+        **kwargs
+            Additional keyword arguments passed to the ``Node`` base class.
+        """
         self.dynamic_params = ()
         self.pointer_params = ()
         self.static_params = ()
@@ -74,6 +85,14 @@ class Module(Node, GetSetValues):
 
     @property
     def all_params(self):
+        """
+        All parameters below this module in the DAG.
+
+        Returns
+        -------
+        tuple of Param
+            Concatenation of static, dynamic, and pointer parameters.
+        """
         return self.static_params + self.dynamic_params + self.pointer_params
 
     def update_graph(self):
@@ -94,6 +113,17 @@ class Module(Node, GetSetValues):
         super().update_graph()
 
     def param_order(self):
+        """
+        Return a human-readable string of dynamic parameter ordering.
+
+        Each line corresponds to a parameter group and lists the parameters
+        in the format ``parent_name: param_name``.
+
+        Returns
+        -------
+        str
+            Multi-line string describing the dynamic parameter order.
+        """
         res = []
         for g in self.dynamic_param_groups:
             res.append(
@@ -109,11 +139,26 @@ class Module(Node, GetSetValues):
 
     @property
     def dynamic(self) -> bool:
-        """Return True if the module has dynamic parameters as direct children."""
+        """
+        Return True if the module has dynamic parameters as direct children.
+
+        Returns
+        -------
+        bool
+            True if any direct children are dynamic parameters.
+        """
         return any(isinstance(n, Param) and n.dynamic for n in self.children.values())
 
     @property
     def static(self) -> bool:
+        """
+        Return True if the module has no dynamic parameters as direct children.
+
+        Returns
+        -------
+        bool
+            True if none of the direct children are dynamic parameters.
+        """
         return not self.dynamic
 
     def to_dynamic(self, children_only=True):
@@ -170,7 +215,7 @@ class Module(Node, GetSetValues):
         for group, params_g in zip(self.dynamic_param_groups, params):
             param_list_g = tuple(p for p in param_list if p.group == group)
             if self.valid_context:
-                params_g = self.from_valid(params_g, param_list_g)
+                params_g = self.from_valid(params_g, param_list_g, group=group)
             self._set_values(params_g, param_list_g, attribute="_value")
 
     def clear_state(self):
@@ -236,6 +281,9 @@ class Module(Node, GetSetValues):
             ):
                 if len(value) > 0 and all(isinstance(v, Node) for v in value):
                     value = NodeTuple(value, name=key)
+            elif isinstance(value, dict) and not isinstance(value, NodeDict):
+                if len(value) > 0 and all(isinstance(v, Node) for v in value.values()):
+                    value = NodeDict(value, name=key)
         except AttributeError:
             pass
         super().__setattr__(key, value)

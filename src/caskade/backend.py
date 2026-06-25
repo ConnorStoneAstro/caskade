@@ -1,29 +1,80 @@
+"""Backend abstraction for array operations.
+
+Provides a unified :class:`Backend` class that delegates array creation and
+manipulation to one of three libraries: **torch**, **jax**, or **numpy**.
+A module-level :data:`backend` instance is created on import and serves as the
+primary interface for users.
+"""
+
 import os
 import importlib, importlib.util
 from typing import TYPE_CHECKING, TypeVar
 
-from torch import Tensor
 import numpy as np
 from . import utils
 
-ArrayLike = Annotated[
-    Tensor,
-    "One of: torch.Tensor, numpy.ndarray, jax.numpy.ndarray depending on the chosen backend.",
-]
+if TYPE_CHECKING:
+    import torch  # type: ignore
+    import jax.numpy as jnp  # type: ignore
+
+    ArrayLike = TypeVar("ArrayLike", np.ndarray, "torch.Tensor", "jnp.ndarray")
+else:
+    ArrayLike = TypeVar("ArrayLike")
 
 
 class Backend:
+    """Unified interface for array operations across torch, jax, and numpy.
+
+    Provides a single API for creating and manipulating arrays regardless of
+    the underlying library. Methods such as ``make_array``, ``concatenate``,
+    ``to``, ``sigmoid``, and ``logit`` are dynamically bound when the backend
+    is set, delegating to the appropriate library-specific implementation.
+
+    Parameters
+    ----------
+    backend : str, optional
+        Backend name: ``"torch"``, ``"jax"``, or ``"numpy"``. If ``None``,
+        reads from the ``CASKADE_BACKEND`` environment variable, defaulting
+        to ``"torch"``.
+
+    Examples
+    --------
+    Use the module-level ``backend`` instance to switch backends::
+
+        from caskade import backend
+        backend.backend = "numpy"
+        arr = backend.make_array([1.0, 2.0, 3.0])
+    """
+
     def __init__(self, backend=None):
+        """Initialize the backend.
+
+        Parameters
+        ----------
+        backend : str, optional
+            Backend name: ``"torch"``, ``"jax"``, or ``"numpy"``. If ``None``,
+            reads from the ``CASKADE_BACKEND`` environment variable, defaulting
+            to ``"torch"``.
+        """
         self.backend = backend
 
     @property
     def backend(self):
+        """str : Name of the active backend (``"torch"``, ``"jax"``, or ``"numpy"``)."""
         return self._backend
 
     @backend.setter
     def backend(self, backend):
         if backend is None:
-            backend = os.getenv("CASKADE_BACKEND", "torch")
+            backend = os.getenv("CASKADE_BACKEND", "none").lower()
+            if backend == "none":  # Try to find available backend
+                if importlib.util.find_spec("torch") is not None:
+                    backend = "torch"
+                elif importlib.util.find_spec("jax") is not None:
+                    backend = "jax"
+                else:
+                    backend = "numpy"
+
         self.module = self._load_backend(backend)
         self._backend = backend
 
@@ -85,6 +136,22 @@ class Backend:
 
     @property
     def array_type(self):
+        """type : The array class for the active backend.
+
+        Returns ``torch.Tensor``, ``jax.numpy.ndarray``, or ``numpy.ndarray``
+        depending on the current backend. Useful for ``isinstance`` checks.
+
+        Returns
+        -------
+        type
+            The array class used by the active backend.
+
+        Examples
+        --------
+        ::
+
+            isinstance(my_array, backend.array_type)
+        """
         return self._array_type()
 
     def _make_array_torch(self, array, dtype=None, device=None):
@@ -169,18 +236,80 @@ class Backend:
         return array
 
     def any(self, array):
+        """Test whether any element evaluates to ``True``.
+
+        Parameters
+        ----------
+        array : ArrayLike
+            Input array.
+
+        Returns
+        -------
+        ArrayLike
+            Scalar result; ``True`` if any element is non-zero.
+        """
         return self.module.any(array)
 
     def all(self, array):
+        """Test whether all elements evaluate to ``True``.
+
+        Parameters
+        ----------
+        array : ArrayLike
+            Input array.
+
+        Returns
+        -------
+        ArrayLike
+            Scalar result; ``True`` if every element is non-zero.
+        """
         return self.module.all(array)
 
     def log(self, array):
+        """Compute the natural logarithm element-wise.
+
+        Parameters
+        ----------
+        array : ArrayLike
+            Input array.
+
+        Returns
+        -------
+        ArrayLike
+            Element-wise natural logarithm of the input.
+        """
         return self.module.log(array)
 
     def exp(self, array):
+        """Compute the exponential element-wise.
+
+        Parameters
+        ----------
+        array : ArrayLike
+            Input array.
+
+        Returns
+        -------
+        ArrayLike
+            Element-wise exponential of the input.
+        """
         return self.module.exp(array)
 
     def sum(self, array, axis=None):
+        """Sum array elements over a given axis.
+
+        Parameters
+        ----------
+        array : ArrayLike
+            Input array.
+        axis : int or None, optional
+            Axis along which to sum. If ``None``, sums all elements.
+
+        Returns
+        -------
+        ArrayLike
+            Sum of elements.
+        """
         return self.module.sum(array, axis=axis)
 
     def _sigmoid_torch(self, array):
@@ -202,4 +331,9 @@ class Backend:
         return np.log(array / (1 - array))
 
 
+#: Module-level :class:`Backend` instance used as the default entry point.
+#: Import and configure this object to switch backends globally::
+#:
+#:     from caskade import backend
+#:     backend.backend = "numpy"
 backend = Backend()
