@@ -365,15 +365,16 @@ def test_full_valid_grad():
     class DummyModule(Module):
         def __init__(self):
             super().__init__()
-            self.p = Param("test", 0.5, valid=(0, 1))
+            self.p = Param("test", 0.5, valid=(0, 1), dynamic=True)
 
         @forward
         def forward(self):
-            return 2 * self.p.value**2
+            return 2 * (self.p.value**2)
 
     M = DummyModule()
     with ValidContext(M):
         params = M.get_values() * 10
+        assert len(params) == 1, "There should be one parameter in the module"
         if backend.backend == "jax":
             grad = backend.jax.grad(M.forward)
         elif backend.backend == "torch":
@@ -381,7 +382,7 @@ def test_full_valid_grad():
         assert np.all(
             backend.to_numpy(params) > 1
         ), "Params should be outside valid range for testing"
-        assert np.allclose(grad(params), 2.0), "Gradient should be 2.0, at high valid border"
+        assert np.allclose(grad(params), 4.0), "Gradient should be 4.0, at high valid border"
         params = -params
         assert np.all(
             backend.to_numpy(params) < 0
