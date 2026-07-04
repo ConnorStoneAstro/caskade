@@ -4,11 +4,13 @@ import numpy as np
 from caskade import (
     Param,
     Module,
+    forward,
     ActiveStateError,
     ParamConfigurationError,
     ParamTypeError,
     InvalidValueWarning,
     ActiveContext,
+    ValidContext,
     backend,
 )
 
@@ -317,8 +319,10 @@ def test_valid():
     ), "from_valid should map to valid range"
 
     p.valid = (0, 1)
-    assert p.to_valid(v) != v, "valid value should change"
-    assert p.from_valid(v) != v, "valid value should change"
+    assert p.to_valid(v) == v, "valid value in range should not change"
+    assert p.from_valid(v) == v, "valid value in range should not change"
+    assert p.from_valid(v + 5) == 1.0, "valid value should be clamped to max"
+    assert p.from_valid(v - 5) == 0.0, "valid value should be clamped to min"
     assert backend.all(
         p.from_valid(backend.module.linspace(-1e4, 1e4, 101)) >= 0
     ), "from_valid should map to valid range"
@@ -352,6 +356,37 @@ def test_valid():
         p.valid = (0, None)
     with pytest.warns(InvalidValueWarning):
         p.valid = (None, -2)
+
+
+def test_full_valid_grad():
+    if backend.backend == "numpy":
+        pytest.skip("Numpy backend does not support gradients")
+
+    class DummyModule(Module):
+        def __init__(self):
+            super().__init__()
+            self.p = Param("test", 0.5, valid=(0, 1))
+
+        @forward
+        def forward(self):
+            return 2 * self.p.value**2
+
+    M = DummyModule()
+    with ValidContext(M):
+        params = M.get_values() * 10
+        if backend.backend == "jax":
+            grad = backend.jax.grad(M.forward)
+        elif backend.backend == "torch":
+            grad = backend.module.func.grad(M.forward)
+        assert np.all(
+            backend.to_numpy(params) > 1
+        ), "Params should be outside valid range for testing"
+        assert np.allclose(grad(params), 2.0), "Gradient should be 2.0, at high valid border"
+        params = -params
+        assert np.all(
+            backend.to_numpy(params) < 0
+        ), "Params should be outside valid range for testing"
+        assert np.allclose(grad(params), 0.0), "Gradient should be 0.0 at low valid border"
 
 
 def test_node_str():

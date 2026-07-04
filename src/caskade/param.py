@@ -805,9 +805,6 @@ class Param(Node):
         return value
 
     def _to_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        value = (
-            backend.logit((value - self.valid[0]) / (self.valid[1] - self.valid[0])) + self.valid[0]
-        )
         return value
 
     def _to_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
@@ -823,10 +820,7 @@ class Param(Node):
         return value
 
     def _from_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        value = (
-            backend.sigmoid(value - self.valid[0]) * (self.valid[1] - self.valid[0]) + self.valid[0]
-        )
-        return value
+        return backend.ste_clip(value, self.valid[0], self.valid[1])
 
     def _from_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
         value = ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]

@@ -104,6 +104,7 @@ class Backend:
         self.to_numpy = self._to_numpy_torch
         self.logit = self._logit_torch
         self.sigmoid = self._sigmoid_torch
+        self.ste_clip = self._ste_clip_torch
 
     def setup_jax(self):
         self.jax = importlib.import_module("jax")
@@ -119,6 +120,7 @@ class Backend:
         self.to_numpy = self._to_numpy_jax
         self.logit = self._logit_jax
         self.sigmoid = self._sigmoid_jax
+        self.ste_clip = self._ste_clip_jax
 
     def setup_numpy(self):
         self.make_array = self._make_array_numpy
@@ -133,6 +135,7 @@ class Backend:
         self.to_numpy = self._to_numpy_numpy
         self.logit = self._logit_numpy
         self.sigmoid = self._sigmoid_numpy
+        self.ste_clip = self._ste_clip_numpy
 
     @property
     def array_type(self):
@@ -329,6 +332,17 @@ class Backend:
 
     def _logit_numpy(self, array):
         return np.log(array / (1 - array))
+
+    def _ste_clip_torch(self, array, min_val, max_val):
+        clipped = self.module.clamp(array, min=min_val, max=max_val)
+        return array + (clipped - array).detach()
+
+    def _ste_clip_jax(self, array, min_val, max_val):
+        clipped = self.module.clip(array, a_min=min_val, a_max=max_val)
+        return array + self.jax.lax.stop_gradient(clipped - array)
+
+    def _ste_clip_numpy(self, array, min_val, max_val):
+        return np.clip(array, a_min=min_val, a_max=max_val)
 
 
 #: Module-level :class:`Backend` instance used as the default entry point.
