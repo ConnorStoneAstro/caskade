@@ -312,12 +312,12 @@ class Backend:
     def _ste_clip_torch(self, array, min_val, max_val):
         """Clip function such that gradients are preserved at the boundaries."""
         clipped = self.module.clamp(array, min=min_val, max=max_val)
-        return array + (clipped - array).detach()
+        return clipped.detach() + (array - array.detach())
 
     def _ste_clip_jax(self, array, min_val, max_val):
         """Clip function such that gradients are preserved at the boundaries."""
         clipped = self.module.clip(array, min=min_val, max=max_val)
-        return array + self.jax.lax.stop_gradient(clipped - array)
+        return self.jax.lax.stop_gradient(clipped) + (array - self.jax.lax.stop_gradient(array))
 
     def _ste_clip_numpy(self, array, min_val, max_val):
         """Standard clip function of numpy."""
