@@ -102,8 +102,7 @@ class Backend:
         self.as_array = self._as_array_torch
         self.to = self._to_torch
         self.to_numpy = self._to_numpy_torch
-        self.logit = self._logit_torch
-        self.sigmoid = self._sigmoid_torch
+        self.ste_clip = self._ste_clip_torch
 
     def setup_jax(self):
         self.jax = importlib.import_module("jax")
@@ -117,8 +116,7 @@ class Backend:
         self.as_array = self._as_array_jax
         self.to = self._to_jax
         self.to_numpy = self._to_numpy_jax
-        self.logit = self._logit_jax
-        self.sigmoid = self._sigmoid_jax
+        self.ste_clip = self._ste_clip_jax
 
     def setup_numpy(self):
         self.make_array = self._make_array_numpy
@@ -131,8 +129,7 @@ class Backend:
         self.as_array = self._as_array_numpy
         self.to = self._to_numpy
         self.to_numpy = self._to_numpy_numpy
-        self.logit = self._logit_numpy
-        self.sigmoid = self._sigmoid_numpy
+        self.ste_clip = self._ste_clip_numpy
 
     @property
     def array_type(self):
@@ -312,23 +309,19 @@ class Backend:
         """
         return self.module.sum(array, axis=axis)
 
-    def _sigmoid_torch(self, array):
-        return self.module.sigmoid(array)
+    def _ste_clip_torch(self, array, min_val, max_val):
+        """Clip function such that gradients are preserved at the boundaries."""
+        clipped = self.module.clamp(array, min=min_val, max=max_val)
+        return clipped.detach() + (array - array.detach())
 
-    def _sigmoid_jax(self, array):
-        return self.jax.nn.sigmoid(array)
+    def _ste_clip_jax(self, array, min_val, max_val):
+        """Clip function such that gradients are preserved at the boundaries."""
+        clipped = self.module.clip(array, min=min_val, max=max_val)
+        return self.jax.lax.stop_gradient(clipped) + (array - self.jax.lax.stop_gradient(array))
 
-    def _sigmoid_numpy(self, array):
-        return 1 / (1 + self.module.exp(-array))
-
-    def _logit_torch(self, array):
-        return self.module.logit(array)
-
-    def _logit_jax(self, array):
-        return self.jax.scipy.special.logit(array)
-
-    def _logit_numpy(self, array):
-        return np.log(array / (1 - array))
+    def _ste_clip_numpy(self, array, min_val, max_val):
+        """Standard clip function of numpy."""
+        return np.clip(array, a_min=min_val, a_max=max_val)
 
 
 #: Module-level :class:`Backend` instance used as the default entry point.

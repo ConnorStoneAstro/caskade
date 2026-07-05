@@ -1,4 +1,4 @@
-from typing import Optional, Union, Callable, Any, Iterable
+from typing import Optional, Union, Any, Iterable
 from warnings import warn
 from math import prod
 
@@ -332,8 +332,8 @@ class Param(Node):
                 )
 
         self.__value = value
-        self.is_valid()
         self.node_type = "static"
+        self.is_valid()
 
     def to_pointer(self, value, link=()):
         """Change this parameter to a pointer parameter.
@@ -793,10 +793,14 @@ class Param(Node):
             value = self.value
         if value is None:
             return True
-        if self.valid[0] is not None and backend.any(value < self.valid[0]):
+        if self.valid[0] is not None and self.valid[1] is not None:
+            if backend.any(value < self.valid[0]) or backend.any(value > self.valid[1]):
+                warn(InvalidValueWarning(self.name, value, self.valid))
+                return False
+        elif self.valid[0] is not None and backend.any(value <= self.valid[0]):
             warn(InvalidValueWarning(self.name, value, self.valid))
             return False
-        elif self.valid[1] is not None and backend.any(value > self.valid[1]):
+        elif self.valid[1] is not None and backend.any(value >= self.valid[1]):
             warn(InvalidValueWarning(self.name, value, self.valid))
             return False
         return True
@@ -805,9 +809,6 @@ class Param(Node):
         return value
 
     def _to_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        value = (
-            backend.logit((value - self.valid[0]) / (self.valid[1] - self.valid[0])) + self.valid[0]
-        )
         return value
 
     def _to_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
@@ -823,10 +824,7 @@ class Param(Node):
         return value
 
     def _from_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        value = (
-            backend.sigmoid(value - self.valid[0]) * (self.valid[1] - self.valid[0]) + self.valid[0]
-        )
-        return value
+        return backend.ste_clip(value, self.valid[0], self.valid[1])
 
     def _from_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
         value = ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]
