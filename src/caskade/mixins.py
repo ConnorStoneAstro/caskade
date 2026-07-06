@@ -134,19 +134,22 @@ class GetSetValues:
         params : Union[ArrayLike, Sequence, Mapping]
             Values to assign to the parameters.  Accepted formats:
 
-            * **ArrayLike** - a flat (or batched) array whose last dimension
-              is concatenated parameter values in topological order.
+            * **ArrayLike** - a flat (or batched) array whose last dimension is
+              concatenated parameter values in topological order.
             * **Sequence** - one element per parameter, matched by position.
             * **Mapping** - keys matching child names, values being the
               parameter data (may be nested).
 
-            When multiple dynamic parameter groups exist, ``params`` should
-            be a sequence of per-group containers.
+            When multiple dynamic parameter groups exist, ``params`` should be a
+            sequence of per-group containers.
         dynamic : bool, optional
             If ``True`` (default), sets dynamic parameters; otherwise sets
             static parameters.
         attribute : str, optional
             The ``Param`` attribute to write to, by default ``"value"``.
+        respect_valid : bool, optional
+            If ``True`` (default), will apply from_valid transformations before
+            assignment.
 
         Raises
         ------
@@ -230,11 +233,13 @@ class GetSetValues:
         dynamic : bool, optional
             If ``True`` (default), retrieves dynamic parameters; otherwise
             retrieves static parameters.
-        attribute : str, optional
+        attribute : Union[str, Callable], optional
             The ``Param`` attribute to read from, by default ``"value"``.
         group : int or None, optional
             Restrict to a specific parameter group.  When ``None`` (default)
             and multiple groups exist, returns a list of per-group results.
+        respect_valid : bool, optional
+            If ``True`` (default), will apply to_valid transformation.
 
         Returns
         -------
@@ -247,7 +252,13 @@ class GetSetValues:
             values = []
             for g in self.dynamic_param_groups:
                 values.append(
-                    self.get_values(scheme=scheme, dynamic=dynamic, attribute=attribute, group=g)
+                    self.get_values(
+                        scheme=scheme,
+                        dynamic=dynamic,
+                        attribute=attribute,
+                        group=g,
+                        respect_valid=respect_valid,
+                    )
                 )
             return values
         param_list = self.dynamic_params if dynamic else self.static_params

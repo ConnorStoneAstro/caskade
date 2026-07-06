@@ -225,13 +225,20 @@ def test_internal_vmap_with_groups(grouped_model):
 
     grouped_model.to_dynamic(False)
     grouped_model.inner.a = [1, 2, 3]
+    grouped_model.inner.a.valid = (0, None)
     grouped_model.inner.b = [[2, 3], [4, 5], [6, 7]]
     grouped_model.c = [4, 5, 6]
+    grouped_model.c.valid = (None, 10)
     grouped_model.d = [[5, 6], [7, 8], [9, 10]]
+    grouped_model.d.valid = (0, 11)
     VM = VmapModule(grouped_model)
 
     res = VM.run(backend.make_array([10.0, 20.0, 30.0]), VM.get_values())
     assert np.allclose(res.item(), 354)
+
+    with ValidContext(VM):
+        res2 = VM.run(backend.make_array([10.0, 20.0, 30.0]), VM.get_values())
+        assert np.allclose(res2.item(), 354)
 
 
 # ──────────────────────────────────────────────────────────────────────
