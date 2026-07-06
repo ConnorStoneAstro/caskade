@@ -1,4 +1,4 @@
-from typing import Optional, Mapping, Sequence, Union
+from typing import Optional, Mapping, Sequence, Union, Callable
 from math import prod
 import numpy as np
 
@@ -206,7 +206,7 @@ class GetSetValues:
         self,
         scheme: str = "array",
         dynamic: bool = True,
-        attribute: Union[str, callable] = "value",
+        attribute: Union[str, Callable] = "value",
         group: Optional[int] = None,
     ) -> Union[ArrayLike, list[ArrayLike], dict[str, Union[dict, ArrayLike]]]:
         """Retrieve parameter values from the module.
@@ -453,7 +453,7 @@ class GetSetValues:
     def to_valid(
         self,
         params: Union[ArrayLike, Sequence, Mapping],
-        param_list: tuple[Param] = None,
+        param_list: Optional[tuple[Param]] = None,
         group: Optional[int] = None,
     ) -> Union[ArrayLike, Sequence, Mapping]:
         """Map parameter values from their natural range to an unconstrained space.
@@ -500,7 +500,7 @@ class GetSetValues:
     def from_valid(
         self,
         valid_params: Union[ArrayLike, Sequence, Mapping],
-        param_list: tuple[Param] = None,
+        param_list: Optional[tuple[Param]] = None,
         group: Optional[int] = None,
     ) -> Union[ArrayLike, Sequence, Mapping]:
         """Map parameter values from the unconstrained space back to their natural range.
