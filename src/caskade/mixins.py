@@ -1,4 +1,4 @@
-from typing import Optional, Mapping, Sequence, Union
+from typing import Optional, Mapping, Sequence, Union, Callable
 from math import prod
 import numpy as np
 
@@ -58,7 +58,7 @@ class GetSetValues:
         self,
         params: Union[ArrayLike, Sequence, Mapping],
         param_list: tuple[Param],
-        attribute="_value",
+        attribute: str = "_value",
     ):
         """
         Fill the dynamic parameters of the module with the input values from
@@ -130,10 +130,10 @@ class GetSetValues:
         params : Union[ArrayLike, Sequence, Mapping]
             Values to assign to the parameters.  Accepted formats:
 
-            * **ArrayLike** – a flat (or batched) array whose last dimension
+            * **ArrayLike** - a flat (or batched) array whose last dimension
               is concatenated parameter values in topological order.
-            * **Sequence** – one element per parameter, matched by position.
-            * **Mapping** – keys matching child names, values being the
+            * **Sequence** - one element per parameter, matched by position.
+            * **Mapping** - keys matching child names, values being the
               parameter data (may be nested).
 
             When multiple dynamic parameter groups exist, ``params`` should
@@ -179,8 +179,35 @@ class GetSetValues:
                 f"{self.name} Param(s) {bad_params} have no value, so the params {scheme} cannot be built. Set their value to use this feature."
             )
 
+    @staticmethod
+    def _getattr_or_callable(obj, attribute):
+        """Get an attribute or call a callable on an object."""
+        if callable(attribute):
+            return attribute(obj)
+        return getattr(obj, attribute)
+
+    def _recursive_build_params_dict(
+        self, node: Node, unique_params: set, param_list, attribute="value"
+    ):
+        params = {}
+        for link, child in node.children.items():
+            if isinstance(child, Param) and child in param_list and child not in unique_params:
+                unique_params.add(child)
+                params[link] = self._getattr_or_callable(child, attribute)
+            else:
+                params[link] = self._recursive_build_params_dict(
+                    child, unique_params=unique_params, param_list=param_list, attribute=attribute
+                )
+                if len(params[link]) == 0:
+                    del params[link]
+        return params
+
     def get_values(
-        self, scheme="array", dynamic=True, attribute="value", group: Optional[int] = None
+        self,
+        scheme: str = "array",
+        dynamic: bool = True,
+        attribute: Union[str, Callable] = "value",
+        group: Optional[int] = None,
     ) -> Union[ArrayLike, list[ArrayLike], dict[str, Union[dict, ArrayLike]]]:
         """Retrieve parameter values from the module.
 
@@ -190,10 +217,10 @@ class GetSetValues:
             Output format, one of ``"array"`` (default), ``"list"``, or
             ``"dict"``.
 
-            * ``"array"`` / ``"tensor"`` – returns a single flat array with
+            * ``"array"`` / ``"tensor"`` - returns a single flat array with
               all parameter values concatenated along the last axis.
-            * ``"list"`` – returns a list of raw parameter values.
-            * ``"dict"`` – returns a nested dictionary mirroring the graph
+            * ``"list"`` - returns a list of raw parameter values.
+            * ``"dict"`` - returns a nested dictionary mirroring the graph
               structure.
         dynamic : bool, optional
             If ``True`` (default), retrieves dynamic parameters; otherwise
@@ -231,13 +258,13 @@ class GetSetValues:
                     else:
                         depth = max(memo.count("|") for memo in param.memos)
                         B = param.batch_shape[:-depth]
-                    x.append(getattr(param, attribute).reshape(B + (-1,)))
+                    x.append(self._getattr_or_callable(param, attribute).reshape(B + (-1,)))
             if len(x) == 0:
                 return backend.make_array([])
             x = backend.detach(backend.broadcast_cat(x, dim=-1))
         elif scheme.lower() == "list":
             for param in param_list:
-                x.append(getattr(param, attribute))
+                x.append(self._getattr_or_callable(param, attribute))
         elif scheme.lower() == "dict":
             unique_params = set()
             x = self._recursive_build_params_dict(
@@ -246,22 +273,6 @@ class GetSetValues:
         if self.valid_context:
             x = self.to_valid(x, group=group)
         return x
-
-    def _recursive_build_params_dict(
-        self, node: Node, unique_params: set, param_list, attribute="value"
-    ):
-        params = {}
-        for link, child in node.children.items():
-            if isinstance(child, Param) and child in param_list and child not in unique_params:
-                unique_params.add(child)
-                params[link] = getattr(child, attribute)
-            else:
-                params[link] = self._recursive_build_params_dict(
-                    child, unique_params=unique_params, param_list=param_list, attribute=attribute
-                )
-                if len(params[link]) == 0:
-                    del params[link]
-        return params
 
     def _array_inspection(self, group: Optional[int] = None):
         param_list = self.dynamic_params
@@ -387,7 +398,13 @@ class GetSetValues:
 
     # To/From Valid
     #################################################################
-    def _transform_params(self, node, init_params, param_list, transform_attr):
+    def _transform_params(
+        self,
+        node: Node,
+        init_params: Union[ArrayLike, Sequence, Mapping],
+        param_list: tuple[Param],
+        transform_attr: str,
+    ):
         if isinstance(init_params, backend.array_type):
             trans_params = []
             batch = len(init_params.shape) > 1
@@ -434,12 +451,15 @@ class GetSetValues:
         return trans_params
 
     def to_valid(
-        self, params: Union[ArrayLike, Sequence, Mapping], param_list=None, group=None
+        self,
+        params: Union[ArrayLike, Sequence, Mapping],
+        param_list: Optional[tuple[Param]] = None,
+        group: Optional[int] = None,
     ) -> Union[ArrayLike, Sequence, Mapping]:
         """Map parameter values from their natural range to an unconstrained space.
 
         Takes parameter values that lie within each parameter's valid range
-        (e.g. 0–1 for an axis ratio) and maps them into the unconstrained
+        (e.g. 0-1 for an axis ratio) and maps them into the unconstrained
         domain ``(-inf, inf)``.  The inverse mapping :meth:`from_valid` will
         map any value in ``(-inf, inf)`` back into the original valid range.
         This is useful for interfacing with samplers and optimizers that
@@ -478,14 +498,17 @@ class GetSetValues:
         return self._transform_params(self, params, param_list, "to_valid")
 
     def from_valid(
-        self, valid_params: Union[ArrayLike, Sequence, Mapping], param_list=None, group=None
+        self,
+        valid_params: Union[ArrayLike, Sequence, Mapping],
+        param_list: Optional[tuple[Param]] = None,
+        group: Optional[int] = None,
     ) -> Union[ArrayLike, Sequence, Mapping]:
         """Map parameter values from the unconstrained space back to their natural range.
 
         Takes values in the unconstrained domain ``(-inf, inf)`` (as
         produced by :meth:`to_valid` or proposed by an optimizer/sampler)
         and maps them back into each parameter's original valid range
-        (e.g. 0–1 for an axis ratio).
+        (e.g. 0-1 for an axis ratio).
 
         Parameters
         ----------

@@ -202,6 +202,38 @@ def test_deep_hierarchy():
     assert backend.module.allclose(result, backend.make_array(3.0))
 
 
+def test_internal_vmap_with_groups(grouped_model):
+    """Internal vmap works correctly with grouped params."""
+    if backend.backend == "jax":
+        vmap = backend.jax.vmap
+    elif backend.backend == "torch":
+        vmap = lambda f, in_axes: backend.module.vmap(f, in_dims=in_axes)
+    elif backend.backend == "numpy":
+        pytest.skip("vmap not supported for numpy backend")
+    else:
+        raise ValueError("expected backend to be jax, torch, or numpy")
+
+    class VmapModule(Module):
+        def __init__(self, mod):
+            super().__init__()
+            self.hierarchical_link("mod", mod)
+
+        @forward
+        def run(self, x, mod_params=None, mod_dims=None):
+            res = vmap(self.mod.run, in_axes=(0, mod_dims))(x, mod_params)
+            return backend.sum(res)
+
+    grouped_model.to_dynamic(False)
+    grouped_model.inner.a = [1, 2, 3]
+    grouped_model.inner.b = [[2, 3], [4, 5], [6, 7]]
+    grouped_model.c = [4, 5, 6]
+    grouped_model.d = [[5, 6], [7, 8], [9, 10]]
+    VM = VmapModule(grouped_model)
+
+    res = VM.run(backend.make_array([10.0, 20.0, 30.0]), VM.get_values())
+    assert np.allclose(res.item(), 354)
+
+
 # ──────────────────────────────────────────────────────────────────────
 # 3. Groups with get_values / set_values (all schemes)
 # ──────────────────────────────────────────────────────────────────────
