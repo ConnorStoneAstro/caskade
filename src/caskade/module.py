@@ -244,8 +244,8 @@ class Module(Node, GetSetValues):
                 if key.endswith("_params"):
                     kwargs[key] = self[key[:-7]].get_values("list")
                 else:
-                    kwargs[key] = list(
-                        0 if p.batched else None for p in self[key[:-5]].dynamic_params
+                    kwargs[key] = self[key[:-5]].get_values(
+                        "list", attribute=lambda p: 0 if p.batched else None
                     )
             elif key in self.children and isinstance(self[key], Param):
                 val = self.children[key].value
