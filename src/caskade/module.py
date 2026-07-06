@@ -245,7 +245,7 @@ class Module(Node, GetSetValues):
                     kwargs[key] = self[key[:-7]].get_values("list")
                 else:
                     kwargs[key] = self[key[:-5]].get_values(
-                        "list", attribute=lambda p: 0 if p.batched else None
+                        "list", attribute=lambda p: 0 if p.batched else None, respect_valid=False
                     )
             elif key in self.children and isinstance(self[key], Param):
                 val = self.children[key].value

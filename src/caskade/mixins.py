@@ -121,7 +121,11 @@ class GetSetValues:
             )
 
     def set_values(
-        self, params: Union[ArrayLike, Sequence, Mapping], dynamic=True, attribute="value"
+        self,
+        params: Union[ArrayLike, Sequence, Mapping],
+        dynamic: bool = True,
+        attribute: str = "value",
+        respect_valid: bool = True,
     ):
         """Fill parameter values of the module from the provided data.
 
@@ -158,11 +162,11 @@ class GetSetValues:
             if len(self.dynamic_param_groups) > 1:
                 for group, params_g in zip(self.dynamic_param_groups, params):
                     param_list_g = tuple(p for p in param_list if p.group == group)
-                    if self.valid_context:
+                    if self.valid_context and respect_valid:
                         params_g = self.from_valid(params_g, param_list_g, group=group)
                     self._set_values(params_g, param_list_g, attribute=attribute)
             else:
-                if self.valid_context:
+                if self.valid_context and respect_valid:
                     params = self.from_valid(params, param_list)
                 self._set_values(params, param_list, attribute=attribute)
 
@@ -208,6 +212,7 @@ class GetSetValues:
         dynamic: bool = True,
         attribute: Union[str, Callable] = "value",
         group: Optional[int] = None,
+        respect_valid: bool = True,
     ) -> Union[ArrayLike, list[ArrayLike], dict[str, Union[dict, ArrayLike]]]:
         """Retrieve parameter values from the module.
 
@@ -270,7 +275,7 @@ class GetSetValues:
             x = self._recursive_build_params_dict(
                 self, unique_params=unique_params, param_list=param_list, attribute=attribute
             )
-        if self.valid_context:
+        if self.valid_context and respect_valid:
             x = self.to_valid(x, group=group)
         return x
 
