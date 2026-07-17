@@ -159,6 +159,24 @@ def test_save_append_load(usefileobject):
     _change_graph_fail_test()
 
 
+def test_save_append_load_batched_param():
+    module = Module("main")
+    param = Param("batched", np.arange(12).reshape(2, 2, 3), shape=(2, 3))
+    module.batched = param
+
+    module.save_state("test_save_batched_append.h5", appendable=True)
+    param.value = np.arange(12, 24).reshape(2, 2, 3)
+    module.append_state("test_save_batched_append.h5")
+
+    with h5py.File("test_save_batched_append.h5", "r") as h5file:
+        assert h5file["main/batched/value"].shape == (2, 2, 2, 3)
+
+    loaded_module = Module("main")
+    loaded_module.batched = Param("batched", None, shape=(2, 3))
+    loaded_module.load_state("test_save_batched_append.h5")
+    np.testing.assert_array_equal(loaded_module.batched.value, np.arange(12, 24).reshape(2, 2, 3))
+
+
 def test_missing_h5py():
     with mock.patch.dict(sys.modules, {"h5py": None}):
         import importlib

@@ -647,7 +647,7 @@ class Param(Node):
                     "value",
                     data=value,
                     chunks=False if isinstance(value, str) else True,
-                    maxshape=None if isinstance(value, str) else (None,) + self.shape,
+                    maxshape=None if isinstance(value, str) else (None,) + tuple(value.shape[1:]),
                     compression=None if isinstance(value, str) else "gzip",
                 )
             else:
@@ -684,7 +684,7 @@ class Param(Node):
             except:
                 value = None
             if value is not None:
-                h5group["value"].resize((h5group["value"].shape[0] + 1,) + self.shape)
+                h5group["value"].resize((h5group["value"].shape[0] + 1,) + h5group["value"].shape[1:])
                 h5group["value"][-1] = self.value
 
     def _load_state_hdf5(self, h5group, index: int = -1, _done_load: set = None):
