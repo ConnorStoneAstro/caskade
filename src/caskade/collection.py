@@ -155,6 +155,8 @@ class NodeTuple(NodeCollection, tuple):
                 raise TypeError(f"NodeTuple elements must be Node objects, not {type(node)}")
             self.link(node)
 
+        self.link = None  # Disable further linking to preserve immutability
+
     @property
     def graphviz_style(self):
         return {"style": "solid", "color": "black", "shape": "tab"}
@@ -162,7 +164,12 @@ class NodeTuple(NodeCollection, tuple):
     def __getitem__(self, key):
         if isinstance(key, str):
             return Node.__getitem__(self, key)
+        if isinstance(key, slice):
+            return NodeTuple(tuple.__getitem__(self, key), name=self.name)
         return tuple.__getitem__(self, key)
+
+    def __setitem__(self, key, value):
+        raise TypeError("'NodeTuple' object does not support item assignment")
 
     def __add__(self, other):
         res = super().__add__(other)
@@ -264,7 +271,7 @@ class NodeList(NodeCollection, list):
     def __setitem__(self, key, value):
         self._unlink_nodes()
         try:
-            super().__setitem__(key, value)
+            list.__setitem__(self, key, value)
         finally:
             self._link_nodes()
 
