@@ -155,7 +155,10 @@ class NodeTuple(NodeCollection, tuple):
                 raise TypeError(f"NodeTuple elements must be Node objects, not {type(node)}")
             self.link(node)
 
-        self.link = None  # Disable further linking to preserve immutability
+        def _immutable_link(*args, **kwargs):
+            raise TypeError("NodeTuple is immutable; cannot link new nodes after construction")
+
+        self.link = _immutable_link  # type: ignore[method-assign]
 
     @property
     def graphviz_style(self):
