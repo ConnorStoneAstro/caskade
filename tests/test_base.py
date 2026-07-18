@@ -62,6 +62,8 @@ def test_linking(node_graph):
         a.link("link", g)  # key is attribute
     with pytest.raises(NodeConfigurationError):
         a.link("bad name", g)  # Name not python identifier
+    with pytest.raises(TypeError):
+        a.link("acceptable_name", 123)  # value is not a node
 
     # Double link
     with pytest.raises(GraphError):
