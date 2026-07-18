@@ -240,6 +240,8 @@ class Node:
             raise NodeConfigurationError(
                 f"key is invalid: '{key}'. Must be a valid Python identifier and not a reserved keyword."
             )
+        if not isinstance(child, Node):
+            raise TypeError(f"child must be a Node object, not {type(child)}")
         self.__setattr__(key, child)
 
     def hierarchical_link(self, key: str, child: "Node"):

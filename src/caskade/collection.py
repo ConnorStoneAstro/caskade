@@ -174,6 +174,9 @@ class NodeTuple(NodeCollection, tuple):
     def __setitem__(self, key, value):
         raise TypeError("'NodeTuple' object does not support item assignment")
 
+    def __delitem__(self, key):
+        raise TypeError("'NodeTuple' object does not support item deletion")
+
     def __add__(self, other):
         res = super().__add__(other)
         return NodeTuple(res)

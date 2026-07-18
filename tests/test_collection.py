@@ -52,6 +52,9 @@ def test_node_collection_creation(node_type):
     assert n4[3] is modules[1]
     assert n4[4] is modules[2]
 
+    # Make a slice
+    assert isinstance(n4[1:4], node_type)
+
     # Check repr
     assert isinstance(repr(n4), str)
     assert "[5]" in repr(n4)
@@ -302,7 +305,7 @@ def test_node_tuple_immutable():
     with pytest.raises(AttributeError):
         nt.insert(1, Param("new_param"))
 
-    with pytest.raises(AttributeError):
+    with pytest.raises(TypeError):
         del nt[0]
 
     with pytest.raises(AttributeError):
