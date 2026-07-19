@@ -52,6 +52,9 @@ def test_node_collection_creation(node_type):
     assert n4[3] is modules[1]
     assert n4[4] is modules[2]
 
+    # Make a slice
+    assert isinstance(n4[1:4], node_type)
+
     # Check repr
     assert isinstance(repr(n4), str)
     assert "[5]" in repr(n4)
@@ -282,6 +285,37 @@ def test_valid_tuple(node_tuple, params_type, group):
         for i in range(len(node_tuple.dynamic_param_groups)):
             assert backend.module.allclose(init_params[i], round_trip_params[i])
             assert backend.module.allclose(init_params[i], final_params[i])
+
+
+def test_node_tuple_immutable():
+    params = [Param("p1"), Param("p2"), Param("p3")]
+    modules = [Module("m1"), Module("m2"), Module("m3")]
+    nt = NodeTuple(params + modules)
+
+    # Attempt to modify the NodeTuple
+    with pytest.raises(TypeError):
+        nt[0] = Param("new_param")
+
+    with pytest.raises(AttributeError):
+        nt.append(Param("new_param"))
+
+    with pytest.raises(AttributeError):
+        nt.extend([Module("new_module")])
+
+    with pytest.raises(AttributeError):
+        nt.insert(1, Param("new_param"))
+
+    with pytest.raises(TypeError):
+        del nt[0]
+
+    with pytest.raises(AttributeError):
+        nt.pop()
+
+    with pytest.raises(AttributeError):
+        nt.remove(modules[0])
+
+    with pytest.raises(TypeError):
+        nt.link(Module("new_module"))
 
 
 def test_node_dict_creation():

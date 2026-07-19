@@ -164,18 +164,22 @@ class Node:
         if key in self.children:
             if self.children[key] is child:
                 return
-            raise GraphError(f"Child key '{key}' already linked to parent {self.name}")
+            raise GraphError(
+                f"Child key '{key}' already linked to parent {self.name}, but with different node {self.children[key].name}"
+            )
         if child in self.children.values():
-            raise GraphError(f"Child {child.name} already linked to parent {self.name}")
+            raise GraphError(
+                f"Child {child.name} already linked to parent {self.name}, but not with key '{key}'"
+            )
         if hasattr(self, key):
             raise LinkToAttributeError(
-                f"Child key '{key}' already an attribute of parent {self.name}, use a different name"
+                f"Child key '{key}' already an attribute of parent {self.name}, use a different name to avoid collisions"
             )
 
         # avoid cycles
         if self in child.topological_ordering():
             raise GraphError(
-                f"Linking {child.name} to {self.name} would create a cycle in the graph"
+                f"Linking {child.name} to {self.name} would create a cycle in the graph!"
             )
 
         self.children[key] = child
@@ -236,6 +240,8 @@ class Node:
             raise NodeConfigurationError(
                 f"key is invalid: '{key}'. Must be a valid Python identifier and not a reserved keyword."
             )
+        if not isinstance(child, Node):
+            raise TypeError(f"child must be a Node object, not {type(child)}")
         self.__setattr__(key, child)
 
     def hierarchical_link(self, key: str, child: "Node"):
@@ -283,7 +289,7 @@ class Node:
             object, the matching child is located and unlinked. If a list or
             tuple, each element is unlinked in turn. If ``None`` (the
             default), all children are unlinked.
-            
+
         Raises
         ------
         GraphError
@@ -730,6 +736,9 @@ class Node:
 
     def __getitem__(self, key: str) -> "Node":
         return self.children[key]
+
+    def __setitem__(self, key: str, value: "Node"):
+        self.link(key, value)
 
     def __eq__(self, other: "Node") -> bool:
         return self is other

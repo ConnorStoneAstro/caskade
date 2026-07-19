@@ -37,6 +37,16 @@ def test_meta_link():
     assert len(b.parents) == 0
 
 
+def test_linking_with_setitem(node_graph):
+    a, b, c, d, e, f, g = node_graph
+
+    # Link using __setitem__
+    a["new_child"] = d
+    assert "new_child" in a.children
+    assert a.children["new_child"] is d
+    assert a in d.parents
+
+
 def test_linking(node_graph):
     a, b, c, d, e, f, g = node_graph
 
@@ -52,6 +62,8 @@ def test_linking(node_graph):
         a.link("link", g)  # key is attribute
     with pytest.raises(NodeConfigurationError):
         a.link("bad name", g)  # Name not python identifier
+    with pytest.raises(TypeError):
+        a.link("acceptable_name", 123)  # value is not a node
 
     # Double link
     with pytest.raises(GraphError):
