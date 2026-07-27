@@ -10,6 +10,7 @@ chapters:
   - file: notebooks/HierarchicalModels
   - file: notebooks/WorkedExample
   - file: contributing
+  - file: citation
   - file: license
   - file: modules
     sections:
