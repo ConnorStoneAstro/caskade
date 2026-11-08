@@ -522,12 +522,12 @@ class Node:
         """Cleanup the state of the node and its children after appending to HDF5."""
         pass
 
-    def _append_state_hdf5(self, h5group):
+    def _append_state_hdf5(self, h5group, batch: Optional[int] = None):
         """Append the state of the node and its children to an existing HDF5 file."""
         for key, child in self.children.items():
-            child._append_state_hdf5(h5group[key])
+            child._append_state_hdf5(h5group[key], batch=batch)
 
-    def append_state(self, saveto: Union[str, "File"]):
+    def append_state(self, saveto: Union[str, "File"], batch: Optional[int] = None):
         """
         Append the current state to an existing HDF5 file.
 
@@ -540,6 +540,14 @@ class Node:
         saveto : str or File
             Path to an HDF5 file (``'.h5'`` or ``'.hdf5'``) or an open
             HDF5 ``File`` object.
+        batch : int or None, optional
+            Append ``batch`` states at once: the parameter values carry a
+            leading axis of that length (e.g. after ``set_values`` with a
+            batched array of ``batch`` parameter vectors). A parameter whose
+            value has no such axis (a static parameter, or a pointer to
+            static ones) is repeated for every state. One file open and one
+            write per parameter instead of one per state. Default ``None``
+            appends the single current state.
 
         Raises
         ------
@@ -552,7 +560,7 @@ class Node:
             if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
                 with h5py.File(saveto, "a") as h5file:
                     self._check_append_state_hdf5(h5file[self.name])
-                    self._append_state_hdf5(h5file[self.name])
+                    self._append_state_hdf5(h5file[self.name], batch=batch)
 
                 for node in self.topological_ordering():
                     node._append_state_cleanup()
@@ -562,7 +570,7 @@ class Node:
                 )
         else:  # assume saveto is an HDF5 File object
             self._check_append_state_hdf5(saveto[self.name])
-            self._append_state_hdf5(saveto[self.name])
+            self._append_state_hdf5(saveto[self.name], batch=batch)
 
             for node in self.topological_ordering():
                 node._append_state_cleanup()

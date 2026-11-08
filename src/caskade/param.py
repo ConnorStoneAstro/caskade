@@ -675,8 +675,8 @@ class Param(Node):
         super()._append_state_cleanup()
         del self.appended
 
-    def _append_state_hdf5(self, h5group):
-        super()._append_state_hdf5(h5group)
+    def _append_state_hdf5(self, h5group, batch: Optional[int] = None):
+        super()._append_state_hdf5(h5group, batch=batch)
         if not hasattr(self, "appended"):
             self.appended = True
             try:
@@ -684,8 +684,23 @@ class Param(Node):
             except:
                 value = None
             if value is not None:
-                h5group["value"].resize((h5group["value"].shape[0] + 1,) + h5group["value"].shape[1:])
-                h5group["value"][-1] = self.value
+                value = backend.to_numpy(value)
+                dataset = h5group["value"]
+                state_shape = dataset.shape[1:]
+                if batch is None:
+                    rows = value.reshape((1,) + state_shape)
+                elif value.shape == (batch,) + state_shape:
+                    rows = value
+                elif value.shape == state_shape:  # no state axis: one value for every state
+                    rows = np.broadcast_to(value, (batch,) + state_shape)
+                else:
+                    raise ValueError(
+                        f"Param {self.name}: value of shape {value.shape} is neither one state of shape "
+                        f"{state_shape} nor a batch of {batch} states of that shape"
+                    )
+                n = dataset.shape[0]
+                dataset.resize((n + rows.shape[0],) + state_shape)
+                dataset[n:] = rows
 
     def _load_state_hdf5(self, h5group, index: int = -1, _done_load: set = None):
         super()._load_state_hdf5(h5group, index=index, _done_load=_done_load)

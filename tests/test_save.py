@@ -1,4 +1,5 @@
-from caskade import Module, Param, GraphError, SaveStateWarning
+from caskade import Module, Param, GraphError, SaveStateWarning, backend
+import os
 import numpy as np
 import gc
 import h5py
@@ -175,6 +176,41 @@ def test_save_append_load_batched_param():
     loaded_module.batched = Param("batched", None, shape=(2, 3))
     loaded_module.load_state("test_save_batched_append.h5")
     np.testing.assert_array_equal(loaded_module.batched.value, np.arange(12, 24).reshape(2, 2, 3))
+
+
+def test_append_state_batch():
+    """append_state(batch=k) writes k states at once from values with a
+    leading state axis (set_values with a batched array); a static parameter
+    is repeated for every state; the result loads like k single appends."""
+    module = Module("main")
+    module.dyn = Param("dyn", np.zeros((2, 3)), shape=(2, 3), dynamic=True)
+    module.scalar = Param("scalar", 1.0, shape=(), dynamic=True)
+    module.fixed = Param("fixed", np.arange(4.0))
+    path = "test_save_append_batch.h5"
+    module.save_state(path, appendable=True)
+
+    states = np.random.default_rng(0).normal(size=(5, 7))  # 5 parameter vectors of dyn (6) + scalar (1)
+    module.set_values(backend.as_array(states))
+    module.append_state(path, batch=5)
+    with h5py.File(path, "r") as h5file:
+        assert h5file["main/dyn/value"].shape == (6, 2, 3)
+        np.testing.assert_allclose(h5file["main/dyn/value"][1:], states[:, :6].reshape(5, 2, 3), rtol=1e-6)
+        np.testing.assert_allclose(h5file["main/scalar/value"][1:], states[:, 6], rtol=1e-6)
+        np.testing.assert_array_equal(h5file["main/fixed/value"][()], np.tile(np.arange(4.0), (6, 1)))
+
+    loaded = Module("main")
+    loaded.dyn = Param("dyn", np.zeros((2, 3)), shape=(2, 3), dynamic=True)
+    loaded.scalar = Param("scalar", 0.0, shape=(), dynamic=True)
+    loaded.fixed = Param("fixed", np.zeros(4))
+    loaded.load_state(path, index=3)
+    np.testing.assert_allclose(backend.to_numpy(loaded.dyn.value), states[2, :6].reshape(2, 3))
+    np.testing.assert_allclose(backend.to_numpy(loaded.scalar.value), states[2, 6])
+
+    # a value that is neither one state nor a batch of the stated size is an error
+    module.set_values(backend.as_array(states[:3]))
+    with pytest.raises(ValueError):
+        module.append_state(path, batch=5)
+    os.remove(path)
 
 
 def test_missing_h5py():
