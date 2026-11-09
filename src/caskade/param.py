@@ -628,8 +628,12 @@ class Param(Node):
         self._cyclic = cyclic
         self.valid = self.valid
 
-    def _save_state_hdf5(self, h5group, appendable: bool = False, _done_save: set = None):
-        super()._save_state_hdf5(h5group, appendable=appendable, _done_save=_done_save)
+    def _save_state_hdf5(
+        self, h5group, appendable: bool = False, _done_save: set = None, compression="gzip"
+    ):
+        super()._save_state_hdf5(
+            h5group, appendable=appendable, _done_save=_done_save, compression=compression
+        )
         if "value" not in self._h5group:
             try:
                 value = self.value
@@ -648,7 +652,7 @@ class Param(Node):
                     data=value,
                     chunks=False if isinstance(value, str) else True,
                     maxshape=None if isinstance(value, str) else (None,) + tuple(value.shape[1:]),
-                    compression=None if isinstance(value, str) else "gzip",
+                    compression=None if isinstance(value, str) else compression,
                 )
             else:
                 self._h5group.create_dataset(

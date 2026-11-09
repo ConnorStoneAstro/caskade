@@ -418,7 +418,9 @@ class Node:
 
         return self
 
-    def _save_state_hdf5(self, h5group, appendable: bool = False, _done_save: set = None):
+    def _save_state_hdf5(
+        self, h5group, appendable: bool = False, _done_save: set = None, compression="gzip"
+    ):
         """Save the state of the node and its children to HDF5."""
         if id(self) not in _done_save:
             for attr in self.saveattrs:
@@ -441,9 +443,11 @@ class Node:
                 child._h5group = h5group.create_group(key)
             elif key not in h5group:
                 h5group[key] = child._h5group
-            child._save_state_hdf5(h5group[key], appendable=appendable, _done_save=_done_save)
+            child._save_state_hdf5(
+                h5group[key], appendable=appendable, _done_save=_done_save, compression=compression
+            )
 
-    def save_state(self, saveto: Union[str, "File"], appendable: bool = False):
+    def save_state(self, saveto: Union[str, "File"], appendable: bool = False, compression="gzip"):
         """
         Save the state of the node and its children, currently only works for
         HDF5 file types (.h5 and .hdf5).
@@ -485,6 +489,11 @@ class Node:
             Whether to save the state in an appendable format. If True, the
             values will have an extra dimension for the number of samples.
             Defaults to False.
+        compression: (str or None, optional)
+            The h5py compression filter for the appendable value datasets
+            (``"gzip"`` by default). ``None`` writes them uncompressed, which
+            makes each append cheaper when the file is written often (e.g. a
+            sampler saving every few steps). Ignored when appendable is False.
 
         """
         if isinstance(saveto, str):
@@ -492,7 +501,10 @@ class Node:
                 with h5py.File(saveto, "w") as h5file:
                     self._h5group = h5file.create_group(self.name)
                     self._save_state_hdf5(
-                        h5file[self.name], appendable=appendable, _done_save=set()
+                        h5file[self.name],
+                        appendable=appendable,
+                        _done_save=set(),
+                        compression=compression,
                     )
 
                 for node in self.topological_ordering():
@@ -503,7 +515,9 @@ class Node:
                 )
         else:  # assume saveto is an HDF5 File object
             self._h5group = saveto.create_group(self.name)
-            self._save_state_hdf5(saveto[self.name], appendable=appendable, _done_save=set())
+            self._save_state_hdf5(
+                saveto[self.name], appendable=appendable, _done_save=set(), compression=compression
+            )
 
             for node in self.topological_ordering():
                 del node._h5group

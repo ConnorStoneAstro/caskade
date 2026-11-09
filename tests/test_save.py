@@ -177,6 +177,22 @@ def test_save_append_load_batched_param():
     np.testing.assert_array_equal(loaded_module.batched.value, np.arange(12, 24).reshape(2, 2, 3))
 
 
+def test_save_append_uncompressed():
+    main = _build_test_module()
+    main.save_state("test_save_uncompressed.h5", appendable=True, compression=None)
+    main.m1.p1.value = 2.0
+    main.append_state("test_save_uncompressed.h5")
+    with h5py.File("test_save_uncompressed.h5", "r") as f:
+        assert f["main/m1/p1/value"].compression is None
+        assert f["main/m1/p1/value"].shape == (2,)
+        assert np.allclose(f["main/m1/p1/value"][()], [1.0, 2.0])
+    main.save_state("test_save_compressed.h5", appendable=True)
+    with h5py.File("test_save_compressed.h5", "r") as f:
+        assert f["main/m1/p1/value"].compression == "gzip"
+    main.load_state("test_save_uncompressed.h5", index=0)
+    assert np.allclose(main.m1.p1.value, 1.0)
+
+
 def test_missing_h5py():
     with mock.patch.dict(sys.modules, {"h5py": None}):
         import importlib
@@ -186,3 +202,4 @@ def test_missing_h5py():
         importlib.reload(module)
 
         assert module.h5py is None
+
