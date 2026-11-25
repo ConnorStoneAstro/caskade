@@ -1,6 +1,8 @@
-from typing import Optional, Union, Any, Iterable
+from contextlib import contextmanager
+from typing import Iterator, Optional, Union, Any, Iterable
 from warnings import warn
 from math import prod
+from numbers import Integral
 
 from numpy import ndarray
 import numpy as np
@@ -69,6 +71,27 @@ class _ParamValue:
     def __call__(self, p: "Param"):
         target: Any = p[self.key]  # the ``Param`` being pointed to
         return target.value
+
+
+#: The params whose ``value`` has been read, while someone is asking
+#: (``_record_reads``). ``None`` the rest of the time.
+_READS: Optional[set["Param"]] = None
+
+
+@contextmanager
+def _record_reads() -> Iterator[set["Param"]]:
+    """Collect the params whose ``value`` is read while the block runs. This is
+    how a ``static_cache`` result knows which params it was made from."""
+    global _READS
+    outer = _READS
+    reads: set[Param] = set()
+    _READS = reads
+    try:
+        yield reads
+    finally:
+        _READS = outer
+        if outer is not None:  # what an inner block read, the outer one read as well
+            outer.update(reads)
 
 
 class Param(Node):
@@ -408,7 +431,7 @@ class Param(Node):
         tuple of int
             The resolved shape of the parameter.
         """
-        value = self.value
+        value = self._peek()
         # 1. Handle cases where no shape template is defined
         if self._shape is None:
             return tuple(value.shape) if value is not None else ()
@@ -431,7 +454,7 @@ class Param(Node):
         if shape is None:
             self._shape = None
             return
-        value = self.value
+        value = self._peek()
         try:
             shape = tuple(shape)
         except TypeError:
@@ -473,7 +496,7 @@ class Param(Node):
         if self._batch_shape is not None:
             return self._batch_shape
         try:
-            value = self.value
+            value = self._peek()
         except Exception:  # pointer cannot be evaluated yet
             value = None
         if value is None:
@@ -495,7 +518,10 @@ class Param(Node):
         Parameters that share the same group index are collected together
         into a single ``params`` object when calling a simulator's
         ``@forward`` method, as well as when using ``get_values`` or
-        ``set_values``.
+        ``set_values``. The dynamic params are split by the groups that the
+        dynamic params are in, and the static params (``static_params``,
+        ``get_values(dynamic=False)``) by the groups that the static params
+        are in.
 
         Returns
         -------
@@ -506,10 +532,10 @@ class Param(Node):
 
     @group.setter
     def group(self, group: int):
-        if not isinstance(group, int):
+        if isinstance(group, bool) or not isinstance(group, Integral):
             raise ParamConfigurationError(f"Group must be an integer ({self.name})")
         pregroup = self._group
-        self._group = group
+        self._group = int(group)  # a plain int, also from a numpy integer
         if pregroup != self._group:
             self.update_graph()
 
@@ -527,7 +553,7 @@ class Param(Node):
         """
         if self._dtype is None:
             try:
-                value = self.value
+                value = self._peek()
                 if value is not None:
                     return value.dtype
             except AttributeError:
@@ -548,7 +574,7 @@ class Param(Node):
         """
         if self._device is None:
             try:
-                value = self.value
+                value = self._peek()
                 if value is not None:
                     return value.device
             except AttributeError:
@@ -568,6 +594,8 @@ class Param(Node):
         ArrayLike or None
             The parameter value, or ``None`` if no value has been set.
         """
+        if _READS is not None:
+            _READS.add(self)
         if self._active_value is not None:
             return self._active_value
         if self.pointer:
@@ -592,6 +620,18 @@ class Param(Node):
             self.to_dynamic(value)
         else:
             self.to_static(value)
+
+    def _peek(self) -> Union[ArrayLike, None]:
+        """The current value, for ``caskade`` to look at its shape or type. It
+        does not count as a use of the value (see ``_record_reads``)."""
+        if self._active_value is not None:
+            return self._active_value
+        if self.pointer:
+            value = self._stored_value(self)
+            if self.active:
+                self._active_value = value
+            return value
+        return self._stored_value
 
     @property
     def npvalue(self) -> ndarray:
@@ -909,7 +949,7 @@ class Param(Node):
         Returns a string representation of the node for graph visualization.
         """
         try:
-            value = self.value
+            value = self._peek()
         except Exception:  # pointer cannot be evaluated yet
             value = None
         if value is not None:

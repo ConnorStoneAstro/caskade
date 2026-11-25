@@ -655,6 +655,22 @@ def test_pickle_collections_and_pointers():
     assert [p.name for p in copy.static_params] == ["x", "l1", "l2", "l3", "t1", "k"]
 
 
+@pytest.mark.parametrize("library", ["copy", "cloudpickle", "dill"])
+def test_other_ways_to_copy_a_graph(library):
+    # These store a class that is defined in a script along with everything
+    # its methods can reach, so nothing in caskade may stand in their way
+    module = pytest.importorskip(library)
+    sim = PickleSim()
+    sim.z = Param("z", lambda p: 2 * p.x.value, link=sim.x)  # pickle itself refuses a lambda
+    if library == "copy":
+        copy = module.deepcopy(sim)
+    else:
+        copy = module.loads(module.dumps(sim))
+    copy.x = 10.0
+    assert copy.z.value.item() == 20.0 and sim.z.value.item() == 4.0
+    assert copy.total().item() == 31.0 and sim.total().item() == 15.0
+
+
 def test_collection_plain_attributes_and_operators():
     from caskade.collection import NodeCollection
 

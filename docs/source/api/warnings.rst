@@ -9,3 +9,6 @@ Warnings
 
 .. autoclass:: caskade.SaveStateWarning
    :show-inheritance:
+
+.. autoclass:: caskade.StaticCacheWarning
+   :show-inheritance:

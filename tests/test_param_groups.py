@@ -18,6 +18,7 @@ from caskade import (
     ValidContext,
     OverrideParam,
     ActiveStateError,
+    FillParamsError,
     ParamConfigurationError,
     NodeList,
     NodeTuple,
@@ -911,3 +912,109 @@ def test_param_order_str(grouped_model):
     assert "d" in order
     assert "a" in order
     assert "b" in order
+
+
+class Grouped(Module):
+    def __init__(self, name="grouped"):
+        super().__init__(name)
+        self.a = Param("a", 1.0, shape=(), dynamic=True)
+        self.b = Param("b", [2.0, 3.0], shape=(2,), dynamic=True, group=1)
+        self.k = Param("k", 10.0, shape=())
+        self.j = Param("j", 20.0, shape=(), group=1)
+        self.z = Param("z", 30.0, shape=(), group=7)  # no dynamic param is in this group
+
+    @forward
+    def total(self, a, b, k, j, z):
+        return a + b.sum() + k + j + z
+
+
+def numpy(value):
+    return backend.to_numpy(value)
+
+
+def test_static_params_are_split_by_their_own_groups():
+    sim = Grouped()
+    assert sim.dynamic_param_groups == (0, 1)
+    assert sim.static_param_groups == (0, 1, 7)
+    static = sim.get_values(dynamic=False)
+    assert [numpy(s).tolist() for s in static] == [[10.0], [20.0], [30.0]]
+    assert sim.get_dims(dynamic=False) == [[None], [None], [None]]
+    assert sim.get_dims("array", dynamic=False) == [None, None, None]
+    assert np.allclose(numpy(sim.get_values(dynamic=False, group=7)), [30.0])
+
+    # Every static param is reached, in a call and in set_values
+    params = sim.get_values()
+    more = [2 * s for s in static]
+    assert np.allclose(numpy(sim.total(params, static_params=more)), 126.0)
+    assert np.allclose(numpy(sim.total(static_params=more)), 126.0)
+    assert np.allclose(numpy(sim.z.value), 30.0)
+    sim.set_values(more, dynamic=False)
+    assert np.allclose(numpy(sim.z.value), 60.0) and np.allclose(numpy(sim.j.value), 40.0)
+
+    # The groups of the dynamic params do not decide the layout of the static ones
+    sim.j.group = sim.z.group = 0
+    assert sim.static_param_groups == (0,)
+    assert np.allclose(numpy(sim.get_values(dynamic=False)), [20.0, 40.0, 60.0])
+    sim.b.group = 0
+    sim.z.group = 3
+    assert np.allclose(numpy(sim.get_values()), [1.0, 2.0, 3.0])
+    static = sim.get_values(dynamic=False)
+    assert [numpy(s).tolist() for s in static] == [[20.0, 40.0], [60.0]]
+    assert np.allclose(numpy(sim.total(sim.get_values(), static_params=static)), 126.0)
+
+    nodes = NodeList([Grouped("one"), Grouped("two")])
+    assert nodes.static_param_groups == (0, 1, 7)
+    assert len(nodes.get_values(dynamic=False)) == 3
+
+
+def test_values_must_have_an_entry_for_each_group():
+    sim = Grouped()
+    a, b = sim.get_values()
+    flat = backend.as_array([1.0, 2.0, 3.0])
+    for bad, given in (
+        ([a], "1 entries"),
+        ([a, b, b], "3 entries"),
+        (flat, "Got a "),
+        ({"a": a}, "Got a dict"),
+    ):
+        with pytest.raises(FillParamsError, match=r"2 groups \(0, 1\).*" + given):
+            sim.total(bad)
+        with pytest.raises(FillParamsError, match=given):
+            sim.set_values(bad)
+        with pytest.raises(FillParamsError, match=given):
+            sim.to_valid(bad)
+        with pytest.raises(FillParamsError, match=given):
+            sim.from_valid(bad)
+    assert np.allclose(numpy(sim.a.value), 1.0) and not sim.active
+    with pytest.raises(FillParamsError, match=r"3 groups \(0, 1, 7\).*2 entries"):
+        sim.total(static_params=[a, b])
+
+    # One group at a time
+    sim.a.valid = (0.0, None)
+    valid = sim.to_valid([a, b])
+    assert np.allclose(numpy(valid[0]), 0.0) and np.allclose(numpy(valid[1]), [2.0, 3.0])
+    assert np.allclose(numpy(sim.to_valid(a, group=0)), 0.0)
+    assert np.allclose(numpy(sim.from_valid(valid[0], group=0)), 1.0)
+    static = sim.to_valid(sim.get_values(dynamic=False), sim.static_params)
+    assert [numpy(s).tolist() for s in static] == [[10.0], [20.0], [30.0]]
+
+
+def test_an_index_needs_its_group():
+    sim = Grouped()
+    assert sim.find_param(0, group=1) == (sim.b, (0,))
+    assert sim.find_index(sim.b) == (1, slice(0, 2))
+    with pytest.raises(ValueError, match="Give the `group`"):
+        sim.find_param(0)
+    with pytest.raises(ValueError, match="Give the `group`"):
+        sim.find_param((0, 1), scheme="list")
+
+
+def test_group_is_an_integer():
+    p = Param("p", 1.0, group=np.int64(2))
+    assert p.group == 2 and type(p.group) is int
+    p.group = -1
+    assert p.group == -1
+    for bad in (True, 1.0, "1", None):
+        with pytest.raises(ParamConfigurationError, match="Group must be an integer"):
+            p.group = bad
+    assert p.group == -1

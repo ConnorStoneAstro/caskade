@@ -1,9 +1,10 @@
-from typing import TYPE_CHECKING, Optional, Mapping, Sequence, Union, Callable
+from typing import TYPE_CHECKING, Any, Optional, Mapping, Sequence, Union, Callable
 from math import prod
 import numpy as np
 
 from .param import Param
 from .errors import (
+    FillParamsError,
     FillParamsArrayError,
     FillParamsMappingError,
     FillParamsSequenceError,
@@ -90,6 +91,33 @@ class GetSetValues:
         for node in self.topological_ordering():
             if isinstance(node, GetSetValues):
                 node._valid_context = value
+
+    # Groups
+    #################################################################
+    def _split_groups(
+        self, params, param_list: tuple[Param, ...], groups: tuple[int, ...]
+    ) -> list[tuple[Any, tuple[Param, ...]]]:
+        """Pair each entry of ``params`` with the params of its group.
+
+        Raises
+        ------
+        FillParamsError
+            If ``params`` is not a sequence with one entry for each group.
+        """
+        if isinstance(params, (backend.array_type, str)) or not isinstance(params, Sequence):
+            given = f"a {type(params).__name__}"
+        elif len(params) != len(groups):
+            given = f"{len(params)} entries"
+        else:
+            return [
+                (params_g, tuple(p for p in param_list if p.group == group))
+                for group, params_g in zip(groups, params)
+            ]
+        raise FillParamsError(
+            f"The params of '{self.name}' are in {len(groups)} groups {groups}, so their values "
+            "are given as a list with one entry for each group, the way `get_values` returns "
+            f"them. Got {given}."
+        )
 
     # Set Values
     #################################################################
@@ -219,16 +247,16 @@ class GetSetValues:
             raise ActiveStateError(f"Cannot fill dynamic values when Module {self.name} is active")
 
         param_list = self.dynamic_params if dynamic else self.static_params
+        groups = self.dynamic_param_groups if dynamic else self.static_param_groups
 
-        if len(self.dynamic_param_groups) > 1:
-            for group, params_g in zip(self.dynamic_param_groups, params):
-                param_list_g = tuple(p for p in param_list if p.group == group)
+        if len(groups) > 1:
+            for params_g, param_list_g in self._split_groups(params, param_list, groups):
                 if self.valid_context and respect_valid:
-                    params_g = self.from_valid(params_g, param_list_g, group=group)
+                    params_g = self._transform_params(self, params_g, param_list_g, "from_valid")
                 self._set_values(params_g, param_list_g, attribute=attribute)
         else:
             if self.valid_context and respect_valid:
-                params = self.from_valid(params, param_list)
+                params = self._transform_params(self, params, param_list, "from_valid")
             self._set_values(params, param_list, attribute=attribute)
 
     # Get Values
@@ -306,9 +334,10 @@ class GetSetValues:
             multiple groups exist and *group* is ``None``, a list of
             per-group results is returned.
         """
-        if len(self.dynamic_param_groups) > 1 and group is None:
+        groups = self.dynamic_param_groups if dynamic else self.static_param_groups
+        if len(groups) > 1 and group is None:
             values = []
-            for g in self.dynamic_param_groups:
+            for g in groups:
                 values.append(
                     self.get_values(
                         scheme=scheme,
@@ -380,7 +409,8 @@ class GetSetValues:
 
         if scheme.lower() in ["array", "tensor"]:
             dims = self.get_dims("list", dynamic=dynamic, group=group)
-            if len(self.dynamic_param_groups) > 1 and group is None:
+            groups = self.dynamic_param_groups if dynamic else self.static_param_groups
+            if len(groups) > 1 and group is None:
                 return [0 if 0 in d else None for d in dims]
             return 0 if 0 in dims else None
         return self.get_values(
@@ -432,6 +462,12 @@ class GetSetValues:
         """
         if not isinstance(idx, int):
             return tuple(self.find_param(i, group, scheme) for i in idx)
+        if group is None and len(self.dynamic_param_groups) > 1:
+            raise ValueError(
+                f"The dynamic params of '{self.name}' are in the groups "
+                f"{self.dynamic_param_groups}, each with params of its own. Give the `group` "
+                "that the index is for."
+            )
 
         if scheme == "array":
             x = self._array_inspection(group)
@@ -555,6 +591,22 @@ class GetSetValues:
             )
         return trans_params
 
+    def _transform_groups(self, params, param_list, group, transform_attr: str):
+        """``to_valid`` or ``from_valid`` of values in the layout of ``get_values``."""
+        if param_list is None:
+            param_list = self.dynamic_params
+            groups = self.dynamic_param_groups
+        else:
+            groups = tuple(sorted(set(p.group for p in param_list)))
+        if group is not None:
+            param_list = tuple(p for p in param_list if p.group == group)
+        elif len(groups) > 1:
+            return [
+                self._transform_params(self, params_g, param_list_g, transform_attr)
+                for params_g, param_list_g in self._split_groups(params, param_list, groups)
+            ]
+        return self._transform_params(self, params, param_list, transform_attr)
+
     def to_valid(
         self,
         params: Union[ArrayLike, Sequence, Mapping],
@@ -587,20 +639,7 @@ class GetSetValues:
         Union[ArrayLike, Sequence, Mapping]
             Transformed values in the same format as *params*.
         """
-        if param_list is None:
-            param_list = self.dynamic_params
-        if len(self.dynamic_param_groups) > 1:
-            if group is None:
-                valid_params = []
-                for g, params_g in zip(self.dynamic_param_groups, params):
-                    param_list_g = tuple(p for p in param_list if p.group == g)
-                    valid_params.append(
-                        self._transform_params(self, params_g, param_list_g, "to_valid")
-                    )
-                return valid_params
-            else:
-                param_list = tuple(p for p in param_list if p.group == group)
-        return self._transform_params(self, params, param_list, "to_valid")
+        return self._transform_groups(params, param_list, group, "to_valid")
 
     def from_valid(
         self,
@@ -632,17 +671,4 @@ class GetSetValues:
         Union[ArrayLike, Sequence, Mapping]
             Inverse-transformed values in the same format as *valid_params*.
         """
-        if param_list is None:
-            param_list = self.dynamic_params
-        if len(self.dynamic_param_groups) > 1:
-            if group is None:
-                params = []
-                for g, valid_params_g in zip(self.dynamic_param_groups, valid_params):
-                    param_list_g = tuple(p for p in param_list if p.group == g)
-                    params.append(
-                        self._transform_params(self, valid_params_g, param_list_g, "from_valid")
-                    )
-                return params
-            else:
-                param_list = tuple(p for p in param_list if p.group == group)
-        return self._transform_params(self, valid_params, param_list, "from_valid")
+        return self._transform_groups(valid_params, param_list, group, "from_valid")

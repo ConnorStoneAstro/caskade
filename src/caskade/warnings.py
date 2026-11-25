@@ -46,3 +46,13 @@ class SaveStateWarning(CaskadeWarning):
     Issued when the state serialization completes but with potential data
     loss or format issues that the user should be aware of.
     """
+
+
+class StaticCacheWarning(CaskadeWarning):
+    """
+    Warning issued when a ``static_cache`` result may not be the right one.
+
+    Issued when the stored result was made from a dynamic param, whose values
+    in a simulation it will not follow, and when a stored result is used after
+    a param that it was made from has been changed.
+    """

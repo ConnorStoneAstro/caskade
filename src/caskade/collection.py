@@ -158,6 +158,17 @@ class NodeCollection(Node, GetSetValues):
         return tuple(n for n in T if isinstance(n, Param) and n.static)
 
     @property
+    def static_param_groups(self) -> tuple[int, ...]:
+        """Sorted unique group identifiers of all static parameters.
+
+        Returns
+        -------
+        tuple of int
+            Sorted group indices present among the static parameters.
+        """
+        return tuple(sorted(set(p.group for p in self.static_params)))
+
+    @property
     def pointer_params(self) -> tuple[Param, ...]:
         """All pointer parameters in the graph below this node.
 

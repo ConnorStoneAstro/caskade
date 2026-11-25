@@ -6,6 +6,7 @@ from math import prod
 from typing import TYPE_CHECKING, NamedTuple, Optional, Union, Any
 from warnings import warn
 from operator import attrgetter
+from threading import get_ident
 import keyword
 
 try:
@@ -23,6 +24,12 @@ from .errors import GraphError, NodeConfigurationError, LinkToAttributeError
 from .warnings import SaveStateWarning
 
 __all__ = ("Node", "NodeType", "Memo", "MemoKind", "MemoNote")
+
+
+#: The nodes that a call to ``Node.to`` in progress has reached already, so that
+#: a node which many paths lead to is moved once. Held for each thread that is
+#: making such a call (the way ``reprlib.recursive_repr`` keeps track).
+_MOVED: dict[int, set["Node"]] = {}
 
 
 def _require_h5py():
@@ -629,11 +636,28 @@ class Node:
             The device to move the values to. Defaults to None.
         dtype: (optional)
             The desired data type. Defaults to None.
+
+        Notes
+        -----
+        Every node below this one is moved once, however many paths lead to
+        it. A subclass that holds arrays of its own overrides this method,
+        calls ``super().to(device, dtype)`` and then moves its arrays. Such a
+        method is called once as well, with the arguments that the node above
+        it passed down.
         """
-
-        for child in self.children.values():
-            child.to(device=device, dtype=dtype)
-
+        thread = get_ident()
+        moved = _MOVED.get(thread)
+        first = moved is None  # this is the call that starts the move
+        if moved is None:
+            moved = _MOVED[thread] = {self}
+        try:
+            for child in self.children.values():
+                if child not in moved:
+                    moved.add(child)
+                    child.to(device=device, dtype=dtype)
+        finally:
+            if first:
+                del _MOVED[thread]
         return self
 
     # Saving and loading

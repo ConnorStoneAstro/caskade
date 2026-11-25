@@ -500,3 +500,122 @@ def test_module_without_children():
     empty = Empty("empty")
     assert empty.all_params == ()
     assert empty.add_one(1) == 2
+
+
+class Buffered(Module):
+    """A module with an array of its own to move, as a user would write it."""
+
+    def __init__(self, name, **children):
+        super().__init__(name)
+        for key, child in children.items():
+            setattr(self, key, child)
+        self.p = Param("p", 1.0)
+        self.moves = []
+
+    def to(self, device=None, dtype=None):
+        if dtype is None:  # a default of its own, passed on to the nodes below
+            dtype = backend.module.float32
+        super().to(device, dtype)
+        self.moves.append(dtype)
+        return self
+
+
+def test_to_moves_each_node_once(monkeypatch):
+    # Two modules per layer that each hold both modules of the next layer, the
+    # number of paths through the graph doubles with every layer
+    layer = [Buffered(f"L6_{j}") for j in range(2)]
+    for d in range(5, -1, -1):
+        layer = [Buffered(f"L{d}_{j}", **{c.name: c for c in layer}) for j in range(2)]
+    top = Module("top")
+    top.a, top.b = layer
+    top.q = Param("q", 2.0)
+    top.r = Param("r", lambda p: p.q.value * 2, link=top.q)  # one more path to q
+
+    nodes = top.topological_ordering()
+    params = [n for n in nodes if isinstance(n, Param)]
+    assert len(nodes) == 31 and len(params) == 16
+    calls = []
+    real = Param.to
+    monkeypatch.setattr(
+        Param, "to", lambda self, *a, **k: calls.append(self) or real(self, *a, **k)
+    )
+
+    assert top.to(dtype=backend.module.int32) is top
+    assert len(calls) == len(set(calls)) == len(params)
+    for node in nodes:
+        if isinstance(node, Buffered):  # its own method, with what was passed down
+            assert node.moves == [backend.module.int32]
+        elif isinstance(node, Param) and not node.pointer:
+            assert node.value.dtype == backend.module.int32
+
+    # A node in the middle passes its own arguments on to the nodes below it
+    top.to()
+    assert top.q.value.dtype == backend.module.int32
+    assert all(n.moves[-1] == backend.module.float32 for n in nodes if isinstance(n, Buffered))
+    assert top.a.p.value.dtype == backend.module.float32
+    assert len(calls) == 2 * len(params)
+
+
+def test_to_starts_afresh_after_an_error():
+    class Broken(Module):
+        def to(self, device=None, dtype=None):
+            raise RuntimeError("stop")
+
+    top = Module("top")
+    top.bad = Broken("bad")
+    top.p = Param("p", 1.0)
+    with pytest.raises(RuntimeError, match="stop"):
+        top.to(dtype=backend.module.float32)
+    del top.bad
+    top.to(dtype=backend.module.float32)  # every node is reached again
+    assert top.p.value.dtype == backend.module.float32
+
+
+class Bounded(Module):
+    def __init__(self, name="bounded"):
+        super().__init__(name)
+        self.lo = Param("lo", shape=(), dynamic=True, valid=(0.0, None))
+        self.hi = Param("hi", shape=(2,), dynamic=True, valid=(None, [5.0, 6.0]))
+        self.box = Param("box", shape=(2,), dynamic=True, valid=([0.0, -1.0], [1.0, 1.0]))
+        self.ang = Param("ang", shape=(), dynamic=True, valid=(0.0, 6.0), cyclic=True)
+
+    @forward
+    def total(self, lo, hi, box, ang):
+        return lo + hi.sum() + box.sum() + ang
+
+
+@pytest.mark.parametrize("batch", [(), (4,), (3, 4)])
+@pytest.mark.parametrize("scheme", ["array", "list", "dict"])
+def test_valid_transforms_take_batched_values(batch, scheme):
+    rng = np.random.default_rng(0)
+    sim = Bounded()
+    sim.lo = rng.uniform(0.1, 3, batch)
+    sim.hi = rng.uniform(-3, 4, batch + (2,))
+    sim.box = rng.uniform(0, 1, batch + (2,))
+    sim.ang = rng.uniform(0, 6, batch)
+    natural = backend.to_numpy(sim.get_values())
+    assert natural.shape == batch + (6,)
+
+    def flat(values):  # as the array, whichever scheme the values are in
+        sim.set_values(values)
+        return backend.to_numpy(sim.get_values())
+
+    valid = sim.to_valid(sim.get_values(scheme))
+    back = sim.from_valid(valid)
+    assert np.allclose(flat(back), natural, atol=1e-5)
+    valid = flat(valid)
+    assert valid.shape == natural.shape
+    assert np.allclose(valid[..., 0], np.log(natural[..., 0]), atol=1e-5)
+    assert np.allclose(valid[..., 1:3], np.log(np.array([5.0, 6.0]) - natural[..., 1:3]), atol=1e-5)
+    sim.set_values(backend.as_array(natural))
+
+    # Each entry of a batch is brought into its own range
+    out = backend.as_array(np.array([[-2.0, 0.5], [0.5, 9.0], [0.2, 0.3]]))
+    assert np.allclose(backend.to_numpy(sim.box.from_valid(out)), [[0, 0.5], [0.5, 1], [0.2, 0.3]])
+    out = backend.as_array(np.array([-1.0, 7.0, 1.0]))
+    assert np.allclose(backend.to_numpy(sim.ang.from_valid(out)), [5.0, 1.0, 1.0])
+
+    with ValidContext(sim):
+        result = sim.total(sim.get_values(scheme))
+    assert tuple(result.shape) == batch
+    assert np.allclose(backend.to_numpy(result), backend.to_numpy(sim.total()), atol=1e-5)

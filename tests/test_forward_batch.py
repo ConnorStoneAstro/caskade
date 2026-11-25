@@ -1,8 +1,8 @@
 """How an ``@forward`` method is given its values.
 
 A call with no arguments at all uses the current values of the params, and is
-vectorised when they hold a batch of simulations. Any other call hands the
-method exactly what it was given. ``params`` and ``static_params`` start a
+vectorised when they hold a batch of simulations. So is a call that is given
+nothing but params. Any other call hands the method exactly what it was given. ``params`` and ``static_params`` start a
 simulation with those values, also from inside a running simulation.
 """
 
@@ -119,18 +119,105 @@ def test_results_keep_their_structure():
     assert tuple(b.shape) == (3, 4)
 
 
-def test_only_a_call_with_no_arguments_is_vectorised():
+def test_a_call_with_any_other_argument_is_not_vectorised():
     line = Line()
     line.m, line.b = [1.0, 2.0, 3.0], 0.0
     assert np.allclose(numpy(line.m_total()), [1.0, 2.0, 3.0])
-    # Values that are passed in are handed to the method untouched
-    m, b = backend.as_array([1.0, 2.0, 3.0]), backend.as_array(0.0)
-    assert np.allclose(numpy(line.m_total([m, b])), 6.0)
-    assert np.allclose(numpy(line.m_total(params=[m, b])), 6.0)
-    # With any other argument there is no telling what should be mapped, so
-    # the method gets the current values as they are
+    # There is no telling what should be mapped, so the method gets the values
+    # as they are, the current ones or those that are passed in
     assert np.allclose(numpy(line.m_total(scale=2.0)), 12.0)
-    assert np.allclose(numpy(line.m_total(static_params=line.get_values(dynamic=False))), 6.0)
+    m, b = backend.as_array([1.0, 2.0, 3.0]), backend.as_array(0.0)
+    assert np.allclose(numpy(line.m_total([m, b], scale=2.0)), 12.0)
+    assert np.allclose(numpy(line.m_total(params=[m, b], scale=2.0)), 12.0)
+    static = line.get_values(dynamic=False)
+    assert np.allclose(numpy(line.m_total(static_params=static, scale=2.0)), 12.0)
+    batch = backend.as_array(np.array([[1.0, 0.0], [2.0, 0.0], [3.0, 0.0]]))
+    assert np.allclose(numpy(line.m_total(batch, scale=2.0)), 12.0)
+
+
+M, B, C = [1.0, 2.0, 3.0], [0.0, 10.0, 20.0], [0.0, 100.0, 200.0]
+
+
+@pytest.mark.parametrize("scheme", ["array", "list", "dict"])
+def test_a_call_with_nothing_but_params_is_vectorised(scheme):
+    line = Line()
+    line.m, line.b = M, B
+    expect = expect_total(M, B)
+    params = line.get_values(scheme)
+    line.m, line.b = 7.0, 7.0  # the stored values play no part
+
+    # The same as storing the values and making the call with no arguments
+    for result in (line.total(params), line.total(params=params)):
+        assert tuple(result.shape) == (3,)
+        assert np.allclose(numpy(result), expect)
+    assert not line.active and line.m._active_value is None
+    assert np.allclose(numpy(line.m.value), 7.0)
+
+    # Values without a batch are run as before
+    line.m, line.b = 2.0, 1.0
+    assert np.allclose(numpy(line.total(line.get_values(scheme))), 16.5)
+
+    # The static values are part of the batch, given or stored
+    line.c = C
+    static = line.get_values(scheme, dynamic=False)
+    line.c = 0.5
+    result = line.total(params, static_params=static)
+    assert np.allclose(numpy(result), expect_total(M, B, C))
+    result = line.total(line.get_values(scheme), static_params=static)
+    assert np.allclose(numpy(result), expect_total(2.0, 1.0, C))
+    assert np.allclose(numpy(line.total(static_params=static)), expect_total(2.0, 1.0, C))
+    line.c = C
+    assert np.allclose(numpy(line.total(line.get_values(scheme))), expect_total(2.0, 1.0, C))
+    assert np.allclose(numpy(line.total(params)), expect_total(M, B, C))
+
+
+def test_params_with_more_than_one_batch_dimension():
+    line = Line()
+    m = np.arange(6.0).reshape(2, 3)
+    line.m, line.b = m, B
+    params = line.get_values()
+    assert tuple(params.shape) == (2, 3, 2)
+    result = line.total(params)
+    assert tuple(result.shape) == (2, 3)
+    assert np.allclose(numpy(result), expect_total(m, B))
+    assert np.allclose(numpy(result), numpy(line.total()))
+
+
+def test_params_in_a_valid_context_and_in_groups():
+    line = Line()
+    line.m, line.b = M, B
+    line.m.valid = (0.0, None)
+    expect = expect_total(M, B)
+    with ValidContext(line):
+        params = line.get_values()
+        assert not np.allclose(numpy(params)[:, 0], M)  # the logarithm
+        assert np.allclose(numpy(line.total(params)), expect)
+    line.b.group = 1
+    params = line.get_values()
+    assert len(params) == 2 and tuple(params[0].shape) == (3, 1)
+    assert np.allclose(numpy(line.total(params)), expect)
+    assert np.allclose(numpy(line.total(params=line.get_values("list"))), expect)
+
+
+def test_params_that_do_not_go_together():
+    line = Line()
+    line.m, line.b = 1.0, 1.0
+    params = [backend.as_array(M), backend.as_array([0.0, 10.0])]
+    with pytest.raises(ParamConfigurationError, match=r"m: \(3,\), b: \(2,\)"):
+        line.total(params)
+    assert not line.active and line.m._active_value is None
+
+
+def test_empty_params_for_a_module_with_only_static_params():
+    line = Line()
+    line.m, line.b = 2.0, 1.0
+    line.to_static()
+    line.c = C
+    expect = expect_total(2.0, 1.0, C)
+    # Code written for any module passes the params along, also when there are none
+    assert np.allclose(numpy(line.total(backend.make_array([]))), expect)
+    assert np.allclose(numpy(line.total([])), expect)
+    assert np.allclose(numpy(line.total(params=[])), expect)
 
 
 def test_batches_that_do_not_go_together():
@@ -414,6 +501,8 @@ class Many(Module):
             return backend.vmap(lambda v: self.blob.flux(x, params=v), dims)(values)
         if self.how == "grid":
             return each(lambda p: self.blob.on_grid(params=p), self.blob.get_values())
+        if self.how == "given":  # nothing but params, the blob goes over them
+            return self.blob.on_grid(params=self.blob.get_values())
         return self.blob.on_grid()  # no arguments, the blob goes over its own batch
 
     @forward
@@ -437,7 +526,7 @@ def blob_flux(pos, amp):
 
 
 POS = np.arange(10.0).reshape(5, 2) / 3
-HOW = ["array", "positional", "dims", "grid", "no arguments"]
+HOW = ["array", "positional", "dims", "grid", "given", "no arguments"]
 
 
 @pytest.mark.parametrize("how", HOW)

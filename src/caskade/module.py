@@ -66,6 +66,7 @@ class Module(Node, GetSetValues):
         "pointer_params",
         "static_params",
         "dynamic_param_groups",
+        "static_param_groups",
         "_modules",
         "_deep_params_cache",
     )  # These tuples will not be converted to NodeTuple objects
@@ -78,6 +79,8 @@ class Module(Node, GetSetValues):
     static_params: tuple[Param, ...]
     #: The sorted groups that the dynamic params belong to
     dynamic_param_groups: tuple[int, ...]
+    #: The sorted groups that the static params belong to
+    static_param_groups: tuple[int, ...]
     #: Names of the ``@forward`` arguments filled from hierarchical children (deprecated)
     subgraph_kwargs: tuple[str, ...]
 
@@ -97,6 +100,7 @@ class Module(Node, GetSetValues):
         self.node_type = NodeType.MODULE
         self.valid_context = False
         self._active_cache: dict[Callable, Any] = {}
+        self._static_cache: dict[Callable, tuple[Any, tuple]] = {}
         self._graph_updated()  # initialise the param tuples
 
     @property
@@ -126,6 +130,7 @@ class Module(Node, GetSetValues):
         self.dynamic_param_groups = tuple(sorted(set(p.group for p in self.dynamic_params)))
         self.pointer_params = tuple(p for p in params if p.pointer)
         self.static_params = tuple(p for p in params if p.static)
+        self.static_param_groups = tuple(sorted(set(p.group for p in self.static_params)))
         subgraph_kwargs = []
         if self.subgraphs:
             for key, child in self.children.items():
@@ -232,12 +237,11 @@ class Module(Node, GetSetValues):
             raise ActiveStateError(f"Module {self.name} must be active to fill params")
 
         param_list = self.dynamic_params if dynamic else self.static_params
-        groups = self.dynamic_param_groups
+        groups = self.dynamic_param_groups if dynamic else self.static_param_groups
         if len(groups) > 1:
-            for group, params_g in zip(groups, params):
-                param_list_g = tuple(p for p in param_list if p.group == group)
+            for params_g, param_list_g in self._split_groups(params, param_list, groups):
                 if self.valid_context:
-                    params_g = self.from_valid(params_g, param_list_g, group=group)
+                    params_g = self._transform_params(self, params_g, param_list_g, "from_valid")
                 self._set_values(params_g, param_list_g, attribute="_active_value")
             return
         if self.valid_context:
@@ -256,6 +260,12 @@ class Module(Node, GetSetValues):
         """Discard the results stored by ``@active_cache`` methods of this
         module, forcing them to be recalculated on their next call."""
         self._active_cache.clear()
+
+    def reset_static_cache(self):
+        """Discard the results stored by ``@static_cache`` methods of this
+        module. Each has to be called outside a simulation again before it can
+        be used in one."""
+        self._static_cache.clear()
 
     def _forget_memo(self, note: MemoNote):
         super()._forget_memo(note)
@@ -284,7 +294,7 @@ class Module(Node, GetSetValues):
         for param in deep:
             _split_batch_shape(self, param)
 
-    def _batched_values(self) -> Optional[tuple[list[Param], list, int]]:
+    def _batched_values(self, dynamic: bool = True) -> Optional[tuple[list[Param], list, int]]:
         """The current values of the params, when they hold a batch of
         simulations of this module.
 
@@ -293,18 +303,27 @@ class Module(Node, GetSetValues):
         those dimensions in front (broadcast to the full batch shape), and the
         number of batch dimensions. Every other param has a single value that
         the whole batch shares.
+
+        With ``dynamic=False`` only the static params are looked at, for when
+        the dynamic params are known to hold no batch.
         """
         # Most modules hold no batch, find that out with as little work as possible
         found = []
-        for param in self.dynamic_params:
-            value = param.value
+        # The values are only looked at here, so they are taken straight from
+        # where they are kept (a dynamic or static param is never a pointer)
+        for param in self.dynamic_params if dynamic else ():
+            value = param._active_value
             if value is None:
-                return None  # the call that follows says which value is missing
+                value = param._stored_value
+                if value is None:
+                    return None  # the call that follows says which value is missing
             if param._shape is not None and len(value.shape) != len(param._shape):
                 found.append((param, value))
         for param in self.static_params:
             if param._shape is not None:
-                value = param.value
+                value = param._active_value
+                if value is None:
+                    value = param._stored_value
                 if value is not None and len(value.shape) != len(param._shape):
                     found.append((param, value))
         if not found:

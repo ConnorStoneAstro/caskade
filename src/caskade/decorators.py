@@ -1,13 +1,16 @@
 import inspect
 import functools
 from contextlib import ExitStack
+from warnings import warn
 
 from .backend import backend
 from .context import ActiveContext, OverrideParam
+from . import param as _param
 from .param import Param
-from .errors import FillParamsError
+from .errors import ActiveStateError, FillParamsError
+from .warnings import StaticCacheWarning
 
-__all__ = ("forward", "active_cache")
+__all__ = ("forward", "active_cache", "static_cache")
 
 _NOT_GIVEN = object()  # ``None`` could be a value that the user gives
 
@@ -52,14 +55,10 @@ def forward(method):
     Notes
     -----
     A call from outside a simulation starts one. Its values are given in one of
-    three ways:
+    two ways:
 
-    - As the last positional argument, or as the ``params`` keyword. The values
-      are handed to the method exactly as they are given.
-    - Not at all, with every other argument passed by keyword. The current
-      values of the params are used, exactly as they are.
-    - Not at all, in a call with no arguments. The current values are used, and
-      the method is vectorised when they hold a batch of simulations (below).
+    - As the last positional argument, or as the ``params`` keyword.
+    - Not at all. The current values of the params are used.
 
     The ``static_params`` keyword gives values for the static params in the
     same way, laid out as ``module.get_values(dynamic=False)`` returns them.
@@ -71,25 +70,32 @@ def forward(method):
     replaces the value of that param for the duration of the call. In a call
     that starts a simulation this is an error, the value belongs in ``params``.
 
-    **A batch of simulations.** In a call with no arguments the batch
-    dimensions are read from the values, as the dimensions in front of the
-    declared ``shape`` of each param (a param with no declared shape never has
-    any). They are those that ``module.get_values()`` shows in front of its
-    last dimension. A dynamic or static param with no batch dimensions is
-    shared by the whole batch::
+    **A batch of simulations.** A call that is given nothing but values for the
+    params (``params``, ``static_params``, or nothing at all) is vectorised
+    when the values hold a batch of simulations. The batch dimensions are read
+    from the values, as the dimensions in front of the declared ``shape`` of
+    each param (a param with no declared shape never has any). They are those
+    that ``module.get_values()`` shows in front of its last dimension. A
+    dynamic or static param with no batch dimensions is shared by the whole
+    batch::
 
         @forward
         def no_arguments(self, b):  # one more method of ExampleSim
             return 4 + self.a + b
 
-        E.b = [5.0, 6.0, 7.0]  # three simulations
+        print(E.no_arguments([[5.0], [6.0], [7.0]]))  # three simulations
+        # Output: [10., 11., 12.]
+
+        E.b = [5.0, 6.0, 7.0]
         print(E.no_arguments())
         # Output: [10., 11., 12.], as vmap(E.no_arguments)(E.get_values())
 
-    This uses ``torch.vmap`` or ``jax.vmap``, with ``numpy`` the calls are made
-    one at a time. A call with any argument is never vectorised, since there is
-    no telling which of the arguments belong to the batch. Go over the values
-    yourself in that case::
+    Passing params gives what storing them and making the call with no
+    arguments gives. This uses ``torch.vmap`` or ``jax.vmap``, with ``numpy``
+    the calls are made one at a time. A call with any other argument is never
+    vectorised, since there is no telling which of the arguments belong to the
+    batch. The method is then handed the values exactly as they are. Go over
+    them yourself in that case::
 
         vmap(lambda p: E.example_func(4, params=p))(E.get_values())
 
@@ -108,8 +114,9 @@ def forward(method):
     Pass the params through a ``lambda`` as above. ``torch.vmap`` does not go
     over keyword arguments and ``jax.vmap`` goes over all of them. A
     hierarchical child is never a part of the simulation of its parent, so
-    every call to it follows the rules for a call from outside: positional
-    params, ``params``, or no arguments at all for one result per copy.
+    every call to it follows the rules for a call from outside. A method of
+    the child that takes no other argument needs no ``vmap``,
+    ``self.child.method(params=rows)`` gives one result per copy.
 
     **Compiling with jit.** A compiled function only sees a value change when
     that value is one of its arguments. Every value that the method reads from
@@ -157,22 +164,37 @@ def forward(method):
                     )
 
         trailing_params = False
-        if params is _NOT_GIVEN and not online:
-            if args:
-                if self.dynamic_params:
-                    params = args[-1]
+        if params is _NOT_GIVEN and not online and args:
+            if self.dynamic_params:
+                params = args[-1]
+                args = args[:-1]
+            else:  # there may be an empty params as the last argument
+                trailing_params = True
+
+        with ActiveContext(self):
+            if params is not _NOT_GIVEN:
+                self.fill_params(params)
+            if static_params is not _NOT_GIVEN:
+                self.fill_params(static_params, dynamic=False)
+            self._check_link_dims()
+            filled = None
+            if trailing_params:
+                filled = {**self.fill_kwargs(method_params), **kwargs}
+                try:
+                    sig.bind(self, *args, **filled)
+                except TypeError:  # user supplied empty params as last arg
                     args = args[:-1]
-                else:  # there may be an empty params as the last argument
-                    trailing_params = True
-            elif not kwargs and static_params is _NOT_GIVEN:
-                # No arguments at all, the current values of the params are
-                # used. They may hold a batch of simulations.
-                batched = self._batched_values()
+            if not args and not kwargs:
+                # Nothing but the values of the params is given (if anything).
+                # They may hold a batch of simulations.
+                # A flat array of params has no batch dimension to look for
+                flat = isinstance(params, backend.array_type) and len(params.shape) == 1
+                batched = self._batched_values(dynamic=not flat)
                 if batched is not None:
                     targets, values, batch_ndim = batched
 
                     def simulation(values):
-                        with ActiveContext(self):
+                        with ActiveContext(self):  # a simulation of its own for each entry
                             for param, value in zip(targets, values):
                                 param._active_value = value
                             return method(self, **self.fill_kwargs(method_params))
@@ -181,20 +203,9 @@ def forward(method):
                     for _ in range(batch_ndim):
                         simulation = backend.vmap(simulation, [0] * len(values))
                     return simulation(values)
-
-        with ActiveContext(self):
-            if params is not _NOT_GIVEN:
-                self.fill_params(params)
-            if static_params is not _NOT_GIVEN:
-                self.fill_params(static_params, dynamic=False)
-            self._check_link_dims()
-            kwargs = {**self.fill_kwargs(method_params), **kwargs}
-            if trailing_params:
-                try:
-                    sig.bind(self, *args, **kwargs)
-                except TypeError:  # user supplied empty params as last arg
-                    args = args[:-1]
-            return method(self, *args, **kwargs)
+            if filled is None:
+                filled = {**self.fill_kwargs(method_params), **kwargs}
+            return method(self, *args, **filled)
 
     return wrapped
 
@@ -274,6 +285,136 @@ def active_cache(method):
 
         # Run the method, save the output, and return it
         result = cache[wrapped] = method(self, *args, **kwargs)
+        return result
+
+    return wrapped
+
+
+def static_cache(method):
+    """
+    Keeps the result of a Module method from one simulation to the next.
+
+    Called outside a simulation, the method is run and its result is stored.
+    Called inside a simulation, the stored result is returned and the method
+    is not run. The result is replaced by calling the method outside a
+    simulation again. This is for an expensive calculation that only depends on
+    static params, such as a lookup table or a convolution kernel::
+
+        sim.kernel()  # run and stored
+        sim(params)  # every call to self.kernel() in here returns that result
+        sim.sigma = 2.0
+        sim.kernel()  # stored again, with the new value
+
+    Warnings
+    --------
+    The stored result is never updated for you, and whether it is still the
+    right one is yours to judge:
+
+    - Arguments are ignored inside a simulation, as with ``active_cache``.
+    - It is made from the values that the params hold when the method is
+      called outside a simulation. Inside a simulation it stays what it is,
+      whichever values that simulation was given (``params``,
+      ``static_params``, an override). For a result that follows the values of
+      the simulation use ``active_cache``.
+    - It does not follow changes to plain attributes or to the graph.
+
+    Two cases are reported with a ``StaticCacheWarning``. The first is when the
+    method read the value of a dynamic param, since the stored result belongs
+    to that one value. The second is when a stored result is used in a
+    simulation after a static or pointer param that it was made from has been
+    given a new value (or has been made dynamic). Nothing is said while you
+    change the values, only when a simulation uses a result that is out of
+    date, so several values may be changed before the method is called again.
+
+    Notes
+    -----
+    Inside a simulation a method with no stored result raises an
+    ``ActiveStateError``, call it outside a simulation first. A method that
+    uses other ``static_cache`` methods is called after them.
+
+    The results are stored on the ``Module`` instance and may be discarded
+    with ``Module.reset_static_cache()``.
+
+    Place ``@static_cache`` outermost (on top) when stacking it with
+    ``@forward``. The call outside a simulation then follows the rules of
+    ``forward``, so with batched values and no other argument the stored
+    result is one for the whole batch.
+
+    Examples
+    --------
+    ::
+
+        class Blurred(Module):
+            def __init__(self, source, sigma):
+                super().__init__()
+                self.source = source
+                self.sigma = Param("sigma", sigma)  # static
+
+            @static_cache  # Notice static_cache is placed at the top
+            @forward
+            def kernel(self, sigma):
+                print("Building kernel...")
+                x = torch.arange(-10, 11)
+                kernel = torch.exp(-0.5 * (x / sigma) ** 2)
+                return kernel / kernel.sum()
+
+            @forward
+            def image(self):
+                return convolve(self.source.image(), self.kernel())  # no print
+
+        sim = Blurred(source, sigma=1.5)
+        sim.kernel()  # prints, once
+        for params in chain:
+            sim.image(params)
+    """
+
+    @functools.wraps(method)
+    def wrapped(self, *args, **kwargs):
+        cache = self._static_cache
+        if self.active:
+            # In a simulation the stored result is all there is
+            try:
+                result, made_from = cache[wrapped]
+            except KeyError:
+                raise ActiveStateError(
+                    f"'{method.__name__}' of '{self.name}' is a static_cache method with no "
+                    f"stored result. Call it outside a simulation before it is used in one."
+                ) from None
+            changed = [
+                param.name
+                for param, value, node_type in made_from
+                if param._stored_value is not value or param.node_type is not node_type
+            ]
+            if changed:
+                warn(
+                    StaticCacheWarning(
+                        f"The stored result of '{method.__name__}' of '{self.name}' was made "
+                        f"before the param(s) {sorted(changed)} were changed. Call it outside "
+                        "a simulation to store it again."
+                    ),
+                    stacklevel=2,
+                )
+            if _param._READS is not None:
+                # used to make another stored result, which then depends on the same params
+                _param._READS.update(param for param, _, _ in made_from)
+            return result
+
+        with _param._record_reads() as reads:
+            result = method(self, *args, **kwargs)
+        dynamic = sorted(param.name for param in reads if param.dynamic)
+        if dynamic:
+            warn(
+                StaticCacheWarning(
+                    f"'{method.__name__}' of '{self.name}' is a static_cache method, and it "
+                    f"read the dynamic param(s) {dynamic}. The stored result belongs to the "
+                    "values they have now, it will not follow the values of a simulation."
+                ),
+                stacklevel=2,
+            )
+        cache[wrapped] = (
+            result,
+            tuple((p, p._stored_value, p.node_type) for p in reads if not p.dynamic),
+        )
         return result
 
     return wrapped
