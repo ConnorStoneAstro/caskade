@@ -177,7 +177,9 @@ def hierarchical_sim():
             self.s1 = Param("s1", s1, shape=())
 
         @forward
-        def sub_sim(self, a, s1, worker_params, worker_dims):
+        def sub_sim(self, a, s1):
+            worker_params = self.worker.get_values("list")
+            worker_dims = self.worker.get_dims()
             batched_worker = backend.module.vmap(self.worker.do_work, in_dims=(None, worker_dims))
             return s1 + batched_worker(a, worker_params).sum()
 
@@ -231,9 +233,10 @@ def multi_hierarchical_sim():
             self.w2 = Param("w2", w2, shape=(2, 2))
 
         @forward
-        def sub_work(self, w2, subworker_params, subworker_dims):
+        def sub_work(self, w2):
+            subworker_params = self.subworker.get_values("list")
             batched_subworker = backend.module.vmap(
-                self.subworker.mywork, in_dims=(subworker_dims,)
+                self.subworker.mywork, in_dims=(self.subworker.get_dims(),)
             )
             print("subworker params", subworker_params)
             return backend.sum(w2) + batched_subworker(subworker_params)
@@ -250,7 +253,9 @@ def multi_hierarchical_sim():
             self.s1 = Param("s1", s1, shape=())
 
         @forward
-        def sub_sim(self, a, s1, worker_params, worker_dims):
+        def sub_sim(self, a, s1):
+            worker_params = self.worker.get_values("list")
+            worker_dims = self.worker.get_dims()
             batched_worker = backend.module.vmap(self.worker.do_work, in_dims=(None, worker_dims))
             print("worker_params", worker_params)
             return s1 + batched_worker(a, worker_params).sum()

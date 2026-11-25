@@ -45,20 +45,7 @@ def test_active_cache():
     assert m.base_calculation(3) == 44  # 6, 16, 6, 16
     assert m.counter == 2, "Should only call computations twice due to caching"
 
-    assert not hasattr(
-        m, "_active_cache_expensive_computation"
-    ), "Cache should be cleared after forward call"
-    assert not hasattr(
-        m, "_active_cache_another_computation"
-    ), "Cache should be cleared after forward call"
-
-    assert (
-        "_active_cache_expensive_computation" in m._cache_attrs
-    ), "module should track cache attributes"
-    assert (
-        "_active_cache_another_computation" in m._cache_attrs
-    ), "module should track cache attributes"
-    assert len(m._cache_attrs) == 2, "module should track all cache attributes"
+    assert not m._active_cache, "Cache should be cleared after forward call"
 
     class InheritTestModule(TestModule):
         # Check overriding works and cache is separate for each method
@@ -100,13 +87,94 @@ def test_active_cache():
         == "This is the docstring for the overridden expensive_computation method."
     )
 
-    assert (
-        "_active_cache_expensive_computation" in m2._cache_attrs
-    ), "module should track cache attributes"
-    assert (
-        "_active_cache_another_computation" in m2._cache_attrs
-    ), "module should track cache attributes"
-    assert (
-        "_active_cache_evenmore_computation" in m2._cache_attrs
-    ), "module should track cache attributes"
-    assert len(m2._cache_attrs) == 3, "module should track all cache attributes"
+    assert not m2._active_cache, "Cache should be cleared after forward call"
+
+
+def test_active_cache_any_position():
+    class TestModule(Module):
+        def __init__(self):
+            super().__init__()
+            self.counter = 0
+            self.p = Param("p", 2.0)
+
+        @forward
+        @active_cache  # below another decorator
+        def inner(self, x, p=None):
+            self.counter += 1
+            return x * p
+
+        @forward
+        def outer(self, x):
+            return self.inner(x) + self.inner(x)
+
+    m = TestModule()
+    assert m.outer(3.0) == 12
+    assert m.counter == 1, "Should only compute once"
+    assert not m._active_cache, "Cache should be cleared after forward call"
+
+
+def test_active_cache_override_is_separate():
+    class Base(Module):
+        @active_cache
+        def compute(self):
+            return 1
+
+        @forward
+        def run(self):
+            return self.compute() + self.compute()
+
+    class Child(Base):
+        @active_cache
+        def compute(self):
+            # The parent method has its own cached result
+            return 10 + super().compute() + super().compute()
+
+    assert Base().run() == 2
+    assert Child().run() == 24
+
+
+def test_active_cache_reset():
+    class TestModule(Module):
+        def __init__(self):
+            super().__init__()
+            self.counter = 0
+
+        @active_cache
+        def compute(self):
+            self.counter += 1
+            return self.counter
+
+        @forward
+        def run(self):
+            first = self.compute()
+            self.reset_active_cache()
+            return first + self.compute()
+
+    assert TestModule().run() == 3
+
+
+def test_active_cache_cleared_in_subgraph():
+    class Child(Module):
+        def __init__(self):
+            super().__init__("child")
+            self.counter = 0
+
+        @active_cache
+        def compute(self):
+            self.counter += 1
+            return self.counter
+
+    class Parent(Module):
+        def __init__(self, child):
+            super().__init__("parent")
+            self.hierarchical_link("child", child)
+
+        @forward
+        def run(self):
+            return self.child.compute() + self.child.compute()
+
+    child = Child()
+    parent = Parent(child)
+    assert parent.run() == 2
+    assert not child._active_cache, "Cache should be cleared after forward call"
+    assert parent.run() == 4, "Should compute again in the next simulation"

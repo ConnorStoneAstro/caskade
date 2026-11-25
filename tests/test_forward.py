@@ -7,7 +7,6 @@ from caskade import (
     FillParamsSequenceError,
     FillParamsMappingError,
     FillParamsArrayError,
-    ParamConfigurationError,
     backend,
 )
 

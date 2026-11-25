@@ -12,3 +12,7 @@ Collections
 .. autoclass:: caskade.NodeTuple
    :members:
    :show-inheritance:
+
+.. autoclass:: caskade.NodeDict
+   :members:
+   :show-inheritance:

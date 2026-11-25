@@ -1,11 +1,20 @@
-from typing import Sequence, Mapping, Optional, Union, Any
+from typing import Callable, Sequence, Mapping, Optional, Union, Any
+from warnings import warn
 
-from .backend import ArrayLike
-from .base import Node
+import numpy as np
+
+from .backend import backend, ArrayLike
+from .base import Node, NodeType, MemoNote
 from .param import Param
 from .collection import NodeTuple, NodeList, NodeDict
-from .mixins import GetSetValues
-from .errors import ActiveStateError, FillParamsError
+from .mixins import GetSetValues, _split_batch_shape
+from .errors import ActiveStateError, FillParamsError, ParamConfigurationError
+
+_SUBGRAPH_KWARGS_MESSAGE = (
+    "The '{key}' argument of an @forward method is deprecated and will be removed. Ask the "
+    "hierarchical child for its values instead, `child.get_values()` (and `child.get_dims()` "
+    "for the dimensions to vmap over), and give them back to its method as `params`."
+)
 
 
 class Module(Node, GetSetValues):
@@ -57,7 +66,20 @@ class Module(Node, GetSetValues):
         "pointer_params",
         "static_params",
         "dynamic_param_groups",
+        "_modules",
+        "_deep_params_cache",
     )  # These tuples will not be converted to NodeTuple objects
+
+    #: All dynamic params at or below this module in the graph
+    dynamic_params: tuple[Param, ...]
+    #: All pointer params at or below this module in the graph
+    pointer_params: tuple[Param, ...]
+    #: All static params at or below this module in the graph
+    static_params: tuple[Param, ...]
+    #: The sorted groups that the dynamic params belong to
+    dynamic_param_groups: tuple[int, ...]
+    #: Names of the ``@forward`` arguments filled from hierarchical children (deprecated)
+    subgraph_kwargs: tuple[str, ...]
 
     def __init__(self, name: Optional[str] = None, **kwargs):
         """
@@ -71,13 +93,11 @@ class Module(Node, GetSetValues):
         **kwargs
             Additional keyword arguments passed to the ``Node`` base class.
         """
-        self.dynamic_params = ()
-        self.pointer_params = ()
-        self.static_params = ()
-        self.dynamic_param_groups = ()
         super().__init__(name=name, **kwargs)
-        self.node_type = "module"
+        self.node_type = NodeType.MODULE
         self.valid_context = False
+        self._active_cache: dict[Callable, Any] = {}
+        self._graph_updated()  # initialise the param tuples
 
     @property
     def graphviz_style(self):
@@ -95,22 +115,24 @@ class Module(Node, GetSetValues):
         """
         return self.static_params + self.dynamic_params + self.pointer_params
 
-    def update_graph(self):
+    def _graph_updated(self):
         """Maintain a tuple of dynamic, static, and pointer parameters at all points lower
         in the DAG."""
         T = self.topological_ordering()
-        self.dynamic_params = tuple(filter(lambda n: isinstance(n, Param) and n.dynamic, T))
+        self._modules = tuple(n for n in T if isinstance(n, Module))  # this one included
+        self._deep_params_cache: Optional[tuple[Param, ...]] = None
+        params = tuple(n for n in T if isinstance(n, Param))
+        self.dynamic_params = tuple(p for p in params if p.dynamic)
         self.dynamic_param_groups = tuple(sorted(set(p.group for p in self.dynamic_params)))
-        self.pointer_params = tuple(filter(lambda n: isinstance(n, Param) and n.pointer, T))
-        self.static_params = tuple(filter(lambda n: isinstance(n, Param) and n.static, T))
-        self.subgraph_kwargs = []
+        self.pointer_params = tuple(p for p in params if p.pointer)
+        self.static_params = tuple(p for p in params if p.static)
+        subgraph_kwargs = []
         if self.subgraphs:
             for key, child in self.children.items():
                 if child in self.subgraphs:
-                    self.subgraph_kwargs.append(f"{key}_params")
-                    self.subgraph_kwargs.append(f"{key}_dims")
-        self.subgraph_kwargs = tuple(self.subgraph_kwargs)
-        super().update_graph()
+                    subgraph_kwargs.append(f"{key}_params")
+                    subgraph_kwargs.append(f"{key}_dims")
+        self.subgraph_kwargs = tuple(subgraph_kwargs)
 
     def param_order(self):
         """
@@ -199,8 +221,9 @@ class Module(Node, GetSetValues):
         Parameters
         ----------
         params: (Union[ArrayLike, Sequence, Mapping])
-            The input values to fill the dynamic parameters with. The input can
-            be an ArrayLike, a Sequence, or a Mapping.
+            The input values to fill the parameters with. The input can be an
+            ArrayLike, a Sequence, or a Mapping, laid out as
+            ``get_values(dynamic=dynamic)`` returns them.
         dynamic: bool
             Operate on dynamic parameters (True, default) or static parameters
             (False).
@@ -209,29 +232,110 @@ class Module(Node, GetSetValues):
             raise ActiveStateError(f"Module {self.name} must be active to fill params")
 
         param_list = self.dynamic_params if dynamic else self.static_params
-        if len(self.dynamic_param_groups) == 1:
-            params = (params,)
-
-        for group, params_g in zip(self.dynamic_param_groups, params):
-            param_list_g = tuple(p for p in param_list if p.group == group)
-            if self.valid_context:
-                params_g = self.from_valid(params_g, param_list_g, group=group)
-            self._set_values(params_g, param_list_g, attribute="_value")
+        groups = self.dynamic_param_groups
+        if len(groups) > 1:
+            for group, params_g in zip(groups, params):
+                param_list_g = tuple(p for p in param_list if p.group == group)
+                if self.valid_context:
+                    params_g = self.from_valid(params_g, param_list_g, group=group)
+                self._set_values(params_g, param_list_g, attribute="_active_value")
+            return
+        if self.valid_context:
+            params = self._transform_params(self, params, param_list, "from_valid")
+        self._set_values(params, param_list, attribute="_active_value")
 
     def clear_state(self):
         """
-        Clear the active state `_value` for all params below this Module in the
+        Clear the active state `_active_value` for all params below this Module in the
         DAG. This should not be used by a user under normal circumstances."""
 
         for param in self.all_params:
-            param._value = None
+            param._active_value = None
 
-    def remove_memo(self, memo):
-        if hasattr(self, "reset_active_cache") and memo == "active":
+    def reset_active_cache(self):
+        """Discard the results stored by ``@active_cache`` methods of this
+        module, forcing them to be recalculated on their next call."""
+        self._active_cache.clear()
+
+    def _forget_memo(self, note: MemoNote):
+        super()._forget_memo(note)
+        # Results cached for a simulation are dropped as soon as it has finished
+        if self._active_cache and not self.active:
             self.reset_active_cache()
-        return super().remove_memo(memo)
 
-    def fill_kwargs(self, keys: tuple[str]) -> dict[str, ArrayLike]:
+    def _vmap_dim(self, param: Param) -> Optional[int]:
+        """The dimension of the value of ``param`` to map over when calling a
+        hierarchical child of this module, ``None`` if every call takes the same
+        value. This is what fills the ``{key}_dims`` argument of an ``@forward``
+        method."""
+        batch, links = _split_batch_shape(self, param)  # also checks the batch shape
+        return 0 if batch or links else None
+
+    def _check_link_dims(self):
+        """Raise ``ParamConfigurationError`` if a param has batch dimensions,
+        but fewer than there are hierarchical links between this module and
+        the param. Only a param below two or more links can be in that state,
+        so for most graphs there is nothing to look at."""
+        deep = self._deep_params_cache
+        if deep is None:
+            depths = self._hierarchy_depths()
+            params = self.dynamic_params + self.static_params
+            deep = self._deep_params_cache = tuple(p for p in params if depths.get(p, 0) > 1)
+        for param in deep:
+            _split_batch_shape(self, param)
+
+    def _batched_values(self) -> Optional[tuple[list[Param], list, int]]:
+        """The current values of the params, when they hold a batch of
+        simulations of this module.
+
+        Returns ``None`` when there is no batch. Otherwise returns the dynamic
+        and static params that have the batch dimensions, their values with
+        those dimensions in front (broadcast to the full batch shape), and the
+        number of batch dimensions. Every other param has a single value that
+        the whole batch shares.
+        """
+        # Most modules hold no batch, find that out with as little work as possible
+        found = []
+        for param in self.dynamic_params:
+            value = param.value
+            if value is None:
+                return None  # the call that follows says which value is missing
+            if param._shape is not None and len(value.shape) != len(param._shape):
+                found.append((param, value))
+        for param in self.static_params:
+            if param._shape is not None:
+                value = param.value
+                if value is not None and len(value.shape) != len(param._shape):
+                    found.append((param, value))
+        if not found:
+            return None
+
+        params, values, batches = [], [], []
+        for param, value in found:
+            extra = len(value.shape) - len(param.shape)
+            # dimensions for hierarchical links below this module are not a batch of it
+            batch = _split_batch_shape(self, param, tuple(value.shape[:extra]))[0]
+            if batch:
+                params.append(param)
+                values.append(value)
+                batches.append(batch)
+        if not params:
+            return None
+        try:
+            full = np.broadcast_shapes(*batches)
+        except ValueError:
+            shapes = ", ".join(f"{p.name}: {b}" for p, b in zip(params, batches))
+            raise ParamConfigurationError(
+                f"The params of '{self.name}' hold batches that do not go together, so they "
+                f"cannot be run as one batch of simulations. Batch shapes ({shapes})."
+            ) from None
+        for i, batch in enumerate(batches):
+            if batch != full:
+                value = values[i]
+                values[i] = backend.broadcast_to(value, full + tuple(value.shape[len(batch) :]))
+        return params, values, len(full)
+
+    def fill_kwargs(self, keys: tuple[str, ...]) -> dict[str, ArrayLike]:
         """
         Fill the kwargs for an ``@forward`` method with the values of the
         dynamic parameters. The requested keys are matched to names of ``Param``
@@ -239,16 +343,23 @@ class Module(Node, GetSetValues):
         under normal circumstances.
         """
         kwargs = {}
+        children = self.children
         for key in keys:
             if key in self.subgraph_kwargs:
+                warn(_SUBGRAPH_KWARGS_MESSAGE.format(key=key), DeprecationWarning, stacklevel=3)
+                subgraph: Any  # a Module or NodeCollection
                 if key.endswith("_params"):
-                    kwargs[key] = self[key[:-7]].get_values("list")
+                    subgraph = children[key[:-7]]
+                    kwargs[key] = subgraph.get_values("list")
                 else:
-                    kwargs[key] = self[key[:-5]].get_values(
-                        "list", attribute=lambda p: 0 if p.batched else None, respect_valid=False
+                    subgraph = children[key[:-5]]
+                    kwargs[key] = subgraph.get_values(
+                        "list", attribute=self._vmap_dim, respect_valid=False
                     )
-            elif key in self.children and isinstance(self[key], Param):
-                val = self.children[key].value
+                continue
+            child = children.get(key)
+            if isinstance(child, Param):
+                val = child.value
                 if val is None:
                     raise FillParamsError(
                         f"Param {key} in Module {self.name} has no value. "
@@ -266,24 +377,23 @@ class Module(Node, GetSetValues):
 
     def __setattr__(self, key: str, value: Any):
         """Intercept attribute setting to update parameters and graph links."""
-        try:
-            if key in self.children and isinstance(self[key], Param):
-                self[key].value = value
-                return
+        # ``_children`` only exists once ``Node.__init__`` has run
+        child = self.__dict__.get("_children", {}).get(key)
+        if isinstance(child, Param):
+            child.value = value
+            return
 
-            if isinstance(value, list) and not isinstance(value, NodeList):
-                if len(value) > 0 and all(isinstance(v, Node) for v in value):
-                    value = NodeList(value, name=key)
-            elif (
-                isinstance(value, tuple)
-                and not isinstance(value, NodeTuple)
-                and key not in self._special_tuples
-            ):
-                if len(value) > 0 and all(isinstance(v, Node) for v in value):
-                    value = NodeTuple(value, name=key)
-            elif isinstance(value, dict) and not isinstance(value, NodeDict):
-                if len(value) > 0 and all(isinstance(v, Node) for v in value.values()):
-                    value = NodeDict(value, name=key)
-        except AttributeError:
-            pass
+        if isinstance(value, list) and not isinstance(value, NodeList):
+            if len(value) > 0 and all(isinstance(v, Node) for v in value):
+                value = NodeList(value, name=key)
+        elif (
+            isinstance(value, tuple)
+            and not isinstance(value, NodeTuple)
+            and key not in self._special_tuples
+        ):
+            if len(value) > 0 and all(isinstance(v, Node) for v in value):
+                value = NodeTuple(value, name=key)
+        elif isinstance(value, dict) and not isinstance(value, NodeDict):
+            if len(value) > 0 and all(isinstance(v, Node) for v in value.values()):
+                value = NodeDict(value, name=key)
         super().__setattr__(key, value)

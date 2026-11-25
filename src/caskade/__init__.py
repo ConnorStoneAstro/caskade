@@ -17,9 +17,10 @@ ActiveContext, ValidContext, OverrideParam : Context managers for evaluation.
 backend : Array backend abstraction (NumPy, PyTorch, etc.).
 utils : Utility functions.
 """
+
 from ._version import version as VERSION  # noqa
 
-from .base import Node, Memo
+from .base import Node, NodeType, Memo, MemoKind, MemoNote
 from .backend import backend, ArrayLike
 from .context import ActiveContext, ValidContext, OverrideParam
 from .decorators import forward, active_cache
@@ -50,7 +51,10 @@ __author__ = "Connor Stone and Alexandre Adam"
 
 __all__ = (
     "Node",
+    "NodeType",
     "Memo",
+    "MemoKind",
+    "MemoNote",
     "backend",
     "ArrayLike",
     "Module",

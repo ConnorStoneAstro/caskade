@@ -30,6 +30,7 @@ yourself. Here is how you get your own framework set up:
 1. Write up your new feature/fix
 1. Write some tests in the `tests/` directory
 1. Check the tests run by calling `pytest`
+1. Check the linter and type checker pass by calling `pre-commit run --all-files` (or call `pre-commit install` once to have them run automatically on every commit)
 1. Commit the changes (really you should do this often while working): `git commit -m "my note on updates"`
 1. Push your changes back to GitHub: `git push origin mynewbranch`
 1. Create a `Pull Request` on GitHub pointing to the original `caskade` repo

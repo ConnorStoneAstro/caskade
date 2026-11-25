@@ -102,10 +102,16 @@ class FillParamsArrayError(FillParamsError):
     params : tuple of Param
         Registered parameters whose shapes are compared against the
         input.
+    shapes : sequence of tuple of int, optional
+        The shape each param takes in the array, where this is not the shape
+        of the param. Params below a hierarchical link also have a dimension
+        for each link.
     """
 
-    def __init__(self, name, input_params, params):
-        fullnumel = sum(max(1, prod(p.shape)) for p in params)
+    def __init__(self, name, input_params, params, shapes=None):
+        if shapes is None:
+            shapes = tuple(p.shape for p in params)
+        fullnumel = sum(max(1, prod(shape)) for shape in shapes)
         message = dedent(
             f"""
             For flattened {backend.array_type.__name__} input, the (last) dim of
@@ -114,7 +120,7 @@ class FillParamsArrayError(FillParamsError):
             {input_params.shape} does not match params shape of: {name}. 
             
             Registered params (name: shape): 
-            {', '.join(f"{repr(p)}: {str(p.shape)}" for p in params)}"""
+            {', '.join(f"{repr(p)}: {str(shape)}" for p, shape in zip(params, shapes))}"""
         )
         super().__init__(message)
 

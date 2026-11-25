@@ -63,3 +63,39 @@ def test_auto_set_backend_numpy(monkeypatch):
     backend.backend = None
 
     assert backend.backend == "numpy"
+
+
+def test_array_backends():
+    import numpy as np
+    from caskade.backend import ARRAY_BACKENDS, ArrayBackend, Backend
+
+    assert set(ARRAY_BACKENDS) == {"torch", "jax", "numpy"}
+    with pytest.raises(TypeError):
+        ArrayBackend()  # only the subclass for a library can be used
+
+    numpy_backend = Backend("numpy")
+    assert numpy_backend.backend == "numpy"
+    assert numpy_backend.module is np
+    with pytest.raises(AttributeError):
+        numpy_backend.jax
+
+    # A failed switch leaves the backend as it was
+    with pytest.raises(ValueError):
+        numpy_backend.backend = "invalid_backend"
+    assert numpy_backend.backend == "numpy"
+    assert numpy_backend.module is np
+
+    x = numpy_backend.make_array([1.0, 2.0])
+    assert isinstance(x, numpy_backend.array_type)
+    assert isinstance(numpy_backend.as_array([1.0, 2.0]), np.ndarray)
+    assert numpy_backend.tolist(x) == [1.0, 2.0]
+    assert numpy_backend.view(x, (2, 1)).shape == (2, 1)
+    assert numpy_backend.detach(x) is x
+    assert numpy_backend.to(x, dtype=np.float32).dtype == np.float32
+    assert numpy_backend.to_numpy(x) is x
+    assert numpy_backend.concatenate((x, x)).shape == (4,)
+    assert numpy_backend.broadcast_cat((x, np.ones((3, 2)))).shape == (3, 4)
+    assert numpy_backend.tolist(numpy_backend.ste_clip(x, 1.5, 1.8)) == [1.5, 1.8]
+    assert numpy_backend.any(x > 1.5) and not numpy_backend.all(x > 1.5)
+    assert np.allclose(numpy_backend.exp(numpy_backend.log(x)), x)
+    assert numpy_backend.sum(x) == 3.0

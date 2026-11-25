@@ -1,0 +1,25 @@
+# Checks that run before every commit, and for every pull request in CI.
+#
+#   pip install pre-commit
+#   pre-commit install            # run automatically on `git commit`
+#   pre-commit run --all-files    # run by hand
+#
+# Both tools are configured in pyproject.toml.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.6
+    hooks:
+      - id: ruff-check
+        name: ruff (linter)
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.4.1
+    hooks:
+      - id: mypy
+        name: mypy (type checker)
+        # Check the whole package as configured in pyproject.toml, whichever
+        # of its files were changed
+        files: ^(src/caskade/|pyproject\.toml$)
+        pass_filenames: false
+        args: []
+        additional_dependencies: ["numpy>=2"]

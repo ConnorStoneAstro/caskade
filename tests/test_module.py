@@ -4,11 +4,14 @@ import numpy as np
 from caskade import (
     Module,
     Param,
+    NodeList,
     NodeTuple,
     ActiveStateError,
     ActiveContext,
+    NodeConfigurationError,
     ParamConfigurationError,
     backend,
+    forward,
     ValidContext,
 )
 
@@ -374,7 +377,7 @@ def test_valid(sim, params_type, group, capsys):
 
 @pytest.mark.parametrize("group", [0, 1])
 @pytest.mark.parametrize("params_type", ["array", "list", "dict"])
-def test_valid(hierarchical_sim, params_type, group, capsys):
+def test_valid_hierarchical(hierarchical_sim, params_type, group, capsys):
     sim = hierarchical_sim
     sim.to_dynamic(False)
 
@@ -402,3 +405,98 @@ def test_valid(hierarchical_sim, params_type, group, capsys):
     # Ensure no spurious output
     captured = capsys.readouterr()
     assert captured.out == ""
+
+
+def test_module_replace_child():
+    main = Module("main")
+    sub1 = Module("sub1")
+    sub1.p = Param("p", 1.0)
+    sub2 = Module("sub2")
+    sub2.q = Param("q", None)
+
+    main.sub = sub1
+    assert main.static_params == (sub1.p,)
+
+    # Assigning another module replaces the child, as for any attribute
+    main.sub = sub2
+    assert main.sub is sub2
+    assert main.children == {"sub": sub2}
+    assert main not in sub1.parents
+    assert main.static_params == ()
+    assert main.dynamic_params == (sub2.q,)
+
+    # A collection is replaced the same way
+    main.subs = [sub1]
+    main.subs = [sub1, sub2]
+    assert isinstance(main.subs, NodeList)
+    assert len(main.subs) == 2
+    assert main.children["subs"] is main.subs
+
+    # Assigning a plain value over a module removes it from the graph too
+    main.sub = None
+    main.subs = None
+    assert main.sub is None
+    assert main.children == {}
+    assert main.dynamic_params == ()
+
+    # Assigning to a Param child still sets the value of the Param
+    main.x = Param("x", 1.0)
+    main.x = 2.0
+    assert isinstance(main.x, Param)
+    assert main.x.value.item() == 2.0
+
+
+def test_module_assign_node_before_init():
+    class EarlyParam(Module):
+        def __init__(self):
+            self.p = Param("p", 1.0)
+            super().__init__("early")
+
+    with pytest.raises(NodeConfigurationError, match=r"super\(\).__init__\(\)"):
+        EarlyParam()
+
+    class EarlyList(Module):
+        def __init__(self):
+            self.subs = [Module("a"), Module("b")]
+            super().__init__("early")
+
+    with pytest.raises(NodeConfigurationError, match=r"super\(\).__init__\(\)"):
+        EarlyList()
+
+    class Fine(Module):
+        def __init__(self):
+            self.n = 3
+            self.options = {"a": 1}
+            super().__init__("fine")
+            self.p = Param("p", 1.0)
+
+    fine = Fine()
+    assert fine.n == 3
+    assert fine.options == {"a": 1}
+    assert fine.static_params == (fine.p,)
+
+
+def test_module_setattr_errors_not_hidden():
+    class Loud(Module):
+        @property
+        def broken(self):
+            raise AttributeError("something is wrong in here")
+
+    main = Loud("main")
+    main.p = Param("p", shape=(2,))
+    # An error raised while assigning must reach the user
+    with pytest.raises(ParamConfigurationError):
+        main.p = [1.0, 2.0, 3.0]
+    with pytest.raises(AttributeError):
+        main.broken = 1
+
+
+def test_module_without_children():
+    class Empty(Module):
+        @forward
+        def add_one(self, x):
+            return x + 1
+
+    empty = Empty("empty")
+    assert empty.all_params == ()
+    assert empty.add_one(1) == 2

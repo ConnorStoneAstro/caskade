@@ -1,16 +1,24 @@
-import pytest
-from caskade import Module, Param, forward, ActiveContext, OverrideParam, backend, ActiveStateError
+from caskade import Module, Param, forward, ActiveContext, OverrideParam, backend
 
 
 def test_context_in_context(sim):
+    # A simulation may be started inside a running one. It starts from the
+    # values of the outer simulation, which are put back when it has finished.
+    params = sim.get_values()
     with ActiveContext(sim):
-        with pytest.raises(ActiveStateError):
-            with ActiveContext(sim):
-                pass
-
-        with pytest.raises(ActiveStateError):
-            with ActiveContext(sim.helper):
-                pass
+        sim.fill_params(params)
+        held = [p._active_value for p in sim.dynamic_params]
+        for module in (sim, sim.helper):
+            with ActiveContext(module):
+                assert module.online
+                assert [p._active_value for p in sim.dynamic_params] == held
+                for p in module.dynamic_params:
+                    p._active_value = None
+            assert sim.online and sim.helper.online
+            for p, h in zip(sim.dynamic_params, held):
+                assert p._active_value is h
+    assert not sim.active and not sim.helper.active
+    assert all(p._active_value is None for p in sim.all_params)
 
 
 def test_active_context():

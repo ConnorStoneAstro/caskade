@@ -178,11 +178,29 @@ def test_save_append_load_batched_param():
 
 
 def test_missing_h5py():
-    with mock.patch.dict(sys.modules, {"h5py": None}):
-        import importlib
+    import importlib
 
-        # Reload the module to re-trigger the import logic
-        module = importlib.import_module("caskade.base")
-        importlib.reload(module)
+    module = importlib.import_module("caskade.base")
+    original = dict(vars(module))
+    try:
+        with mock.patch.dict(sys.modules, {"h5py": None}):
+            # Reload the module to re-trigger the import logic
+            importlib.reload(module)
 
-        assert module.h5py is None
+            assert module.h5py is None
+    finally:
+        # The reload rebuilt the classes of the module, put the originals back
+        vars(module).update(original)
+
+
+def test_missing_h5py_error(monkeypatch):
+    monkeypatch.setattr("caskade.base.h5py", None)
+    main = Module("main")
+    main.p = Param("p", 1.0)
+
+    with pytest.raises(ImportError, match="pip install h5py"):
+        main.save_state("test_missing_h5py.h5")
+    with pytest.raises(ImportError, match="pip install h5py"):
+        main.append_state("test_missing_h5py.h5")
+    with pytest.raises(ImportError, match="pip install h5py"):
+        main.load_state("test_missing_h5py.h5")

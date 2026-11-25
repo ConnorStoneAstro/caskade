@@ -1,18 +1,31 @@
 import os
-from typing import Optional, Union, Any
+import enum
+from typing import TYPE_CHECKING, NamedTuple, Optional, Union, Any
 from warnings import warn
 from operator import attrgetter
 import keyword
 
 try:
     import h5py
-except ImportError:
+except ImportError:  # h5py is an optional dependency
     h5py = None
+
+if TYPE_CHECKING:
+    import graphviz
 
 from .errors import GraphError, NodeConfigurationError, LinkToAttributeError
 from .warnings import SaveStateWarning
 
-__all__ = ("Node",)
+__all__ = ("Node", "NodeType", "Memo", "MemoKind", "MemoNote")
+
+
+def _require_h5py():
+    """Raise a helpful error if the optional ``h5py`` dependency is missing."""
+    if h5py is None:
+        raise ImportError(
+            "Saving and loading the state of a caskade graph requires the optional "
+            "'h5py' package. Install it with `pip install h5py`."
+        )
 
 
 def attrsetter(obj, attr, value):
@@ -59,6 +72,40 @@ def is_valid_name(name):
     return name.isidentifier() and not keyword.iskeyword(name)
 
 
+class NodeType(enum.StrEnum):
+    """The kind of a node, as shown in printouts of the graph and saved to file.
+
+    The members are strings, so comparing with or formatting as text works
+    as it would for the plain string: ``node.node_type == "module"`` is
+    ``True`` for a ``Module`` and ``f"{node.node_type}"`` gives ``"module"``.
+    """
+
+    NODE = "node"
+    MODULE = "module"
+    STATIC = "static"  #: a ``Param`` with a fixed value
+    DYNAMIC = "dynamic"  #: a ``Param`` whose value is given when the simulation is called
+    POINTER = "pointer"  #: a ``Param`` whose value is worked out from other nodes
+    NTUPLE = "ntuple"
+    NLIST = "nlist"
+    NDICT = "ndict"
+
+
+class MemoKind(enum.IntEnum):
+    """What a memo tells the nodes that hold it."""
+
+    RUN = 1  #: a simulation is running from the owner (an ``ActiveContext`` is open)
+    USER = 2  #: a message from user code, ``caskade`` never acts on these
+
+
+class MemoNote(NamedTuple):
+    """A memo as it is held by one of the nodes that received it."""
+
+    kind: MemoKind
+    owner: "Node"  #: the node the memo was sent from
+    depth: int = 0  #: fewest hierarchical links on any path from the owner to the holder
+    label: str = ""  #: the text of a ``USER`` memo
+
+
 class meta:
     """
     Container for meta information attached to a ``Node`` object.
@@ -99,7 +146,7 @@ class Node:
     def __init__(
         self,
         name: Optional[str] = None,
-        link: Optional[Union["Node", tuple["Node"]]] = None,
+        link: Optional[Union["Node", tuple["Node", ...]]] = None,
         description: str = "",
     ):
         """
@@ -126,14 +173,16 @@ class Node:
                 f"{self.__class__.__name__} name is invalid: '{name}'. Must be a valid Python identifier and not a reserved keyword."
             )
         self._name = name
-        self._children = {}
-        self._parents = set()
-        self._subgraphs = set()
-        self._memos = set()
-        self.node_type = "node"
+        self._children: dict[str, Node] = {}
+        self._parents: set[Node] = set()
+        self._subgraphs: set[Node] = set()
+        self._memos: dict[MemoNote, int] = {}  # each note held, and how many times
+        self._hierarchy_depths_cache: Optional[dict[Node, int]] = None
+        self._run_notes_cache: Optional[list[tuple[Node, MemoNote]]] = None
+        self.node_type: str = NodeType.NODE
         self.description = description
         self.meta = meta()
-        self.saveattrs = set()
+        self.saveattrs: set[str] = set()
         if link is not None:
             self.link(link)
 
@@ -157,21 +206,28 @@ class Node:
         """set[Node] : Subset of children linked hierarchically."""
         return self._subgraphs
 
-    def _link(self, key: str, child: "Node"):
+    def _link(self, key: str, child: "Node", replace: bool = False):
+        """Register ``child`` in the graph under ``key``.
+
+        Nothing is changed unless every check passes. With ``replace=True`` a
+        different node already linked under ``key`` is unlinked first, otherwise
+        that is an error.
+        """
         if self.active:
             raise GraphError("Cannot link/unlink nodes while the graph is active")
+        existing = self.children.get(key)
         # Avoid double linking to the same object
-        if key in self.children:
-            if self.children[key] is child:
-                return
+        if existing is child:
+            return
+        if existing is not None and not replace:
             raise GraphError(
-                f"Child key '{key}' already linked to parent {self.name}, but with different node {self.children[key].name}"
+                f"Child key '{key}' already linked to parent {self.name}, but with different node {existing.name}"
             )
         if child in self.children.values():
             raise GraphError(
                 f"Child {child.name} already linked to parent {self.name}, but not with key '{key}'"
             )
-        if hasattr(self, key):
+        if existing is None and hasattr(self, key):
             raise LinkToAttributeError(
                 f"Child key '{key}' already an attribute of parent {self.name}, use a different name to avoid collisions"
             )
@@ -182,14 +238,16 @@ class Node:
                 f"Linking {child.name} to {self.name} would create a cycle in the graph!"
             )
 
+        if existing is not None:
+            self._unlink(key)
         self.children[key] = child
         child.parents.add(self)
         self.update_graph()
 
     def link(
         self,
-        key: Union[str, tuple, "Node"],
-        child: Optional[Union["Node", tuple]] = None,
+        key: Union[str, tuple, list, "Node"],
+        child: Optional[Union["Node", tuple, list]] = None,
     ):
         """
         Link the current ``Node`` object to another ``Node`` object as a child.
@@ -233,16 +291,20 @@ class Node:
                     self.link(k, c)
             return
         if child is None:
+            if not isinstance(key, Node):
+                raise TypeError(f"child must be a Node object, not {type(key)}")
             child = key
             key = child.name
 
-        if not is_valid_name(key):
+        if not isinstance(key, str) or not is_valid_name(key):
             raise NodeConfigurationError(
                 f"key is invalid: '{key}'. Must be a valid Python identifier and not a reserved keyword."
             )
         if not isinstance(child, Node):
             raise TypeError(f"child must be a Node object, not {type(child)}")
-        self.__setattr__(key, child)
+        # An explicit link never replaces an existing child, only assignment does
+        self._link(key, child)
+        super().__setattr__(key, child)
 
     def hierarchical_link(self, key: str, child: "Node"):
         """
@@ -257,6 +319,31 @@ class Node:
         child : Node
             The child ``Node`` object to link to.
 
+        Notes
+        -----
+        A hierarchical link says that this node calls the child many times in
+        one simulation (usually with ``vmap``), so params below the link carry
+        a batch dimension for those calls. For a param whose shallowest path
+        from a module ``M`` crosses ``d`` hierarchical links, ``M`` reads the
+        param's ``batch_shape`` as::
+
+            (batch of M ..., link 1, ..., link d)
+
+        with the link nearest to ``M`` first. The last ``d`` dimensions are part
+        of one simulation of ``M``, so they are flattened into the array that
+        ``M.get_values()`` returns and that its ``@forward`` methods take. Any
+        dimensions before them are a batch of whole simulations of ``M``. The
+        split is always made from the module the array belongs to, so the same
+        param is read with one fewer link dimension by the module on the other
+        side of each link. An array inside a dictionary of params is a piece of
+        the array of the module the dictionary was given to.
+
+        A param below the link with no batch dimensions has one value that is
+        shared by every call. A param that does have batch dimensions needs at
+        least ``d`` of them, with fewer the modules along the path would not
+        agree on which link they are for and a ``ParamConfigurationError`` is
+        raised.
+
         Examples
         --------
         ::
@@ -266,8 +353,10 @@ class Node:
             parent.hierarchical_link("child", child)
         """
 
-        self._subgraphs.add(child)
         self.link(key, child)
+        # Only once the link has succeeded is the child recorded as a subgraph
+        self._subgraphs.add(child)
+        self.update_graph()
 
     def _unlink(self, key: str):
         if self.active:
@@ -313,7 +402,7 @@ class Node:
             raise KeyError(f"Child key '{key}' not found in parent {self.name}")
         self.__delattr__(key)
 
-    def topological_ordering(self) -> tuple["Node"]:
+    def topological_ordering(self) -> tuple["Node", ...]:
         """
         Return a topological ordering of the graph below the current node.
 
@@ -348,58 +437,133 @@ class Node:
         return tuple(reversed(stack))
 
     def update_graph(self):
-        """Triggers a call to all parents that the graph below them has been
-        updated. The base ``Node`` object does nothing with this information, but
-        other node types may use this to update internal state."""
-        for parent in self.parents:
-            parent.update_graph()
+        """Signal this node and every node above it that the graph below them
+        has been updated. Each node is notified exactly once, however many paths
+        lead to it. Node types that keep state derived from the graph (such as
+        ``Module``) refresh it by overriding ``_graph_updated``."""
+        seen = {id(self)}
+        upstream = [self]
+        for node in upstream:  # ``upstream`` grows while it is being iterated
+            for parent in node._parents:
+                if id(parent) not in seen:
+                    seen.add(id(parent))
+                    upstream.append(parent)
+        for node in upstream:
+            node._hierarchy_depths_cache = None
+            node._run_notes_cache = None
+            node._graph_updated()
+
+    def _graph_updated(self):
+        """Called once on a node whenever the graph at or below it has changed.
+        The base ``Node`` does nothing with this information."""
 
     @property
     def active(self) -> bool:
-        """bool : ``True`` if the node is currently in an active simulation run."""
-        return any(memo.startswith("active") for memo in self._memos)
+        """bool : ``True`` while a simulation is running from this node or from
+        any node above it."""
+        return any(note.kind is MemoKind.RUN for note in self._memos)
 
     @property
     def online(self) -> bool:
-        """bool : ``True`` if the node is online within a hierarchical sub-graph."""
-        return any(memo.endswith("_active") for memo in self._memos)
+        """bool : ``True`` while a simulation is running from this node, or from
+        a node above it that reaches this one without crossing a hierarchical
+        link. The values held below an online node are those of the simulation
+        that is running, so its ``@forward`` methods may be called directly."""
+        return any(note.kind is MemoKind.RUN and note.depth == 0 for note in self._memos)
 
     @property
-    def memos(self) -> set[str]:
-        """set[str] : Current set of memo strings held by this node."""
-        return self._memos
+    def memos(self) -> set[MemoNote]:
+        """set[MemoNote] : The memos currently held by this node."""
+        return set(self._memos)
 
-    def add_memo(self, memo):
+    def _hierarchy_depths(self) -> dict["Node", int]:
+        """Every node at or below this one, with its hierarchical depth: the
+        fewest hierarchical links crossed on any path from this node to it.
+
+        A node used at several levels of a hierarchy belongs to the shallowest
+        of them, since that is the outermost level at which its values are
+        needed. This is the one place where hierarchical structure is worked
+        out. Both the memos sent from this node and the handling of batch
+        dimensions (see ``hierarchical_link``) read it from here.
+
+        The depths are worked out the first time they are needed and then kept
+        until the graph below this node changes, so sending a memo while a
+        simulation runs is a single pass over them.
         """
-        Add a memo string and propagate it to all children.
+        depths = self._hierarchy_depths_cache
+        if depths is None:
+            depths = {self: 0}
+            stack = [self]
+            while stack:
+                node = stack.pop()
+                depth = depths[node]
+                subgraphs = node._subgraphs
+                for child in node._children.values():
+                    child_depth = depth + 1 if child in subgraphs else depth
+                    # a node is looked at again only when a shallower path to it is found
+                    if child_depth < depths.get(child, child_depth + 1):
+                        depths[child] = child_depth
+                        stack.append(child)
+            self._hierarchy_depths_cache = depths
+        return depths
+
+    def _notes(self, memo: Union[MemoKind, str]) -> list[tuple["Node", MemoNote]]:
+        """Every node that receives ``memo`` when it is sent from this node,
+        paired with the note that node holds for it."""
+        if memo is MemoKind.RUN:
+            # sent on every call of a simulation, so made once per change to the graph
+            notes = self._run_notes_cache
+            if notes is None:
+                notes = self._run_notes_cache = [
+                    (node, MemoNote(MemoKind.RUN, self, depth))
+                    for node, depth in self._hierarchy_depths().items()
+                ]
+            return notes
+        if not isinstance(memo, str):
+            raise TypeError(f"A memo must be a string or MemoKind.RUN, not {type(memo)}")
+        return [
+            (node, MemoNote(MemoKind.USER, self, depth, memo))
+            for node, depth in self._hierarchy_depths().items()
+        ]
+
+    def add_memo(self, memo: Union[MemoKind, str]):
+        """
+        Send a memo to this node and to every node below it.
 
         Parameters
         ----------
-        memo : str
-            The memo message to add.  Children in ``subgraphs`` receive
-            the memo with the child name appended (``memo|child_name``).
+        memo : str or MemoKind
+            A string is a message for user code, it is held by each node as a
+            ``MemoNote`` of kind ``MemoKind.USER`` with the string as its label
+            and ``caskade`` never acts on it. ``MemoKind.RUN`` marks the nodes
+            as taking part in a simulation run from this node, it is sent by
+            ``ActiveContext``.
         """
-        self._memos.add(memo)
+        for node, note in self._notes(memo):
+            memos = node._memos
+            memos[note] = memos.get(note, 0) + 1
 
-        # Propagate memo to children
-        for child in self.children.values():
-            child.add_memo(memo + (f"|{child.name}" if child in self.subgraphs else ""))
-
-    def remove_memo(self, memo):
+    def remove_memo(self, memo: Union[MemoKind, str]):
         """
-        Remove a memo string and propagate removal to all children.
+        Take back one memo that was sent with ``add_memo``.
 
         Parameters
         ----------
-        memo : str
-            The memo message to remove.  The same propagation rules as
-            ``add_memo`` apply.
+        memo : str or MemoKind
+            The same value that was given to ``add_memo``. A memo sent several
+            times is held until it has been removed as many times.
         """
-        self._memos.discard(memo)
+        for node, note in self._notes(memo):
+            node._forget_memo(note)
 
-        # Propagate removal to children
-        for child in self.children.values():
-            child.remove_memo(memo + (f"|{child.name}" if child in self.subgraphs else ""))
+    def _forget_memo(self, note: MemoNote):
+        """Drop a single memo from this node only. Node types that hold state
+        tied to a memo (such as ``Module``) clean it up by overriding this."""
+        held = self._memos.get(note, 0)
+        if held > 1:
+            self._memos[note] = held - 1
+        elif held:
+            del self._memos[note]
 
     def to(self, device=None, dtype=None):
         """
@@ -418,7 +582,7 @@ class Node:
 
         return self
 
-    def _save_state_hdf5(self, h5group, appendable: bool = False, _done_save: set = None):
+    def _save_state_hdf5(self, h5group, appendable: bool = False, *, _done_save: set):
         """Save the state of the node and its children to HDF5."""
         if id(self) not in _done_save:
             for attr in self.saveattrs:
@@ -443,7 +607,7 @@ class Node:
                 h5group[key] = child._h5group
             child._save_state_hdf5(h5group[key], appendable=appendable, _done_save=_done_save)
 
-    def save_state(self, saveto: Union[str, "File"], appendable: bool = False):
+    def save_state(self, saveto: Union[str, "h5py.File"], appendable: bool = False):
         """
         Save the state of the node and its children, currently only works for
         HDF5 file types (.h5 and .hdf5).
@@ -489,6 +653,7 @@ class Node:
         """
         if isinstance(saveto, str):
             if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
+                _require_h5py()
                 with h5py.File(saveto, "w") as h5file:
                     self._h5group = h5file.create_group(self.name)
                     self._save_state_hdf5(
@@ -527,7 +692,7 @@ class Node:
         for key, child in self.children.items():
             child._append_state_hdf5(h5group[key])
 
-    def append_state(self, saveto: Union[str, "File"]):
+    def append_state(self, saveto: Union[str, "h5py.File"]):
         """
         Append the current state to an existing HDF5 file.
 
@@ -550,6 +715,7 @@ class Node:
         """
         if isinstance(saveto, str):
             if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
+                _require_h5py()
                 with h5py.File(saveto, "a") as h5file:
                     self._check_append_state_hdf5(h5file[self.name])
                     self._append_state_hdf5(h5file[self.name])
@@ -577,7 +743,7 @@ class Node:
                     f"Child '{child.name}' (identified by key '{key}') not found in HDF5 group '{h5group.name}'. Structure of graph changed from last save."
                 )
 
-    def _load_state_hdf5(self, h5group, index: int = -1, _done_load: set = None):
+    def _load_state_hdf5(self, h5group, index: int = -1, *, _done_load: set):
         """Load the state of the node and its children from HDF5."""
 
         if id(self) not in _done_load:
@@ -587,7 +753,7 @@ class Node:
         for key, child in self.children.items():
             child._load_state_hdf5(h5group[key], index=index, _done_load=_done_load)
 
-    def load_state(self, loadfrom: Union[str, "File"], index: int = -1, **kwargs):
+    def load_state(self, loadfrom: Union[str, "h5py.File"], index: int = -1, **kwargs):
         """
         Load node state (and children) from an HDF5 file.
 
@@ -612,6 +778,7 @@ class Node:
         """
         if isinstance(loadfrom, str):
             if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
+                _require_h5py()
                 with h5py.File(loadfrom, "r", **{"driver": "core", **kwargs}) as h5file:
                     self._check_load_state_hdf5(h5file[self.name])
                     self._load_state_hdf5(h5file[self.name], index=index, _done_load=set())
@@ -646,9 +813,13 @@ class Node:
         import graphviz  # noqa
 
         components = set()
+        depths = self._hierarchy_depths()
 
-        def add_node(node: Node, dot):
-            if node in components or node.online:
+        def add_node(node: Node, dot, level: int):
+            # ``level`` counts the boxes being drawn inside of. A node used at
+            # several levels is drawn at the shallowest, so it is skipped here
+            # when this is not that level
+            if node in components or depths[node] < level:
                 return
             dot.attr("node", **node.graphviz_style)
             dot.node(str(id(node)), repr(node))
@@ -656,20 +827,16 @@ class Node:
 
             for child in node.children.values():
                 if child in node.subgraphs:
-                    with Memo(self, "semi_active"):
-                        with dot.subgraph(name=f"cluster_{id(child)}") as subdot:
-                            add_node(child, subdot)
+                    with dot.subgraph(name=f"cluster_{id(child)}") as subdot:
+                        add_node(child, subdot, level + 1)
                 else:
-                    add_node(child, dot)
-
-        def add_edges(node: Node, dot):
-            for child in node.children.values():
-                dot.edge(str(id(node)), str(id(child)))
-                add_edges(child, dot)
+                    add_node(child, dot, level)
 
         dot = graphviz.Digraph(strict=True)
-        add_node(self, dot)
-        add_edges(self, dot)
+        add_node(self, dot, 0)
+        for node in self.topological_ordering():  # every node once, whatever the number of paths
+            for child in node.children.values():
+                dot.edge(str(id(node)), str(id(child)))
         if saveto is not None:
             filename, ext = os.path.splitext(saveto)
             dot.render(graphviz.escape(filename), format=ext.lstrip("."), cleanup=True)
@@ -692,7 +859,7 @@ class Node:
             Nested dictionary mirroring the DAG hierarchy.
         """
         rep = self.node_str
-        graph = {
+        graph: dict[str, dict] = {
             rep: {},
         }
         for node in self.children.values():
@@ -740,18 +907,31 @@ class Node:
     def __setitem__(self, key: str, value: "Node"):
         self.link(key, value)
 
-    def __eq__(self, other: "Node") -> bool:
-        return self is other
-
-    def __hash__(self) -> int:
-        return id(self)
-
     def __setattr__(self, key: str, value: Any):
-        """Intercept attribute setting to update parameters and graph links."""
+        """Intercept attribute setting so the graph always matches the attributes.
+
+        Assigning a ``Node`` links it as a child (replacing any child already
+        held under that name), and assigning anything else over a child unlinks
+        that child.
+        """
+        # Values are written to nodes while a simulation runs, so the common
+        # case of a value that is not a node is kept as short as possible
         if isinstance(value, Node):
+            if "_children" not in self.__dict__:  # ``Node.__init__`` has not run yet
+                raise NodeConfigurationError(
+                    f"Cannot assign node '{value.name}' to attribute '{key}' before "
+                    f"`super().__init__()` has been called in `{type(self).__name__}.__init__`"
+                )
             # check for trying setting an attr with its own setter, allow the setter to handle throwing errors (e.g. value)
             if not hasattr(getattr(type(self), key, None), "fset"):
-                self._link(key, value)
+                self._link(key, value, replace=True)
+        else:
+            try:
+                is_child = key in self._children
+            except AttributeError:  # ``Node.__init__`` has not run yet
+                is_child = False
+            if is_child:
+                self._unlink(key)
 
         super().__setattr__(key, value)
 
@@ -764,27 +944,32 @@ class Node:
 
 class Memo:
     """
-    Sends a "memo" (a small message) to all nodes below the current one in the
-    graph. This can be used to communicate state changes in the graph with all
-    lower nodes. By default, the message will skip any subgraphs (hierarchical
-    graphs) but this can be changed to ensure all nodes hear the message.
+    Context manager that sends a "memo" (a small message) to a node and to
+    every node below it in the graph, and takes it back on exit.
 
-    Note that memos are stored as a python set, so duplicates will be merged.
-    Depending on your use case, it may be wise to ensure that your memo is
-    unique.
+    Each node holds the memo as a ``MemoNote`` in ``node.memos``, which records
+    the text (``label``), the node it was sent from (``owner``) and how many
+    hierarchical links lie between the two (``depth``). ``caskade`` never acts
+    on a memo sent this way, whatever its text, so any string is safe to use.
+    The same memo may be sent again while it is already held, each node keeps
+    it until every one of them has been taken back.
 
     Parameters
     ----------
-    module: Module
-        The caskade Module object that will propogate the memo
+    module: Node
+        The node that sends the memo
     memo: str
         The message to send down the graph
-    skip_subgraphs: bool
-        If True (default) any subgraphs, otherwise known as hierarchical graphs,
-        will not get the memo.
+
+    Examples
+    --------
+    ::
+
+        with Memo(sim, "plotting"):
+            assert any(note.label == "plotting" for note in sim.x.memos)
     """
 
-    def __init__(self, module: Node, memo: str):
+    def __init__(self, module: Node, memo: Union[MemoKind, str]):
         self.module = module
         self.memo = memo
 

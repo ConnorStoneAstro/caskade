@@ -1,15 +1,96 @@
-from .base import Node
+from collections.abc import Iterable, Iterator, Mapping, MutableMapping, MutableSequence, Sequence
+from typing import Any, Optional, Self, Union, overload
+
+from .base import Node, NodeType
 from .param import Param
 from .mixins import GetSetValues
+from .errors import GraphError
 
 
 class NodeCollection(Node, GetSetValues):
-    """Base mixin for collections of nodes that track parameters.
+    """Base class for collections of nodes that track parameters.
 
     Provides shared functionality for traversing, querying, and converting
-    parameters within a graph of nodes. Subclasses such as ``NodeTuple`` and
-    ``NodeList`` combine this mixin with a standard Python sequence type.
+    parameters within a graph of nodes. The subclasses ``NodeTuple``,
+    ``NodeList`` and ``NodeDict`` add the interface of a Python sequence or
+    mapping to it.
+
+    The children of a collection are always exactly its contents, in the same
+    order. For that reason the contents may only be changed through the
+    sequence / mapping methods of the collection (``append``, ``del``,
+    ``update`` and so on). Linking or unlinking a node directly, or assigning a
+    node as an attribute, raises a ``TypeError``.
     """
+
+    def _set_children(self, keyed: dict[str, Node]):
+        """Make the children of this collection exactly ``keyed``, in that
+        order. If this is not possible an error is raised and nothing changes.
+
+        Every change to the contents of a collection goes through this method.
+        """
+        if self.active:
+            raise GraphError(
+                f"Cannot change the contents of {type(self).__name__} '{self.name}' "
+                "while the graph is active"
+            )
+        self._check_nodes(keyed.values())
+        previous = dict(self._children)
+        try:
+            self._sync_children(keyed)
+        except Exception:
+            self._sync_children(previous)  # these were valid before, so this cannot fail
+            raise
+
+    def _check_nodes(self, nodes: Iterable):
+        for node in nodes:
+            if not isinstance(node, Node):
+                raise TypeError(
+                    f"{type(self).__name__} elements must be Node objects, not {type(node)}"
+                )
+
+    def _sync_children(self, keyed: dict[str, Node]):
+        for key, child in list(self._children.items()):
+            if keyed.get(key) is not child:
+                Node.__delattr__(self, key)  # unlinks the child
+        for key, child in keyed.items():
+            Node.link(self, key, child)  # does nothing if already linked
+        # The order of the children sets the order of the params
+        if list(self._children) != list(keyed):
+            self._children.clear()
+            self._children.update(keyed)
+            self.update_graph()
+
+    def _closed(self, action: str):
+        if isinstance(self, MutableMapping):
+            how = "change them with its mapping methods"
+        elif isinstance(self, MutableSequence):
+            how = "change them with its sequence methods"
+        else:
+            how = "and they are fixed at construction"
+        return TypeError(
+            f"Cannot {action} on {type(self).__name__} '{self.name}' directly. The children "
+            f"of a collection are always exactly its contents, {how}."
+        )
+
+    def link(self, key, child=None):
+        """Not supported, change the contents of the collection instead."""
+        raise self._closed("link a node")
+
+    def unlink(self, key=None):
+        """Not supported, change the contents of the collection instead."""
+        raise self._closed("unlink a node")
+
+    def __setattr__(self, key: str, value: Any):
+        if isinstance(value, Node):
+            raise self._closed(f"assign a node to the attribute '{key}'")
+        if key in self.__dict__.get("_children", ()):
+            raise self._closed(f"overwrite the node '{key}'")
+        super().__setattr__(key, value)
+
+    def __delattr__(self, key: str):
+        if key in self._children:
+            raise self._closed(f"delete the node '{key}'")
+        super().__delattr__(key)
 
     def to_dynamic(self, children_only=True):
         """Change all parameters to dynamic parameters.
@@ -40,7 +121,7 @@ class NodeCollection(Node, GetSetValues):
                 node.to_static()
 
     @property
-    def dynamic_params(self) -> tuple[Param]:
+    def dynamic_params(self) -> tuple[Param, ...]:
         """All dynamic parameters in the graph below this node.
 
         Returns
@@ -50,10 +131,10 @@ class NodeCollection(Node, GetSetValues):
             topological ordering.
         """
         T = self.topological_ordering()
-        return tuple(filter(lambda n: isinstance(n, Param) and n.dynamic, T))
+        return tuple(n for n in T if isinstance(n, Param) and n.dynamic)
 
     @property
-    def dynamic_param_groups(self) -> tuple[int]:
+    def dynamic_param_groups(self) -> tuple[int, ...]:
         """Sorted unique group identifiers of all dynamic parameters.
 
         Returns
@@ -64,7 +145,7 @@ class NodeCollection(Node, GetSetValues):
         return tuple(sorted(set(p.group for p in self.dynamic_params)))
 
     @property
-    def static_params(self) -> tuple[Param]:
+    def static_params(self) -> tuple[Param, ...]:
         """All static parameters in the graph below this node.
 
         Returns
@@ -74,10 +155,10 @@ class NodeCollection(Node, GetSetValues):
             topological ordering.
         """
         T = self.topological_ordering()
-        return tuple(filter(lambda n: isinstance(n, Param) and n.static, T))
+        return tuple(n for n in T if isinstance(n, Param) and n.static)
 
     @property
-    def pointer_params(self) -> tuple[Param]:
+    def pointer_params(self) -> tuple[Param, ...]:
         """All pointer parameters in the graph below this node.
 
         Returns
@@ -87,7 +168,7 @@ class NodeCollection(Node, GetSetValues):
             topological ordering.
         """
         T = self.topological_ordering()
-        return tuple(filter(lambda n: isinstance(n, Param) and n.pointer, T))
+        return tuple(n for n in T if isinstance(n, Param) and n.pointer)
 
     def copy(self):
         raise NotImplementedError
@@ -96,7 +177,7 @@ class NodeCollection(Node, GetSetValues):
         raise NotImplementedError
 
     @property
-    def dynamic(self):
+    def dynamic(self) -> bool:
         """Whether any node in this collection has dynamic parameters.
 
         Returns
@@ -104,10 +185,11 @@ class NodeCollection(Node, GetSetValues):
         bool
             ``True`` if at least one contained node is dynamic.
         """
-        return any(node.dynamic for node in self)
+        # Every node type that can be held (Param, Module, collection) has ``dynamic``
+        return any(node.dynamic for node in self._children.values())  # type: ignore[attr-defined]
 
     @property
-    def static(self):
+    def static(self) -> bool:
         """Whether all nodes in this collection are static.
 
         Returns
@@ -117,25 +199,85 @@ class NodeCollection(Node, GetSetValues):
         """
         return not self.dynamic
 
+    def __len__(self) -> int:
+        raise NotImplementedError
+
     def __mul__(self, other):
         raise NotImplementedError
 
-    def __eq__(self, other):
-        return Node.__eq__(self, other)
+    def __eq__(self, other: object) -> bool:
+        return self is other
+
+    def __hash__(self) -> int:
+        return id(self)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.name})[{len(self)}]"
 
-    def __hash__(self):
-        return Node.__hash__(self)
+
+class _NodeSequence(NodeCollection, Sequence[Node]):
+    """What ``NodeTuple`` and ``NodeList`` share: the nodes are held in a
+    private list and linked as children under their own names."""
+
+    def __init__(self, iterable: Optional[Iterable[Node]] = None, name: Optional[str] = None):
+        Node.__init__(self, name=name)
+        self._nodes: list[Node] = []
+        self._set_nodes(() if iterable is None else iterable)
+
+    def _set_nodes(self, nodes: Iterable[Node]):
+        """Make ``nodes`` the contents of the sequence, or raise an error and
+        change nothing."""
+        nodes = list(nodes)
+        self._check_nodes(nodes)
+        keyed: dict[str, Node] = {}
+        for node in nodes:
+            if keyed.setdefault(node.name, node) is not node:
+                raise GraphError(
+                    f"Two different nodes named '{node.name}' cannot be held in the same "
+                    f"{type(self).__name__} ({self.name}), as its nodes are linked by name"
+                )
+        self._set_children(keyed)
+        self._nodes = nodes
+
+    def _new(self, nodes: Iterable[Node]) -> Self:
+        """A new sequence of the same type and name holding ``nodes``."""
+        return type(self)(nodes, name=self.name)
+
+    @overload
+    def __getitem__(self, key: Union[int, str]) -> Node: ...
+    @overload
+    def __getitem__(self, key: slice) -> Self: ...
+    def __getitem__(self, key: Union[int, slice, str]) -> Union[Node, Self]:
+        if isinstance(key, str):
+            return self._children[key]
+        if isinstance(key, slice):
+            return self._new(self._nodes[key])
+        return self._nodes[key]
+
+    def __len__(self) -> int:
+        return len(self._nodes)
+
+    def __iter__(self) -> Iterator[Node]:
+        return iter(self._nodes)
+
+    def __add__(self, other) -> Self:
+        if not isinstance(other, Sequence):
+            return NotImplemented
+        return self._new(self._nodes + list(other))
+
+    def __radd__(self, other) -> Self:
+        if not isinstance(other, Sequence):
+            return NotImplemented
+        return self._new(list(other) + self._nodes)
 
 
-class NodeTuple(NodeCollection, tuple):
+class NodeTuple(_NodeSequence):
     """Immutable, ordered collection of nodes.
 
-    Behaves like a standard ``tuple`` but also participates in the caskade
-    node graph.  All elements must be ``Node`` instances and are automatically
-    linked as children upon construction.
+    Has the interface of a ``tuple`` (it is a ``collections.abc.Sequence``,
+    though not a subclass of ``tuple``) and also participates in the caskade
+    node graph. All elements must be ``Node`` instances and are linked as
+    children, under their names, upon construction.
 
     Parameters
     ----------
@@ -145,31 +287,13 @@ class NodeTuple(NodeCollection, tuple):
         Human-readable name for this collection node.
     """
 
-    def __init__(self, iterable=None, name=None):
-        tuple.__init__(iterable)
-        Node.__init__(self, name=name)
-        self.node_type = "ntuple"
-
-        for node in self:
-            if not isinstance(node, Node):
-                raise TypeError(f"NodeTuple elements must be Node objects, not {type(node)}")
-            self.link(node)
-
-        def _immutable_link(*args, **kwargs):
-            raise TypeError("NodeTuple is immutable; cannot link new nodes after construction")
-
-        self.link = _immutable_link  # type: ignore[method-assign]
+    def __init__(self, iterable: Optional[Iterable[Node]] = None, name: Optional[str] = None):
+        super().__init__(iterable, name=name)
+        self.node_type = NodeType.NTUPLE
 
     @property
     def graphviz_style(self):
         return {"style": "solid", "color": "black", "shape": "tab"}
-
-    def __getitem__(self, key):
-        if isinstance(key, str):
-            return Node.__getitem__(self, key)
-        if isinstance(key, slice):
-            return NodeTuple(tuple.__getitem__(self, key), name=self.name)
-        return tuple.__getitem__(self, key)
 
     def __setitem__(self, key, value):
         raise TypeError("'NodeTuple' object does not support item assignment")
@@ -177,17 +301,15 @@ class NodeTuple(NodeCollection, tuple):
     def __delitem__(self, key):
         raise TypeError("'NodeTuple' object does not support item deletion")
 
-    def __add__(self, other):
-        res = super().__add__(other)
-        return NodeTuple(res)
 
-
-class NodeList(NodeCollection, list):
+class NodeList(_NodeSequence, MutableSequence[Node]):
     """Mutable, ordered collection of nodes.
 
-    Behaves like a standard ``list`` but also participates in the caskade
-    node graph.  All elements must be ``Node`` instances.  Graph links are
-    automatically updated whenever the list is modified.
+    Has the interface of a ``list`` (it is a
+    ``collections.abc.MutableSequence``, though not a subclass of ``list``) and
+    also participates in the caskade node graph. All elements must be ``Node``
+    instances, linked as children under their names. The graph is kept in step
+    whenever the list is modified, by any of its methods.
 
     Parameters
     ----------
@@ -197,119 +319,55 @@ class NodeList(NodeCollection, list):
         Human-readable name for this collection node.
     """
 
-    def __init__(self, iterable=(), name=None):
-        list.__init__(self, iterable)
-        Node.__init__(self, name)
-        self.node_type = "nlist"
-
-        self._link_nodes()
+    def __init__(self, iterable: Optional[Iterable[Node]] = None, name: Optional[str] = None):
+        super().__init__(iterable, name=name)
+        self.node_type = NodeType.NLIST
 
     @property
     def graphviz_style(self):
         return {"style": "solid", "color": "black", "shape": "folder"}
 
-    def _unlink_nodes(self):
-        for node in self:
-            self.unlink(node)
+    # The three methods below, with ``__getitem__`` and ``__len__``, are all that
+    # ``MutableSequence`` needs to provide append, pop, remove, +=, and the rest.
+    def __setitem__(self, key: Any, value: Any):  # an index with a node, or a slice with nodes
+        nodes = list(self._nodes)
+        nodes[key] = value
+        self._set_nodes(nodes)
 
-    def _link_nodes(self):
-        for node in self:
-            if not isinstance(node, Node):
-                raise TypeError(f"NodeList elements must be Node objects, not {type(node)}")
-            self.link(node)
+    def __delitem__(self, key: Union[int, slice]):
+        nodes = list(self._nodes)
+        del nodes[key]
+        self._set_nodes(nodes)
 
-    def append(self, node):
-        """Append a node to the list and update graph links."""
-        self._unlink_nodes()
-        try:
-            super().append(node)
-        finally:
-            self._link_nodes()
+    def insert(self, index: int, node: Node):
+        """Insert a node before the given index and update graph links."""
+        nodes = list(self._nodes)
+        nodes.insert(index, node)
+        self._set_nodes(nodes)
 
-    def insert(self, index, node):
-        """Insert a node at the given index and update graph links."""
-        self._unlink_nodes()
-        try:
-            super().insert(index, node)
-        finally:
-            self._link_nodes()
-
-    def extend(self, iterable):
+    # These would work without being written here, one node at a time. Doing
+    # them in one step means they either fully happen or change nothing.
+    def extend(self, iterable: Iterable[Node]):
         """Extend the list with nodes from an iterable and update graph links."""
-        self._unlink_nodes()
-        try:
-            super().extend(iterable)
-        finally:
-            self._link_nodes()
+        self._set_nodes(self._nodes + list(iterable))
 
     def clear(self):
         """Remove all nodes from the list and update graph links."""
-        self._unlink_nodes()
-        try:
-            super().clear()
-        finally:
-            self._link_nodes()
+        self._set_nodes(())
 
-    def pop(self, index=-1):
-        """Remove and return a node at the given index, updating graph links."""
-        self._unlink_nodes()
-        try:
-            node = super().pop(index)
-        finally:
-            self._link_nodes()
-        return node
-
-    def remove(self, value):
-        """Remove the first occurrence of a node and update graph links."""
-        self._unlink_nodes()
-        try:
-            super().remove(value)
-        finally:
-            self._link_nodes()
-
-    def __getitem__(self, key):
-        if isinstance(key, str):
-            return Node.__getitem__(self, key)
-        if isinstance(key, slice):
-            return NodeList(list.__getitem__(self, key), name=self.name)
-        return list.__getitem__(self, key)
-
-    def __setitem__(self, key, value):
-        self._unlink_nodes()
-        try:
-            list.__setitem__(self, key, value)
-        finally:
-            self._link_nodes()
-
-    def __delitem__(self, key):
-        self._unlink_nodes()
-        try:
-            super().__delitem__(key)
-        finally:
-            self._link_nodes()
-
-    def __add__(self, other):
-        res = super().__add__(other)
-        return NodeList(res, name=self.name)
-
-    def __iadd__(self, other):
-        self._unlink_nodes()
-        try:
-            ret = super().__iadd__(other)
-        finally:
-            self._link_nodes()
-        return ret
-
-    def __imul__(self, other):
-        raise NotImplementedError
+    def reverse(self):
+        """Reverse the order of the nodes in place."""
+        self._set_nodes(self._nodes[::-1])
 
 
-class NodeDict(NodeCollection, dict):
+class NodeDict(NodeCollection, MutableMapping[str, Node]):
     """Mutable, keyed collection of nodes.
 
-    Behaves like a standard ``dict`` but also participates in the caskade
-    node graph.  All elements must be ``Node`` instances.  Graph links are
-    automatically updated whenever the dict is modified.
+    Has the interface of a ``dict`` (it is a
+    ``collections.abc.MutableMapping``, though not a subclass of ``dict``) and
+    also participates in the caskade node graph. All values must be ``Node``
+    instances, linked as children under their keys. The graph is kept in step
+    whenever the dict is modified, by any of its methods.
 
     Parameters
     ----------
@@ -319,89 +377,51 @@ class NodeDict(NodeCollection, dict):
         Human-readable name for this collection of nodes.
     """
 
-    def __init__(self, mapping=None, name=None):
-        if mapping is None:
-            mapping = {}
-        dict.__init__(self, mapping)
+    def __init__(self, mapping: Optional[Mapping[str, Node]] = None, name: Optional[str] = None):
         Node.__init__(self, name=name)
-        self.node_type = "ndict"
-        self._link_nodes()
+        self.node_type = NodeType.NDICT
+        self._set_children(dict(() if mapping is None else mapping))
 
     @property
     def graphviz_style(self):
         return {"style": "solid", "color": "black", "shape": "component"}
 
-    @property
-    def dynamic(self):
-        return any(node.dynamic for node in dict.values(self))
+    # The five methods below are all that ``MutableMapping`` needs to provide
+    # keys, values, items, get, pop, setdefault, ``in``, and the rest. The nodes
+    # are simply the children of this node.
+    def __getitem__(self, key: str) -> Node:
+        return self._children[key]
 
-    def _unlink_nodes(self):
-        for node in dict.values(self):
-            self.unlink(node)
+    def __setitem__(self, key: str, node: Node):
+        self._set_children({**self._children, key: node})
 
-    def _link_nodes(self):
-        for key, node in dict.items(self):
-            if not isinstance(node, Node):
-                raise TypeError(f"NodeDict values must be Node objects, not {type(node)}")
-            self.link(key, node)
+    def __delitem__(self, key: str):
+        keyed = dict(self._children)
+        del keyed[key]
+        self._set_children(keyed)
 
-    def __getitem__(self, key):
-        return dict.__getitem__(self, key)
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._children)
 
-    def __setitem__(self, key, node):
-        self._unlink_nodes()
-        try:
-            dict.__setitem__(self, key, node)
-        finally:
-            self._link_nodes()
+    def __len__(self) -> int:
+        return len(self._children)
 
-    def __delitem__(self, key):
-        self._unlink_nodes()
-        try:
-            dict.__delitem__(self, key)
-        finally:
-            self._link_nodes()
-
-    def update(self, mapping=None, **kwargs):
+    # These would work without being written here, one node at a time. Doing
+    # them in one step means they either fully happen or change nothing.
+    def update(self, *args, **kwargs):
         """Update the dict with another mapping (i.e. dict) and update graph links."""
-        self._unlink_nodes()
-        try:
-            if mapping is not None:
-                dict.update(self, mapping)
-            if kwargs:
-                dict.update(self, kwargs)
-        finally:
-            self._link_nodes()
-
-    def pop(self, key, *args):
-        """Remove and return a node from the dict and update graph links."""
-        self._unlink_nodes()
-        try:
-            node = dict.pop(self, key, *args)
-        finally:
-            self._link_nodes()
-        return node
-
-    def popitem(self):
-        """Remove and return an arbitrary (key, node) pair from the dict (the last one inserted) and update graph links."""
-        self._unlink_nodes()
-        try:
-            key, node = dict.popitem(self)
-        finally:
-            self._link_nodes()
-        return key, node
+        keyed = dict(self._children)
+        keyed.update(*args, **kwargs)
+        self._set_children(keyed)
 
     def clear(self):
         """Remove all nodes from the dict and update graph links."""
-        self._unlink_nodes()
-        dict.clear(self)
+        self._set_children({})
 
-    def setdefault(self, key, default):
-        """If key is in the dictionary, return its value. If not, insert key with a value of default and return default. Update graph links."""
-        # Preserve dict.setdefault API shape but enforce NodeDict invariants
-        if key in self:
-            return self[key]
-        if not isinstance(default, Node):
-            raise TypeError(f"NodeDict values must be Node objects, not {type(default)}")
-        self[key] = default
-        return default
+    def popitem(self) -> tuple[str, Node]:
+        """Remove and return the last (key, node) pair that was inserted, as for
+        a ``dict``, and update graph links."""
+        if not self._children:
+            raise KeyError(f"popitem(): {type(self).__name__} is empty")
+        key = next(reversed(self._children))
+        return key, self.pop(key)

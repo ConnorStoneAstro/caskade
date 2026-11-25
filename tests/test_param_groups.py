@@ -102,9 +102,9 @@ def test_multiple_groups():
 def test_group_must_be_int():
     """Group must be an integer."""
     p = Param("p", 1.0)
-    with pytest.raises(AssertionError):
+    with pytest.raises(ParamConfigurationError):
         p.group = 1.5
-    with pytest.raises(AssertionError):
+    with pytest.raises(ParamConfigurationError):
         p.group = "bad"
 
 
@@ -207,7 +207,10 @@ def test_internal_vmap_with_groups(grouped_model):
     if backend.backend == "jax":
         vmap = backend.jax.vmap
     elif backend.backend == "torch":
-        vmap = lambda f, in_axes: backend.module.vmap(f, in_dims=in_axes)
+
+        def vmap(f, in_axes):
+            return backend.module.vmap(f, in_dims=in_axes)
+
     elif backend.backend == "numpy":
         pytest.skip("vmap not supported for numpy backend")
     else:
@@ -219,7 +222,8 @@ def test_internal_vmap_with_groups(grouped_model):
             self.hierarchical_link("mod", mod)
 
         @forward
-        def run(self, x, mod_params=None, mod_dims=None):
+        def run(self, x):
+            mod_params, mod_dims = self.mod.get_values("list"), self.mod.get_dims()
             res = vmap(self.mod.run, in_axes=(0, mod_dims))(x, mod_params)
             return backend.sum(res)
 
@@ -505,8 +509,8 @@ def test_fill_params_multi_group(grouped_model):
     params = outer.get_values()
     with ActiveContext(outer):
         outer.fill_params(params)
-        assert outer.inner.a._value is not None
-        assert outer.c._value is not None
+        assert outer.inner.a._active_value is not None
+        assert outer.c._active_value is not None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -521,9 +525,9 @@ def test_active_context_multi_group(grouped_model):
     with ActiveContext(outer):
         outer.fill_params(params)
         for p in outer.dynamic_params:
-            assert p._value is not None
+            assert p._active_value is not None
     for p in outer.dynamic_params:
-        assert p._value is None
+        assert p._active_value is None
 
 
 def test_set_values_blocked_in_active_context(grouped_model):
@@ -535,12 +539,20 @@ def test_set_values_blocked_in_active_context(grouped_model):
 
 
 def test_nested_active_context_multi_group(grouped_model):
-    """Nested ActiveContext on same module raises error."""
+    """A simulation inside a simulation has its own values, the outer ones return."""
     outer = grouped_model
+    params = outer.get_values()
     with ActiveContext(outer):
-        with pytest.raises(ActiveStateError):
-            with ActiveContext(outer):
-                pass
+        outer.fill_params(params)
+        held = [p._active_value for p in outer.dynamic_params]
+        with ActiveContext(outer):
+            outer.fill_params([2 * p for p in params])
+            for p, h in zip(outer.dynamic_params, held):
+                assert p._active_value is not h
+        for p, h in zip(outer.dynamic_params, held):
+            assert p._active_value is h
+        assert outer.active
+    assert not outer.active
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -574,7 +586,7 @@ def test_active_cache_with_multi_group():
     m.b.group = 1
     params = m.get_values()
     m.counter = 0
-    result = m.run(3.0, params)
+    m.run(3.0, params)
     assert m.counter == 1  # cached_compute called only once
 
 
@@ -744,10 +756,10 @@ def test_override_in_multi_group():
     params = m.get_values()
     with ActiveContext(m):
         m.fill_params(params)
-        assert m.a._value is not None
+        assert m.a._active_value is not None
         with OverrideParam(m.a, backend.make_array(10.0)):
-            assert m.a._value.item() == 10.0
-        assert m.a._value.item() == 3.0
+            assert m.a._active_value.item() == 10.0
+        assert m.a._active_value.item() == 3.0
 
 
 # ──────────────────────────────────────────────────────────────────────
