@@ -1,5 +1,8 @@
 import os
 import enum
+import json
+from contextlib import contextmanager
+from math import prod
 from typing import TYPE_CHECKING, NamedTuple, Optional, Union, Any
 from warnings import warn
 from operator import attrgetter
@@ -13,6 +16,9 @@ except ImportError:  # h5py is an optional dependency
 if TYPE_CHECKING:
     import graphviz
 
+import numpy as np
+
+from .backend import backend
 from .errors import GraphError, NodeConfigurationError, LinkToAttributeError
 from .warnings import SaveStateWarning
 
@@ -26,6 +32,54 @@ def _require_h5py():
             "Saving and loading the state of a caskade graph requires the optional "
             "'h5py' package. Install it with `pip install h5py`."
         )
+
+
+# Names that ``caskade`` keeps for itself among the attributes of the group of
+# the node that was saved
+_H5_FORMAT = "caskade_format"  # 2 since the count of samples is kept, files without it are 1
+_H5_LAYOUT = "caskade_layout"  # "graph" (a group for every node) or "fast" (two arrays)
+_H5_APPENDABLE = "caskade_appendable"
+_H5_SAMPLES = "caskade_samples"  # number of states an appendable file holds
+_H5_RESERVED = (_H5_FORMAT, _H5_LAYOUT, _H5_APPENDABLE, _H5_SAMPLES)
+# A file up to this size is read into memory in one go when it is loaded, a
+# larger one (a long chain) is read piece by piece
+_H5_CORE_DRIVER_LIMIT = 2**28
+
+
+@contextmanager
+def _open_hdf5(target, mode: str, action: str, **kwargs):
+    """The HDF5 file (or group) to work in. A path is opened here and closed
+    again afterwards, anything else is taken to be an open file or group and is
+    left open for its owner."""
+    if not isinstance(target, (str, os.PathLike)):
+        yield target
+        return
+    path = os.fspath(target)
+    if not path.endswith((".h5", ".hdf5")):
+        raise NotImplementedError(
+            f"Only HDF5 files ('.h5') are currently supported for {action} state"
+        )
+    _require_h5py()
+    with h5py.File(path, mode, **kwargs) as h5file:
+        yield h5file
+
+
+def _create_rows(h5group, name: str, value, samples: int = 1):
+    """Create the dataset for a value that more states will be appended to.
+    The first dimension counts the states, ``value`` becomes the last of
+    ``samples`` rows and any rows before it are left blank (NaN for floats)."""
+    shape = tuple(value.shape)
+    dataset = h5group.create_dataset(
+        name,
+        shape=(samples,) + shape,
+        dtype=value.dtype,
+        maxshape=(None,) + shape,
+        chunks=True,
+        compression="gzip",
+        fillvalue=float("nan") if value.dtype.kind in "fc" else None,
+    )
+    dataset[samples - 1] = value
+    return dataset
 
 
 def attrsetter(obj, attr, value):
@@ -582,32 +636,240 @@ class Node:
 
         return self
 
-    def _save_state_hdf5(self, h5group, appendable: bool = False, *, _done_save: set):
-        """Save the state of the node and its children to HDF5."""
-        if id(self) not in _done_save:
-            for attr in self.saveattrs:
-                value = attrgetter(attr)(self)
-                if value is None:
-                    value = "NONE"
-                try:
-                    h5group.attrs[attr] = value
-                except TypeError:
-                    warn(
-                        SaveStateWarning(
-                            f"attribute '{attr}' of type {type(value)} cannot be saved to HDF5"
-                        )
-                    )
-                except Exception as e:
-                    warn(SaveStateWarning(f"Unable to save attribute '{attr}' due to: {e}"))
-            _done_save.add(id(self))
-        for key, child in self.children.items():
-            if not hasattr(child, "_h5group"):
-                child._h5group = h5group.create_group(key)
-            elif key not in h5group:
-                h5group[key] = child._h5group
-            child._save_state_hdf5(h5group[key], appendable=appendable, _done_save=_done_save)
+    # Saving and loading
+    #################################################################
+    #: Names of what a node of this type writes into its own group of an HDF5
+    #: file, next to the groups of its children
+    _hdf5_own: tuple[str, ...] = ()
 
-    def save_state(self, saveto: Union[str, "h5py.File"], appendable: bool = False):
+    def _hdf5_top(self, container):
+        """The group in ``container`` that this node was saved to."""
+        try:
+            return container[self.name]
+        except KeyError:
+            raise GraphError(
+                f"No saved state for a node named '{self.name}' was found, the file holds "
+                f"{sorted(container.keys())}. The state is stored under the name of the node "
+                "that was saved, so it must be loaded from a node with the same name."
+            ) from None
+
+    def _hdf5_groups(self, top, create: bool = False) -> list[tuple["Node", Any]]:
+        """Pair every node at or below this one with its group in an HDF5 file.
+
+        The file has the structure of the graph, a group for each node under
+        the key that its parent holds it by. A node that is reached along
+        several paths has a single group, which the file shows at each of
+        those paths. Every node is visited once here, however many paths lead
+        to it.
+
+        Parameters
+        ----------
+        top
+            The group of this node.
+        create : bool
+            If ``True`` the groups are made. Otherwise they are looked up, and
+            the file is checked against the graph.
+
+        Raises
+        ------
+        GraphError
+            If ``create`` is ``False`` and the file has no group for a child.
+        """
+        groups = {self: top}
+        pending = [self]
+        extra: list[str] = []
+        for node in pending:  # ``pending`` grows while it is being iterated
+            group = groups[node]
+            children = node.children
+            for key, child in children.items():
+                known = groups.get(child)
+                if create:
+                    if known is None:
+                        groups[child] = group.create_group(key)
+                        pending.append(child)
+                    else:
+                        group[key] = known  # the same group, shown at this path as well
+                    continue
+                if known is None:
+                    found = group.get(key)
+                    if found is not None:
+                        groups[child] = found
+                        pending.append(child)
+                        continue
+                elif key in group:
+                    continue
+                raise GraphError(
+                    f"Child '{child.name}' (identified by key '{key}') not found in HDF5 "
+                    f"group '{group.name}'. Structure of graph changed from last save."
+                )
+            if not create and len(group) != len(children) + len(node._hdf5_own):
+                names = set(group.keys()).difference(children, node._hdf5_own)
+                extra.extend(f"{group.name}/{name}" for name in sorted(names))
+        if extra:
+            warn(
+                SaveStateWarning(
+                    f"The file holds {len(extra)} entries that the graph of '{self.name}' "
+                    f"does not have, they are ignored: {', '.join(extra[:5])}"
+                    + (", ..." if len(extra) > 5 else "")
+                )
+            )
+        return list(groups.items())
+
+    def _save_hdf5(self, h5group, appendable: bool):
+        """Write this node (not its children) into its group."""
+        for attr in self.saveattrs:
+            value = attrgetter(attr)(self)
+            if value is None:
+                value = "NONE"
+            try:
+                h5group.attrs[attr] = value
+            except TypeError:
+                warn(
+                    SaveStateWarning(
+                        f"attribute '{attr}' of type {type(value)} cannot be saved to HDF5"
+                    )
+                )
+            except Exception as e:
+                warn(SaveStateWarning(f"Unable to save attribute '{attr}' due to: {e}"))
+
+    def _append_hdf5(self, h5group):
+        """Get ready to append the current state of this node (not its children)
+        to its group. Everything that could fail is done here, before any node
+        has written. Returns the function that does the writing, it is given the
+        number of states the file will then hold (``None`` for a file that does
+        not keep count). Returns ``None`` if there is nothing to write."""
+        return None
+
+    def _read_hdf5(self, h5group, index: int):
+        """Read the state of this node (not its children) from its group and
+        check that it fits. Returns the function that takes the state on, or
+        ``None``. Nothing about the node is changed before that is called, so a
+        file that does not fit the graph leaves the whole graph as it was."""
+        if not self.saveattrs:
+            return None
+        stored = h5group.attrs
+        values = {attr: stored[attr] for attr in self.saveattrs if attr in stored}
+
+        def take_on():
+            for attr, value in values.items():
+                attrsetter(self, attr, value)
+
+        return take_on
+
+    def _fast_params(self) -> dict[str, Any]:
+        """Every dynamic and static param at or below this node by its path in
+        the graph, the first path if there are several. (They are ``Param``
+        objects, a class that is defined on top of this one.)"""
+        paths = {self: self.name}
+        params: dict[str, Any] = {}
+        for node in self.topological_ordering():  # parents come before their children
+            path = paths[node]
+            if node.node_type is NodeType.DYNAMIC or node.node_type is NodeType.STATIC:
+                params[path] = node
+            for key, child in node.children.items():
+                paths.setdefault(child, f"{path}/{key}")
+        return params
+
+    def _fast_state(self) -> tuple[dict[str, list], dict[str, np.ndarray]]:
+        """The state for the fast layout. For each of ``"dynamic"`` and
+        ``"static"`` a 1D array with the values of those params one after the
+        other, and an index with ``[path, shape, dtype]`` for each of the
+        params so that the array can be taken apart again. A param with no
+        value has ``None`` for its shape and takes no room in the array."""
+        index: dict[str, list] = {"dynamic": [], "static": []}
+        parts: dict[str, list] = {"dynamic": [], "static": []}
+        for path, param in self._fast_params().items():
+            kind = param.node_type.value
+            value = param.value
+            if value is None:
+                index[kind].append([path, None, None])
+                continue
+            value = backend.to_numpy(value)
+            index[kind].append([path, list(value.shape), value.dtype.str])
+            parts[kind].append(value.reshape(-1))
+        arrays = {kind: np.concatenate(p) if p else np.zeros(0) for kind, p in parts.items()}
+        return index, arrays
+
+    def _save_fast(self, top, appendable: bool):
+        index, arrays = self._fast_state()
+        top.create_dataset("index", data=json.dumps(index))
+        for kind, array in arrays.items():
+            if array.size == 0:
+                continue
+            if appendable:
+                _create_rows(top, kind, array)
+            else:
+                top.create_dataset(kind, data=array)
+
+    def _append_fast(self, top):
+        if not top.attrs[_H5_APPENDABLE]:
+            raise IOError(
+                f"{self.name} is not appendable. Need to save the HDF5 file with `appendable=True`."
+            )
+        index, arrays = self._fast_state()
+        if index != json.loads(top["index"][()]):
+            raise GraphError(
+                f"The params of '{self.name}' are not the ones the file was saved with (a "
+                "param was added, removed, changed type or shape, or gained or lost its "
+                "value). A file with the fast layout only takes states of the same layout."
+            )
+        samples = int(top.attrs[_H5_SAMPLES]) + 1
+        for kind, array in arrays.items():
+            if array.size:
+                top[kind].resize(samples, axis=0)
+                top[kind][samples - 1] = array
+        top.attrs[_H5_SAMPLES] = samples
+
+    def _read_fast(self, top, index: int) -> list:
+        stored = json.loads(top["index"][()])
+        appendable = bool(top.attrs[_H5_APPENDABLE])
+        params = self._fast_params()
+        missing = set(params)
+        plan = []
+        for kind in ("dynamic", "static"):
+            array = None
+            pos = 0
+            for path, shape, dtype in stored[kind]:
+                param = params.get(path)
+                if param is None:
+                    pointer = self._fast_pointer(path)
+                    if pointer:  # now worked out from other params, as in the graph layout
+                        if shape is not None:
+                            pos += prod(shape)
+                        continue
+                    raise GraphError(
+                        f"The file holds a value for '{path}', which is not a param of "
+                        f"'{self.name}'. Structure of graph changed from last save."
+                    )
+                missing.discard(path)
+                value = None
+                if shape is not None:
+                    if array is None:
+                        array = top[kind][index] if appendable else top[kind][()]
+                    size = prod(shape)
+                    value = array[pos : pos + size].reshape(shape).astype(dtype, copy=False)
+                    pos += size
+                plan.append(param._plan_value(kind, value, path))
+        if missing:
+            raise GraphError(
+                f"The file holds no value for {sorted(missing)[:5]}"
+                + (f" and {len(missing) - 5} more params" if len(missing) > 5 else "")
+                + f" of '{self.name}'. Structure of graph changed from last save."
+            )
+        return plan
+
+    def _fast_pointer(self, path: str) -> bool:
+        """Whether ``path`` leads to a pointer param in the graph of this node."""
+        node: Optional[Node] = self
+        for key in path.split("/")[1:]:  # the first is the name of this node
+            if node is None:
+                return False
+            node = node.children.get(key)
+        return node is not None and node.node_type is NodeType.POINTER
+
+    def save_state(
+        self, saveto: Union[str, "h5py.File"], appendable: bool = False, fast: bool = False
+    ):
         """
         Save the state of the node and its children, currently only works for
         HDF5 file types (.h5 and .hdf5).
@@ -635,6 +897,26 @@ class Node:
         dimension. If appendable was false then the value will simply equal the
         param value.
 
+        **The fast layout.** A file with the structure of the graph has a group
+        and a dataset for every param, and HDF5 takes about a millisecond and
+        a few kilobytes for each of those however small the values are. For a
+        graph with many params, or a chain with many samples, ``fast=True``
+        writes the values of all dynamic params into one array and those of
+        all static params into another, each param flattened and placed one
+        after the other in the order of the graph:
+
+        .. code-block:: python
+            with h5py.File("myfile.h5", "r") as h5file:
+                chain = h5file["N1/dynamic"][()]  # (samples, number of values) if appendable
+                index = json.loads(h5file["N1/index"][()])  # path, shape and dtype of each param
+
+        For a graph with no batch dimensions a row of ``dynamic`` is what
+        ``get_values()`` returns. This layout holds the values and whether each
+        param is dynamic or static, and nothing else: pointer params are worked
+        out from the others so they are left out, and ``saveattrs``, ``units``
+        and ``valid`` ranges are not stored. ``load_state`` and
+        ``append_state`` recognise the layout by themselves.
+
         Note
         ----
         You need the optional `h5py` package installed to use this method.
@@ -649,56 +931,35 @@ class Node:
             Whether to save the state in an appendable format. If True, the
             values will have an extra dimension for the number of samples.
             Defaults to False.
+        fast: (bool, optional)
+            Whether to use the fast layout described above in place of the
+            structure of the graph. Defaults to False.
 
         """
-        if isinstance(saveto, str):
-            if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
-                _require_h5py()
-                with h5py.File(saveto, "w") as h5file:
-                    self._h5group = h5file.create_group(self.name)
-                    self._save_state_hdf5(
-                        h5file[self.name], appendable=appendable, _done_save=set()
-                    )
-
-                for node in self.topological_ordering():
-                    del node._h5group
-            else:
-                raise NotImplementedError(
-                    "Only HDF5 files ('.h5') are currently supported for saving state"
-                )
-        else:  # assume saveto is an HDF5 File object
-            self._h5group = saveto.create_group(self.name)
-            self._save_state_hdf5(saveto[self.name], appendable=appendable, _done_save=set())
-
-            for node in self.topological_ordering():
-                del node._h5group
-
-    def _check_append_state_hdf5(self, h5group):
-        """Check the state and HDF5 file have the same structure."""
-        for key, child in self.children.items():
-            if key in h5group:
-                child._check_append_state_hdf5(h5group[key])
-            else:
-                raise GraphError(
-                    f"Child '{child.name}' (identified by key '{key}') not found in HDF5 group '{h5group.name}'. Structure of graph changed from last save."
-                )
-
-    def _append_state_cleanup(self):
-        """Cleanup the state of the node and its children after appending to HDF5."""
-        pass
-
-    def _append_state_hdf5(self, h5group):
-        """Append the state of the node and its children to an existing HDF5 file."""
-        for key, child in self.children.items():
-            child._append_state_hdf5(h5group[key])
+        with _open_hdf5(saveto, "w", "saving") as h5file:
+            top = h5file.create_group(self.name)
+            top.attrs[_H5_FORMAT] = 2
+            top.attrs[_H5_LAYOUT] = "fast" if fast else "graph"
+            top.attrs[_H5_APPENDABLE] = appendable
+            top.attrs[_H5_SAMPLES] = 1
+            if fast:
+                self._save_fast(top, appendable)
+                return
+            for node, group in self._hdf5_groups(top, create=True):
+                node._save_hdf5(group, appendable)
 
     def append_state(self, saveto: Union[str, "h5py.File"]):
         """
         Append the current state to an existing HDF5 file.
 
         The file must have been previously created by ``save_state`` with
-        ``appendable=True``.  The graph structure in the file is verified
-        before appending.
+        ``appendable=True``.  The graph structure in the file is verified, and
+        every value is collected, before anything is written.
+
+        A param with no value is given a blank row (NaN), so that the same
+        index is the same state for every param. A param that had no value
+        when the file was saved has blank rows for the states before it got
+        one.
 
         Parameters
         ----------
@@ -713,49 +974,37 @@ class Node:
         NotImplementedError
             If the file path does not end with a supported extension.
         """
-        if isinstance(saveto, str):
-            if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
-                _require_h5py()
-                with h5py.File(saveto, "a") as h5file:
-                    self._check_append_state_hdf5(h5file[self.name])
-                    self._append_state_hdf5(h5file[self.name])
-
-                for node in self.topological_ordering():
-                    node._append_state_cleanup()
-            else:
-                raise NotImplementedError(
-                    "Only HDF5 files ('.h5') are currently supported for saving state"
-                )
-        else:  # assume saveto is an HDF5 File object
-            self._check_append_state_hdf5(saveto[self.name])
-            self._append_state_hdf5(saveto[self.name])
-
-            for node in self.topological_ordering():
-                node._append_state_cleanup()
-
-    def _check_load_state_hdf5(self, h5group):
-        """Check the state and HDF5 file have the same structure."""
-        for key, child in self.children.items():
-            if key in h5group:
-                child._check_load_state_hdf5(h5group[key])
-            else:
-                raise GraphError(
-                    f"Child '{child.name}' (identified by key '{key}') not found in HDF5 group '{h5group.name}'. Structure of graph changed from last save."
-                )
-
-    def _load_state_hdf5(self, h5group, index: int = -1, *, _done_load: set):
-        """Load the state of the node and its children from HDF5."""
-
-        if id(self) not in _done_load:
-            for attr in h5group.attrs:
-                attrsetter(self, attr, h5group.attrs[attr])
-            _done_load.add(id(self))
-        for key, child in self.children.items():
-            child._load_state_hdf5(h5group[key], index=index, _done_load=_done_load)
+        with _open_hdf5(saveto, "a", "saving") as h5file:
+            top = self._hdf5_top(h5file)
+            if top.attrs.get(_H5_LAYOUT) == "fast":
+                self._append_fast(top)
+                return
+            writers = []
+            for node, group in self._hdf5_groups(top):
+                write = node._append_hdf5(group)
+                if write is not None:
+                    writers.append(write)
+            samples = top.attrs.get(_H5_SAMPLES)  # not kept by older versions of caskade
+            if samples is not None:
+                samples = int(samples) + 1
+            for write in writers:
+                write(samples)
+            if samples is not None:
+                # Written last. If the appending was cut short, the next one
+                # brings every param back to the same number of states.
+                top.attrs[_H5_SAMPLES] = samples
 
     def load_state(self, loadfrom: Union[str, "h5py.File"], index: int = -1, **kwargs):
         """
         Load node state (and children) from an HDF5 file.
+
+        The whole state is read and checked against the graph first. Only if
+        all of it fits is any of it taken on, so a file that does not match
+        leaves the graph as it was.
+
+        An attribute stored with a node is only loaded if the node lists it in
+        its ``saveattrs``, the file does not get to choose which attributes
+        are set.
 
         Parameters
         ----------
@@ -767,7 +1016,9 @@ class Node:
             mode.  Defaults to ``-1`` (last sample).
         **kwargs
             Additional keyword arguments forwarded to ``h5py.File``
-            (e.g. ``driver``).
+            (e.g. ``driver``). By default a file of up to 256 MB is read into
+            memory in one go (``driver="core"``), which is the quickest on a
+            network file system, and a larger file is read piece by piece.
 
         Raises
         ------
@@ -776,19 +1027,22 @@ class Node:
         NotImplementedError
             If the file path does not end with a supported extension.
         """
-        if isinstance(loadfrom, str):
-            if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
-                _require_h5py()
-                with h5py.File(loadfrom, "r", **{"driver": "core", **kwargs}) as h5file:
-                    self._check_load_state_hdf5(h5file[self.name])
-                    self._load_state_hdf5(h5file[self.name], index=index, _done_load=set())
+        if (
+            "driver" not in kwargs
+            and isinstance(loadfrom, (str, os.PathLike))
+            and os.path.isfile(loadfrom)
+            and os.path.getsize(loadfrom) <= _H5_CORE_DRIVER_LIMIT
+        ):
+            kwargs["driver"] = "core"
+        with _open_hdf5(loadfrom, "r", "loading", **kwargs) as h5file:
+            top = self._hdf5_top(h5file)
+            if top.attrs.get(_H5_LAYOUT) == "fast":
+                plan = self._read_fast(top, index)
             else:
-                raise NotImplementedError(
-                    "Only HDF5 files ('.h5') are currently supported for loading state"
-                )
-        else:  # assume loadfrom is an HDF5 File object
-            self._check_load_state_hdf5(loadfrom[self.name])
-            self._load_state_hdf5(loadfrom[self.name], index=index, _done_load=set())
+                plan = [node._read_hdf5(group, index) for node, group in self._hdf5_groups(top)]
+        for take_on in plan:
+            if take_on is not None:
+                take_on()
 
     @property
     def graphviz_style(self):

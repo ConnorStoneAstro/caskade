@@ -99,3 +99,18 @@ def test_array_backends():
     assert numpy_backend.any(x > 1.5) and not numpy_backend.all(x > 1.5)
     assert np.allclose(numpy_backend.exp(numpy_backend.log(x)), x)
     assert numpy_backend.sum(x) == 3.0
+
+
+def test_stack_keeps_the_structure_of_the_results():
+    # numpy has no vmap, repeated calls are stacked by hand
+    import numpy as np
+    from caskade.backend import _stack
+
+    results = [
+        {"y": np.ones(2) * i, "pair": (np.array(i), [np.zeros(1)]), "none": None} for i in range(3)
+    ]
+    stacked = _stack(results)
+    assert stacked["y"].shape == (3, 2)
+    assert stacked["pair"][0].tolist() == [0, 1, 2] and stacked["pair"][1][0].shape == (3, 1)
+    assert stacked["none"] is None
+    assert _stack([None, None]) is None

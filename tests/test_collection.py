@@ -653,3 +653,25 @@ def test_pickle_collections_and_pointers():
     copy.l.append(Param("l3", 100.0))
     assert copy.total().item() == 131.0 and sim.total().item() == 15.0
     assert [p.name for p in copy.static_params] == ["x", "l1", "l2", "l3", "t1", "k"]
+
+
+def test_collection_plain_attributes_and_operators():
+    from caskade.collection import NodeCollection
+
+    nodes = NodeList([Param("a", 1.0), Param("b", 2.0)], name="nodes")
+    # Only the nodes are closed to attribute changes, anything else is a plain attribute
+    nodes.note = "kept"
+    del nodes.note
+    assert not hasattr(nodes, "note")
+    with pytest.raises(AttributeError):
+        del nodes.note
+
+    # A collection can only be joined with another sequence
+    with pytest.raises(TypeError):
+        5 + nodes
+    with pytest.raises(TypeError):
+        nodes + 5
+
+    # The base class holds no nodes of its own
+    with pytest.raises(NotImplementedError):
+        len(NodeCollection(name="base"))

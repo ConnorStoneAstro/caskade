@@ -216,3 +216,11 @@ def test_forward():
         main1.to_valid(None)
     with pytest.raises(TypeError):
         main1.from_valid(None)
+
+
+def test_fill_params_array_error_without_shapes():
+    # The shapes that the array is cut into default to those of the params
+    a = Param("a", [1.0, 2.0], shape=(2,))
+    b = Param("b", 3.0, shape=())
+    error = FillParamsArrayError("sim", backend.make_array([1.0, 2.0]), (a, b))
+    assert "3" in str(error) and "sim" in str(error)

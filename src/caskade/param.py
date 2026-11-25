@@ -6,8 +6,8 @@ from numpy import ndarray
 import numpy as np
 
 from .backend import backend, ArrayLike
-from .base import Node, NodeType
-from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError
+from .base import Node, NodeType, _create_rows
+from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError, GraphError
 from .warnings import InvalidValueWarning
 
 
@@ -654,102 +654,127 @@ class Param(Node):
         self._cyclic = cyclic
         self.valid = self.valid
 
-    def _save_state_hdf5(self, h5group, appendable: bool = False, *, _done_save: set):
-        super()._save_state_hdf5(h5group, appendable=appendable, _done_save=_done_save)
-        if "value" not in self._h5group:
-            try:
-                value = self.value
-            except Exception:  # pointer cannot be evaluated yet
-                value = None
+    # Saving and loading
+    #################################################################
+    _hdf5_own = ("value",)
 
-            if value is None:
-                value = "None"
-            elif appendable:
-                value = backend.to_numpy(value.reshape(1, *value.shape))
-            else:
-                value = backend.to_numpy(value)
-            if appendable:
-                self._h5group.create_dataset(
-                    "value",
-                    data=value,
-                    chunks=False if isinstance(value, str) else True,
-                    maxshape=None if isinstance(value, str) else (None,) + tuple(value.shape[1:]),
-                    compression=None if isinstance(value, str) else "gzip",
-                )
-            else:
-                self._h5group.create_dataset(
-                    "value",
-                    data=value,
-                )
-            # a plain string in the file, as before ``NodeType`` existed
-            self._h5group["value"].attrs["node_type"] = self.node_type.value
-            self._h5group["value"].attrs["appendable"] = appendable
-            self._h5group["value"].attrs["cyclic"] = self.cyclic
-            if self.valid[0] is not None:
-                self._h5group["value"].attrs["valid_left"] = backend.to_numpy(self.valid[0])
-            if self.valid[1] is not None:
-                self._h5group["value"].attrs["valid_right"] = backend.to_numpy(self.valid[1])
-            self._h5group["value"].attrs["units"] = self.units if self.units is not None else "None"
+    def _value_or_none(self):
+        try:
+            return self.value
+        except Exception:  # pointer cannot be evaluated yet
+            return None
 
-    def _check_append_state_hdf5(self, h5group):
-        super()._check_append_state_hdf5(h5group)
-        if not h5group["value"].attrs["appendable"]:
+    def _save_hdf5(self, h5group, appendable: bool):
+        super()._save_hdf5(h5group, appendable)
+        value = self._value_or_none()
+        if value is None:
+            dataset = h5group.create_dataset("value", data="None")
+        elif appendable:
+            dataset = _create_rows(h5group, "value", backend.to_numpy(value))
+        else:
+            dataset = h5group.create_dataset("value", data=backend.to_numpy(value))
+        attrs = dataset.attrs
+        # a plain string in the file, as before ``NodeType`` existed
+        attrs["node_type"] = self.node_type.value
+        attrs["appendable"] = appendable
+        attrs["cyclic"] = self.cyclic
+        if self.valid[0] is not None:
+            attrs["valid_left"] = backend.to_numpy(self.valid[0])
+        if self.valid[1] is not None:
+            attrs["valid_right"] = backend.to_numpy(self.valid[1])
+        attrs["units"] = self.units if self.units is not None else "None"
+
+    def _append_hdf5(self, h5group):
+        dataset = h5group["value"]
+        blank = dataset.dtype.kind in "SO"  # the text "None", no state so far has a value
+        if not (dataset.attrs["appendable"] if blank else dataset.maxshape[:1] == (None,)):
             raise IOError(
                 f"{self.name} is not appendable. Need to save the HDF5 file with `appendable=True`."
             )
-
-    def _append_state_cleanup(self):
-        super()._append_state_cleanup()
-        del self.appended
-
-    def _append_state_hdf5(self, h5group):
-        super()._append_state_hdf5(h5group)
-        if not hasattr(self, "appended"):
-            self.appended = True
-            try:
-                value = self.value
-            except Exception:  # pointer cannot be evaluated yet
-                value = None
-            if value is not None:
-                h5group["value"].resize(
-                    (h5group["value"].shape[0] + 1,) + h5group["value"].shape[1:]
+        value = self._value_or_none()
+        if value is None:
+            if blank:
+                return None
+        else:
+            value = backend.to_numpy(value)
+            if not blank and tuple(value.shape) != dataset.shape[1:]:
+                raise GraphError(
+                    f"The value of param '{self.name}' has shape {tuple(value.shape)}, the "
+                    f"file holds states of shape {dataset.shape[1:]} for it at '{h5group.name}'."
                 )
-                h5group["value"][-1] = self.value
 
-    def _load_state_hdf5(self, h5group, index: int = -1, *, _done_load: set):
-        super()._load_state_hdf5(h5group, index=index, _done_load=_done_load)
-        self.cyclic = False
-        self.valid = None
+        def write(samples: Optional[int]):
+            if not blank:
+                # without a value the new row stays blank
+                dataset.resize(dataset.shape[0] + 1 if samples is None else samples, axis=0)
+                if value is not None:
+                    dataset[-1] = value
+                return
+            if samples is None:
+                raise IOError(
+                    f"Param '{self.name}' had no value when the file was saved by an older "
+                    "version of caskade, which kept no count of the states. Its value "
+                    "cannot be appended, save a new file."
+                )
+            # the first value of this param, the states before it are blank rows
+            attrs = dict(dataset.attrs)
+            del h5group["value"]
+            _create_rows(h5group, "value", value, samples).attrs.update(attrs)
+
+        return write
+
+    def _plan_value(self, node_type: str, value, where: str):
+        """Check that ``value`` (a numpy array or ``None``) read from ``where``
+        in a file fits this param, and return the function that takes it on
+        with the type (``"static"`` or ``"dynamic"``) it was saved with, or
+        ``None`` if it was saved as a pointer (so its value was worked out
+        from other params). Not to be called on a param that is now a pointer,
+        which keeps being one."""
+        if value is not None and not valid_shape(
+            self._batch_shape, self._shape, tuple(value.shape)
+        ):
+            raise GraphError(
+                f"The value saved for param '{self.name}' at '{where}' has shape "
+                f"{tuple(value.shape)}, which does not fit the shape {self._shape} of the param"
+                + (f" with batch shape {self._batch_shape}." if self._batch_shape else ".")
+            )
+        # Matched as text within the saved string: files written by old versions
+        # of caskade can hold names that are no longer node types ("dynamic value")
+        if "static" in node_type:
+            return lambda: self.to_static(value)
+        if "dynamic" in node_type:
+            return lambda: self.to_dynamic(value)
+        return None
+
+    def _read_hdf5(self, h5group, index: int):
+        node_state = super()._read_hdf5(h5group, index)
+        dataset = h5group["value"]
+        attrs = dict(dataset.attrs)
+        value_state = None
         if not self.pointer:
-            if isinstance(h5group["value"][()], bytes):
-                if h5group["value"][()] != b"None":
-                    raise ValueError(
-                        f"Unrecognized value {h5group['value'][()]!r} saved for param {self.name}"
-                    )
+            if dataset.dtype.kind in "SO":  # the text "None"
+                if dataset.shape != () or dataset[()] != b"None":
+                    raise ValueError(f"Unrecognized value saved for param {self.name}")
                 value = None
-            elif h5group["value"].attrs["appendable"]:
-                value = h5group["value"][index]
+            elif attrs["appendable"]:
+                value = dataset[index]
             else:
-                value = h5group["value"][()]
+                value = dataset[()]
+            value_state = self._plan_value(attrs["node_type"], value, h5group.name)
 
-            # Matched as text within the saved string: files written by old versions
-            # of caskade can hold names that are no longer node types ("dynamic value")
-            if "static" in h5group["value"].attrs["node_type"]:
-                self.to_static(value)
-            elif "dynamic" in h5group["value"].attrs["node_type"]:
-                self.to_dynamic(value)
-        self.units = h5group["value"].attrs["units"]
-        if "valid_left" in h5group["value"].attrs:
-            self.valid = (
-                h5group["value"].attrs["valid_left"],
-                self.valid[1],
-            )
-        if "valid_right" in h5group["value"].attrs:
-            self.valid = (
-                self.valid[0],
-                h5group["value"].attrs["valid_right"],
-            )
-        self.cyclic = h5group["value"].attrs["cyclic"]
+        def take_on():
+            if node_state is not None:
+                node_state()
+            self.cyclic = False
+            self.valid = None
+            if value_state is not None:
+                value_state()
+            units = attrs["units"]
+            self.units = None if units == "None" else units  # no units are saved as "None"
+            self.valid = (attrs.get("valid_left"), attrs.get("valid_right"))
+            self.cyclic = attrs["cyclic"]
+
+        return take_on
 
     @property
     def valid(self) -> tuple[Optional[ArrayLike], Optional[ArrayLike]]:

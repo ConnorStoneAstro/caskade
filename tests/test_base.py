@@ -454,3 +454,21 @@ def test_memo_follows_graph_changes():
     assert a.memos == {MemoNote(MemoKind.USER, top, 1, "note")}
     top.remove_memo("note")
     assert a.memos == set()
+
+
+def test_link_needs_a_node():
+    node = Node("node")
+    with pytest.raises(TypeError, match="child must be a Node object, not <class 'str'>"):
+        node.link("not_a_node")
+    assert node.children == {}
+
+
+def test_self_test_reports_a_wrong_result(monkeypatch):
+    # ``caskade.test()`` is what users run to check an installation, so a
+    # wrong result has to be an error
+    from caskade import backend
+
+    real = backend.make_array
+    monkeypatch.setattr(backend, "make_array", lambda value: real(value + 1.0))
+    with pytest.raises(RuntimeError, match="integration test failed: expected 13.0, got 16.0"):
+        test()

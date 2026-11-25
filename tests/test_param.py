@@ -397,3 +397,11 @@ def test_node_str():
     assert p.node_str == "p|static: [1, 2]"
     p = Param("p", [1.0, 2.0, 3.0, 4.0, 5.0])
     assert p.node_str == "p|static: (5,)"
+
+
+def test_dtype_and_device_of_a_value_that_is_not_an_array():
+    # A pointer may return anything, such as a plain number
+    p = Param("p", lambda p: 1.0)
+    assert p.value == 1.0
+    assert p.dtype is None
+    assert p.device is None
