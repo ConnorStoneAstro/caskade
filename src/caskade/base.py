@@ -1,4 +1,5 @@
 import os
+import sys
 import enum
 import json
 from contextlib import contextmanager
@@ -7,6 +8,7 @@ from typing import TYPE_CHECKING, NamedTuple, Optional, Union, Any
 from warnings import warn
 from operator import attrgetter
 from threading import get_ident
+from types import FrameType
 import keyword
 
 try:
@@ -21,7 +23,7 @@ import numpy as np
 
 from .backend import backend
 from .errors import GraphError, NodeConfigurationError, LinkToAttributeError
-from .warnings import SaveStateWarning
+from .warnings import LinkToAttributeWarning, SaveStateWarning
 
 __all__ = ("Node", "NodeType", "Memo", "MemoKind", "MemoNote")
 
@@ -30,6 +32,21 @@ __all__ = ("Node", "NodeType", "Memo", "MemoKind", "MemoNote")
 #: a node which many paths lead to is moved once. Held for each thread that is
 #: making such a call (the way ``reprlib.recursive_repr`` keeps track).
 _MOVED: dict[int, set["Node"]] = {}
+
+
+_MISSING = object()
+
+
+def _user_stacklevel() -> int:
+    """The ``stacklevel`` for ``warn`` that points a warning at the line outside
+    ``caskade`` which led to it, however many calls inside ``caskade`` lie
+    between that line and the function that warns."""
+    level = 2  # the caller of the function that warns
+    frame: Optional[FrameType] = sys._getframe(2)
+    while frame is not None and frame.f_globals.get("__name__", "").split(".")[0] == "caskade":
+        frame = frame.f_back
+        level += 1
+    return level
 
 
 def _require_h5py():
@@ -237,6 +254,8 @@ class Node:
         self._children: dict[str, Node] = {}
         self._parents: set[Node] = set()
         self._subgraphs: set[Node] = set()
+        # Names that held a child until a plain value was assigned over it
+        self._freed: set[str] = set()
         self._memos: dict[MemoNote, int] = {}  # each note held, and how many times
         self._hierarchy_depths_cache: Optional[dict[Node, int]] = None
         self._run_notes_cache: Optional[list[tuple[Node, MemoNote]]] = None
@@ -272,7 +291,10 @@ class Node:
 
         Nothing is changed unless every check passes. With ``replace=True`` a
         different node already linked under ``key`` is unlinked first, otherwise
-        that is an error.
+        that is an error. A name that is in use for something that is not a
+        child is taken over with a ``LinkToAttributeWarning``, except for the
+        name of a property, which is an error. A name that held a child before
+        (and was given a plain value since) is taken back without a word.
         """
         if self.active:
             raise GraphError("Cannot link/unlink nodes while the graph is active")
@@ -288,10 +310,17 @@ class Node:
             raise GraphError(
                 f"Child {child.name} already linked to parent {self.name}, but not with key '{key}'"
             )
-        if existing is None and hasattr(self, key):
-            raise LinkToAttributeError(
-                f"Child key '{key}' already an attribute of parent {self.name}, use a different name to avoid collisions"
-            )
+        # The name may be in use for something that is not a child
+        replaced = _MISSING
+        if existing is None and key not in self._freed:
+            on_class = getattr(type(self), key, _MISSING)
+            if hasattr(on_class, "__set__"):
+                # A property decides what its name gives, a child cannot take its place
+                raise LinkToAttributeError(
+                    f"Child key '{key}' is a property of {type(self).__name__} "
+                    f"('{self.name}'), use a different name for the child"
+                )
+            replaced = self.__dict__.get(key, on_class)
 
         # avoid cycles
         if self in child.topological_ordering():
@@ -299,8 +328,20 @@ class Node:
                 f"Linking {child.name} to {self.name} would create a cycle in the graph!"
             )
 
+        if replaced is not _MISSING:
+            # Allowed, as any assignment to an attribute is, but it may be a mistake
+            was = "None" if replaced is None else f"a {type(replaced).__name__}"
+            warn(
+                LinkToAttributeWarning(
+                    f"Linking node '{child.name}' as '{key}' replaces the attribute '{key}' "
+                    f"of '{self.name}' (it was {was}). If that is not what you meant, use a "
+                    "different name for the child."
+                ),
+                stacklevel=_user_stacklevel(),
+            )
         if existing is not None:
             self._unlink(key)
+        self._freed.discard(key)
         self.children[key] = child
         child.parents.add(self)
         self.update_graph()
@@ -1190,7 +1231,8 @@ class Node:
 
         Assigning a ``Node`` links it as a child (replacing any child already
         held under that name), and assigning anything else over a child unlinks
-        that child.
+        that child. The name stays that of a child, so a node may be assigned
+        to it again later (``node.child = None`` and then ``node.child = other``).
         """
         # Values are written to nodes while a simulation runs, so the common
         # case of a value that is not a node is kept as short as possible
@@ -1210,6 +1252,7 @@ class Node:
                 is_child = False
             if is_child:
                 self._unlink(key)
+                self._freed.add(key)  # a node may be assigned to this name again
 
         super().__setattr__(key, value)
 
@@ -1217,6 +1260,7 @@ class Node:
         """Intercept attribute deletion to remove links."""
         if key in self.children:
             self._unlink(key)
+        self._freed.discard(key)
         super().__delattr__(key)
 
 

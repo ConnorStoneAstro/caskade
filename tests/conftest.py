@@ -1,8 +1,27 @@
 import itertools
+import shutil
+import sys
 import numpy as np
 
 from caskade import Node, Param, Module, forward, backend, NodeList, NodeTuple
 import pytest
+
+
+@pytest.fixture
+def needs_dot():
+    """For a test that draws a graph to a file, which takes the ``dot``
+    executable of Graphviz. The Windows runners of the CI cannot always
+    install it, the test is skipped there when it is missing. Anywhere else a
+    missing ``dot`` is left to fail the test."""
+    if sys.platform == "win32" and shutil.which("dot") is None:
+        pytest.skip("the Graphviz executable (dot) is not installed")
+
+
+@pytest.fixture
+def can_draw():
+    """``False`` where ``needs_dot`` would skip, for a test that draws a graph
+    as one step among others."""
+    return not (sys.platform == "win32" and shutil.which("dot") is None)
 
 
 @pytest.fixture

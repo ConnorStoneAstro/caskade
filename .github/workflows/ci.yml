@@ -77,11 +77,31 @@ jobs:
           brew install graphviz
         shell: bash
 
+      # The download through chocolatey fails now and then, and has also been
+      # seen to report success with nothing installed. So it is tried a few
+      # times and checked by running dot. If it still is not there, the tests
+      # that draw a graph are skipped on Windows (see tests/conftest.py)
+      # and the job carries on with a warning.
       - name: Install graphviz windows
         if: ${{ matrix.os == 'windows-latest' }}
         run: |
-          choco install graphviz -y
-          echo "C:\\Program Files\\Graphviz\\bin" >> $GITHUB_PATH
+          dot="/c/Program Files/Graphviz/bin/dot.exe"
+          for attempt in 1 2 3 4; do
+            # --force, so that a retry installs again when the last one claimed success
+            choco install graphviz -y --no-progress --force || true
+            if "$dot" -V; then
+              break
+            fi
+            echo "Graphviz is not installed after attempt $attempt"
+            if [ "$attempt" -lt 4 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          if "$dot" -V; then
+            echo "C:\\Program Files\\Graphviz\\bin" >> $GITHUB_PATH
+          else
+            echo "::warning::Graphviz could not be installed, the tests that draw a graph are skipped"
+          fi
         shell: bash
 
       - name: Install caskade

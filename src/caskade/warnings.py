@@ -48,6 +48,19 @@ class SaveStateWarning(CaskadeWarning):
     """
 
 
+class LinkToAttributeWarning(CaskadeWarning):
+    """
+    Warning issued when a child node takes the place of another attribute.
+
+    Linking a node under a name that the parent already uses for something
+    that is not a child (a plain value, a placeholder such as ``None``, a
+    method) replaces that attribute, as any assignment would. This may be what
+    was meant, or it may be a child that was given the name of something the
+    parent needs. A name that held a child before does not give this warning,
+    so ``node.child = None`` followed by ``node.child = other`` is silent.
+    """
+
+
 class StaticCacheWarning(CaskadeWarning):
     """
     Warning issued when a ``static_cache`` result may not be the right one.

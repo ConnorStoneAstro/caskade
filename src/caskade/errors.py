@@ -36,8 +36,10 @@ class LinkToAttributeError(GraphError):
     """
     Exception raised when linking to an attribute fails.
 
-    Raised when an attempt is made to create a link to a node attribute
-    that does not exist or is not a valid link target.
+    Raised when a child would be linked under the name of a property of the
+    parent, such as ``name`` or ``children``. A property decides what its name
+    gives, so a child cannot take its place. Any other attribute is replaced by
+    the child, with a ``LinkToAttributeWarning``.
     """
 
 

@@ -22,7 +22,7 @@ from caskade import (
 
 
 @pytest.mark.parametrize("node_type", [NodeTuple, NodeList])
-def test_node_collection_creation(node_type):
+def test_node_collection_creation(node_type, can_draw):
 
     # Minimal creation
     n1 = node_type()
@@ -73,10 +73,11 @@ def test_node_collection_creation(node_type):
     assert len(n4.pointer_params) == 0
 
     # Graphviz
-    graph = n4.graphviz(saveto="test_graph.pdf")
-    assert graph is not None, "should return a graphviz object"
-    assert os.path.exists("test_graph.pdf")
-    os.remove("test_graph.pdf")
+    if can_draw:
+        graph = n4.graphviz(saveto="test_graph.pdf")
+        assert graph is not None, "should return a graphviz object"
+        assert os.path.exists("test_graph.pdf")
+        os.remove("test_graph.pdf")
 
     # Check copy
     with pytest.raises(NotImplementedError):
@@ -324,7 +325,7 @@ def test_node_tuple_immutable():
         nt.link(Module("new_module"))
 
 
-def test_node_dict_creation():
+def test_node_dict_creation(can_draw):
 
     # Minimal creation
     n1 = NodeDict()
@@ -359,10 +360,11 @@ def test_node_dict_creation():
     assert len(n2.pointer_params) == 0
 
     # Graphviz
-    graph = n3.graphviz(saveto="test_graph_dict.pdf")
-    assert graph is not None, "should return a graphviz object"
-    assert os.path.exists("test_graph_dict.pdf")
-    os.remove("test_graph_dict.pdf")
+    if can_draw:
+        graph = n3.graphviz(saveto="test_graph_dict.pdf")
+        assert graph is not None, "should return a graphviz object"
+        assert os.path.exists("test_graph_dict.pdf")
+        os.remove("test_graph_dict.pdf")
 
     # Check copy
     with pytest.raises(NotImplementedError):

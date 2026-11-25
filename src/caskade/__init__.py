@@ -46,6 +46,7 @@ from .errors import (
 from .warnings import (
     CaskadeWarning,
     InvalidValueWarning,
+    LinkToAttributeWarning,
     SaveStateWarning,
     StaticCacheWarning,
 )
@@ -90,6 +91,7 @@ __all__ = (
     "FillParamsMappingError",
     "CaskadeWarning",
     "InvalidValueWarning",
+    "LinkToAttributeWarning",
     "SaveStateWarning",
     "StaticCacheWarning",
     "utils",

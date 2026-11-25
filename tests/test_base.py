@@ -1,7 +1,9 @@
 import os
+import warnings
 
 # ``test`` is collected by pytest, which runs the integration check of the package
 from caskade import Node, test, GraphError, NodeConfigurationError  # noqa: F401
+from caskade import LinkToAttributeError, LinkToAttributeWarning
 from caskade import Memo, MemoKind, MemoNote
 
 import pytest
@@ -90,7 +92,7 @@ def test_linking(node_graph):
     with pytest.raises(GraphError):
         a.link("c", b)  # key already used
     with pytest.raises(GraphError):
-        a.link("link", g)  # key is attribute
+        a.link("children", g)  # key is a property of the node
     with pytest.raises(NodeConfigurationError):
         a.link("bad name", g)  # Name not python identifier
     with pytest.raises(TypeError):
@@ -141,7 +143,7 @@ def test_linking(node_graph):
     assert len(a.children) == 0
 
 
-def test_graphviz(node_graph):
+def test_graphviz(node_graph, needs_dot):
     a, *_ = node_graph
 
     graph = a.graphviz(saveto="test_graph.pdf")
@@ -283,7 +285,7 @@ def test_hierarchy_depths():
     top.remove_memo("note")
 
 
-def test_subgraph_graphviz(node_graph):
+def test_subgraph_graphviz(node_graph, needs_dot):
     a, _, c, *_ = node_graph
     a.unlink(c)
     a.hierarchical_link("c", c)
@@ -317,6 +319,82 @@ def test_assignment_keeps_graph_in_sync():
     a.child = c
     assert a.children == {"child": c}
     assert c.parents == {a}
+
+
+def test_name_of_a_child_can_take_a_node_again():
+    a, b, c = Node("a"), Node("b"), Node("c")
+    a.child = b
+    a.child = None  # unlinks, the attribute holds None
+    assert a.child is None and a.children == {} and a not in b.parents
+    a.child = c
+    assert a.child is c and a.children == {"child": c} and a in c.parents
+
+    # Whatever the plain value was, and with an explicit link as well
+    a.child = "nothing here"
+    a.child = 5
+    a.link("child", b)
+    assert a.child is b and a.children == {"child": b}
+
+    # Nothing was said so far, the name was that of a child all along
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        a.child = None
+        a.child = c
+    assert a.children == {"child": c}
+
+
+def test_node_takes_the_place_of_another_attribute():
+    a, b, c = Node("a"), Node("b"), Node("c")
+
+    # A placeholder for a node that comes later
+    a.later = None
+    with pytest.warns(LinkToAttributeWarning, match=r"'b' as 'later'.*it was None") as caught:
+        a.later = b
+    assert caught[0].filename == __file__  # the line that did it, not one inside caskade
+    assert a.later is b and a.children == {"later": b} and a in b.parents
+
+    # Any other value, by assignment or with an explicit link
+    a.number = 5.0
+    with pytest.warns(LinkToAttributeWarning, match="'number'.*it was a float") as caught:
+        a.link("number", c)
+    assert caught[0].filename == __file__
+    assert a.number is c and a.children == {"later": b, "number": c}
+
+    # A name that was a child, but was deleted since, is a name like any other
+    a.later = None
+    del a.later
+    a.later = "text"
+    with pytest.warns(LinkToAttributeWarning, match="'later'.*it was a str"):
+        a.later = b
+
+    # This includes what caskade keeps on the node and the methods of the node,
+    # that is what the warning is for
+    d, e = Node("d"), Node("e")
+    with pytest.warns(LinkToAttributeWarning, match="'description'.*it was a str"):
+        d.description = e
+    with pytest.warns(LinkToAttributeWarning, match="'unlink'.*it was a function"):
+        d.unlink = Node("f")
+    assert set(d.children) == {"description", "unlink"}
+
+    # With warnings turned into errors nothing is changed
+    g = Node("g")
+    g.spot = None
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(LinkToAttributeWarning):
+            g.spot = e
+    assert g.spot is None and g.children == {} and g not in e.parents
+
+
+def test_property_name_cannot_be_a_child():
+    a, b = Node("a"), Node("b")
+    for name in ("children", "name", "active"):
+        with pytest.raises(LinkToAttributeError, match=f"'{name}' is a property of Node"):
+            a.link(name, b)
+    assert a.children == {} and a not in b.parents and a.name == "a"
+    with pytest.raises(AttributeError):  # plain assignment is answered by the property
+        a.children = b
+    assert a.children == {}
 
 
 def test_failed_replacement_changes_nothing():

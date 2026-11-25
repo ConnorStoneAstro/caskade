@@ -31,7 +31,7 @@ def test_module_creation():
     assert m2.dynamic_params == (p1,)
 
 
-def test_module_graphviz(sim):
+def test_module_graphviz(sim, needs_dot):
     sim.helper.h1.to_static(None)
     graph = sim.graphviz(saveto="test_graph.pdf")
     assert graph is not None, "should return a graphviz object"
@@ -39,7 +39,7 @@ def test_module_graphviz(sim):
     os.remove("test_graph.pdf")
 
 
-def test_module_graphviz_hierarchical(hierarchical_sim):
+def test_module_graphviz_hierarchical(hierarchical_sim, needs_dot):
     graph = hierarchical_sim.graphviz(saveto="test_graph.pdf")
     assert graph is not None, "should return a graphviz object"
     assert os.path.exists("test_graph.pdf")
@@ -584,6 +584,7 @@ class Bounded(Module):
         return lo + hi.sum() + box.sum() + ang
 
 
+@pytest.mark.filterwarnings("ignore::caskade.InvalidValueWarning")
 @pytest.mark.parametrize("batch", [(), (4,), (3, 4)])
 @pytest.mark.parametrize("scheme", ["array", "list", "dict"])
 def test_valid_transforms_take_batched_values(batch, scheme):
