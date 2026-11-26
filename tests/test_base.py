@@ -1,4 +1,6 @@
+import copy
 import os
+import pickle
 import warnings
 
 # ``test`` is collected by pytest, which runs the integration check of the package
@@ -550,3 +552,33 @@ def test_self_test_reports_a_wrong_result(monkeypatch):
     monkeypatch.setattr(backend, "make_array", lambda value: real(value + 1.0))
     with pytest.raises(RuntimeError, match="integration test failed: expected 13.0, got 16.0"):
         test()
+
+
+def test_unique_id():
+    a, b = Node("same"), Node("same")
+    assert a.unique_id != b.unique_id  # the name is not what makes it unique
+    name, _, tail = a.unique_id.rpartition("_")
+    assert name == "same" and len(tail) == 32 and int(tail, 16) >= 0
+    assert a.unique_id == a.unique_id
+
+    with pytest.raises(AttributeError):
+        a.unique_id = "mine"
+    assert a.unique_id.startswith("same_")
+
+    # Nodes made one after another, each gone before the next
+    ids = set()
+    for _ in range(200):
+        ids.add(Node("again").unique_id)
+    assert len(ids) == 200
+
+
+@pytest.mark.parametrize("how", ["pickle", "deepcopy"])
+def test_unique_id_goes_with_a_copy(how):
+    top, mid, low = Node("top"), Node("mid"), Node("low")
+    top.link(mid)
+    mid.link(low)
+    other = pickle.loads(pickle.dumps(top)) if how == "pickle" else copy.deepcopy(top)
+    assert other is not top
+    for node, copied in zip(top.topological_ordering(), other.topological_ordering()):
+        assert copied.unique_id == node.unique_id
+    assert len({node.unique_id for node in other.topological_ordering()}) == 3

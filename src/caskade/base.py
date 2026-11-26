@@ -10,6 +10,7 @@ from operator import attrgetter
 from threading import get_ident
 from types import FrameType
 import keyword
+import uuid
 
 try:
     import h5py
@@ -251,6 +252,7 @@ class Node:
                 f"{self.__class__.__name__} name is invalid: '{name}'. Must be a valid Python identifier and not a reserved keyword."
             )
         self._name = name
+        self._unique_id = f"{name}_{uuid.uuid4().hex}"
         self._children: dict[str, Node] = {}
         self._parents: set[Node] = set()
         self._subgraphs: set[Node] = set()
@@ -270,6 +272,23 @@ class Node:
     def name(self) -> str:
         """str : The name of this node."""
         return self._name
+
+    @property
+    def unique_id(self) -> str:
+        """str : An id for this node that no other node has, its name followed
+        by a random string (``uuid4``).
+
+        The id is made when the node is created and cannot be changed. It goes
+        with the node when it is pickled or copied, so a copy of a node has the
+        id of the node it was copied from. ``caskade`` makes no use of it.
+
+        A graph that is built again in code has new ids, and ``load_state``
+        leaves them alone. To have the id written to an HDF5 file and taken
+        back on by ``load_state``, add it to the saved attributes of the node,
+        ``node.saveattrs.add("unique_id")`` (the fast layout stores values
+        only).
+        """
+        return self._unique_id
 
     @property
     def children(self) -> dict[str, "Node"]:
@@ -817,6 +836,8 @@ class Node:
 
         def take_on():
             for attr, value in values.items():
+                if attr == "unique_id":  # read only, apart from here
+                    attr = "_unique_id"
                 attrsetter(self, attr, value)
 
         return take_on

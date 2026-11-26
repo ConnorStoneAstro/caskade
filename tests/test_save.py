@@ -403,6 +403,28 @@ def test_only_listed_attributes_and_units_are_loaded(tmp_path):
     assert not hasattr(other, "caskade_format")
 
 
+def test_unique_id_is_saved_when_asked_for(tmp_path):
+    top = Leaf("top")
+    top.saveattrs.add("unique_id")
+    path = str(tmp_path / "ids.h5")
+    top.save_state(path)
+
+    # A graph that is built again has ids of its own
+    other = Leaf("top")
+    assert other.unique_id != top.unique_id
+    mine = other.unique_id, other.a.unique_id
+    other.load_state(path)  # the file has an id, but this node did not ask for it
+    assert (other.unique_id, other.a.unique_id) == mine
+
+    other.saveattrs.add("unique_id")
+    other.load_state(path)
+    assert other.unique_id == top.unique_id and isinstance(other.unique_id, str)
+    assert other.a.unique_id == mine[1]  # only for the node that lists it
+
+    # The values still load as they did
+    assert np.allclose(backend.to_numpy(other.a.value), [1.0, 2.0])
+
+
 def test_files_from_before_the_format_was_stamped(tmp_path):
     # Written by hand as caskade 1.1 wrote them: no ``caskade_`` attributes,
     # node types under their old names, a param that had no value
