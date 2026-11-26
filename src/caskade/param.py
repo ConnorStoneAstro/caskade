@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Iterator, Optional, Union, Any, Iterable
+from typing import Callable, Iterator, Optional, Union, Any, Iterable
 from warnings import warn
 from math import prod
 from numbers import Integral
@@ -380,7 +380,12 @@ class Param(Node):
         self.node_type = NodeType.STATIC
         self.is_valid()
 
-    def to_pointer(self, value, link=()):
+    def to_pointer(
+        self,
+        value: "Param" | Callable | None,
+        link: Node | tuple[Node, ...] = (),
+        clear_links: bool = True,
+    ):
         """Change this parameter to a pointer parameter.
 
         The parameter's value will be computed at runtime by dereferencing
@@ -394,6 +399,9 @@ class Param(Node):
         link : Node or tuple of Node, optional
             Additional nodes to link into the graph when creating the
             pointer. Defaults to an empty tuple.
+        clear_links : bool, optional
+            Whether to clear existing links before setting the pointer.
+            Defaults to True.
 
         Raises
         ------
@@ -406,6 +414,8 @@ class Param(Node):
         if self.active:
             raise ActiveStateError(f"Cannot set parameter {self.name} to pointer while active")
 
+        if clear_links:
+            self.unlink()
         if isinstance(value, Param):
             self.link(value)
             value = _ParamValue(value.name)
@@ -413,6 +423,7 @@ class Param(Node):
             raise ParamTypeError(f"Pointer function must be a Param or callable ({self.name})")
         elif hasattr(value, "params"):
             self.link(value.params)
+
         self.link(link)
         self._stored_value = value
         self._shape = None
