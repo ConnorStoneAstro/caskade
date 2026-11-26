@@ -719,3 +719,63 @@ def test_inner_method_compiled_on_its_own():
     assert np.allclose(numpy(result), 5 * X + 17.0)
     assert Inner.traces == 1  # the compiled function was used again
     assert not outer.active
+
+
+def test_random_pointer_in_a_batch_of_simulations():
+    """A pointer may draw random numbers. Every use inside one simulation gets
+    the same draw, and each simulation of a batch has a draw of its own."""
+    kind = backend.backend
+    keys = None
+    if kind == "jax":
+        import jax
+
+        keys = jax.random.split(jax.random.PRNGKey(0), 3)
+
+        def draw(p):
+            return jax.random.normal(p.key.value, (4,))
+
+    elif kind == "torch":
+        import torch
+
+        def draw(p):
+            return torch.randn(4)
+
+    else:
+        rng = np.random.default_rng(0)
+
+        def draw(p):
+            return backend.as_array(rng.normal(size=4))
+
+    class Noisy(Module):
+        def __init__(self):
+            super().__init__("noisy")
+            self.m = Param("m", shape=(), dynamic=True)
+            self.noise = Param("noise", draw)
+            if keys is not None:  # jax has no global generator, the draw follows a key
+                self.key = Param("key", keys[0], shape=(2,))
+                self.noise.link(self.key)
+
+        @forward
+        def noise_alone(self, noise):
+            return noise
+
+        @forward
+        def difference(self, m, noise):
+            return m + noise - self.noise_alone()
+
+        @forward
+        def sample(self, m, noise):
+            return m + noise
+
+    noisy = Noisy()
+    m = backend.as_array(np.array([1.0, 2.0, 3.0]))
+    static = {} if keys is None else {"static_params": [keys]}
+
+    result = numpy(noisy.difference([m], **static))
+    assert np.allclose(result, np.array([1.0, 2.0, 3.0])[:, None] * np.ones(4), atol=1e-6)
+
+    noise = numpy(noisy.sample([m], **static)) - np.array([1.0, 2.0, 3.0])[:, None]
+    assert noise.shape == (3, 4)
+    assert not np.allclose(noise[0], noise[1])
+    assert not np.allclose(noise[1], noise[2])
+    assert not noisy.active

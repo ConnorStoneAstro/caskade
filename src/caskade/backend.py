@@ -146,7 +146,9 @@ class TorchBackend(ArrayBackend):
         return array.detach()
 
     def vmap(self, func, in_dims):
-        return self.module.vmap(func, in_dims=(list(in_dims),))
+        # torch.vmap refuses random functions unless it is told what to do with
+        # them. Each call gets its own draw, as it would in a loop
+        return self.module.vmap(func, in_dims=(list(in_dims),), randomness="different")
 
     def to(self, array, dtype=None, device=None):
         return array.to(dtype=dtype, device=device)
@@ -510,6 +512,12 @@ class Backend:
             results of ``func`` with a new first dimension. This is
             ``torch.vmap`` or ``jax.vmap`` for those backends. ``numpy`` has
             no such transform, there the calls are made one at a time.
+
+        Notes
+        -----
+        A random function called inside ``func`` gives a different draw for
+        each entry of the batch with ``torch`` (``randomness="different"``) and
+        ``numpy``. With ``jax`` the draw follows the key that is passed in.
         """
         return self._implementation.vmap(func, in_dims)
 
