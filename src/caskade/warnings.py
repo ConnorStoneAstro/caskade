@@ -63,7 +63,8 @@ class LinkToAttributeWarning(CaskadeWarning):
 
 class StaticCacheWarning(CaskadeWarning):
     """
-    Warning issued when a ``static_cache`` result may not be the right one.
+    Warning issued when a result kept in ``Module.static_cache`` may not be
+    the right one.
 
     Issued when the stored result was made from a dynamic param, whose values
     in a simulation it will not follow, and when a stored result is used after

@@ -1,3 +1,4 @@
+from collections.abc import Iterable, Iterator, MutableSet
 from typing import Callable, Sequence, Mapping, Optional, Union, Any
 from warnings import warn
 
@@ -8,13 +9,66 @@ from .base import Node, NodeType, MemoNote
 from .param import Param
 from .collection import NodeTuple, NodeList, NodeDict
 from .mixins import GetSetValues, _split_batch_shape
-from .errors import ActiveStateError, FillParamsError, ParamConfigurationError
+from .errors import (
+    ActiveStateError,
+    FillParamsError,
+    NodeConfigurationError,
+    ParamConfigurationError,
+)
 
 _SUBGRAPH_KWARGS_MESSAGE = (
     "The '{key}' argument of an @forward method is deprecated and will be removed. Ask the "
     "hierarchical child for its values instead, `child.get_values()` (and `child.get_dims()` "
     "for the dimensions to vmap over), and give them back to its method as `params`."
 )
+
+
+class StaticCache(MutableSet[str]):
+    """The names of the ``@forward`` methods of a module whose result is kept
+    from one simulation to the next, see ``Module.static_cache``.
+
+    This is a set that looks into its module, so a change made to it is a
+    change to the module. It only takes the name of an ``@forward`` method of
+    the module, and taking a name out discards the result stored for it.
+    """
+
+    __slots__ = ("_module",)
+
+    def __init__(self, module: "Module"):
+        self._module = module
+
+    def _check(self, name: object):
+        """Raise unless ``name`` is the name of an ``@forward`` method of the module."""
+        module = self._module
+        method = getattr(type(module), name, None) if isinstance(name, str) else None
+        if getattr(method, "_caskade_forward", None) != name:
+            raise NodeConfigurationError(
+                f"{name!r} is not the name of an @forward method of {type(module).__name__} "
+                f"('{module.name}'). Only the result of an @forward method can be kept in the "
+                "static_cache, by the name the method was defined with."
+            )
+
+    def __contains__(self, name: object) -> bool:
+        return name in self._module._static_names
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(sorted(self._module._static_names))
+
+    def __len__(self) -> int:
+        return len(self._module._static_names)
+
+    def add(self, name: str):
+        """Keep the result of the ``@forward`` method ``name`` between simulations."""
+        self._check(name)
+        self._module._static_names.add(name)
+
+    def discard(self, name: str):
+        """Make ``name`` an ordinary method again and discard its stored result."""
+        self._module._static_names.discard(name)
+        self._module._static_results.pop(name, None)
+
+    def __repr__(self) -> str:
+        return f"StaticCache({list(self)})"
 
 
 class Module(Node, GetSetValues):
@@ -100,7 +154,11 @@ class Module(Node, GetSetValues):
         self.node_type = NodeType.MODULE
         self.valid_context = False
         self._active_cache: dict[Callable, Any] = {}
-        self._static_cache: dict[Callable, tuple[Any, tuple]] = {}
+        # ``static_cache``: the names of the methods, the result stored for each
+        # (with the params it was made from), and the ones being run to store them
+        self._static_names: set[str] = set()
+        self._static_results: dict[str, tuple[Any, tuple]] = {}
+        self._static_running: set[str] = set()
         self._graph_updated()  # initialise the param tuples
 
     @property
@@ -261,11 +319,118 @@ class Module(Node, GetSetValues):
         module, forcing them to be recalculated on their next call."""
         self._active_cache.clear()
 
+    @property
+    def static_cache(self) -> "StaticCache":
+        """The ``@forward`` methods of this module whose result is kept from one
+        simulation to the next, as a set of their names.
+
+        A method named in this set is called outside a simulation to run it and
+        store its result. Inside a simulation the stored result is returned and
+        the method is not run. The result is replaced by calling the method
+        outside a simulation again. This is for an expensive calculation that
+        only depends on static params, such as a lookup table or a convolution
+        kernel::
+
+            sim.static_cache.add("kernel")
+            sim.kernel()  # run and stored
+            sim(params)  # every call to self.kernel() in here returns that result
+            sim.sigma = 2.0
+            sim.kernel()  # stored again, with the new value
+
+        The set belongs to this one module and may be changed at any time. A
+        module that should start with a method in it adds the name in its
+        ``__init__``. Taking a name out makes the method an ordinary
+        ``@forward`` method again, which runs wherever it is called, and
+        discards its stored result::
+
+            sim.sigma.to_dynamic()  # the kernel now changes with every simulation
+            sim.static_cache.discard("kernel")
+
+        A set of names may also be assigned, ``sim.static_cache = {"kernel"}``.
+        Only the name of an ``@forward`` method of the module is accepted,
+        anything else raises a ``NodeConfigurationError``.
+
+        Warnings
+        --------
+        The stored result is never updated for you, and whether it is still the
+        right one is yours to judge:
+
+        - Arguments are ignored inside a simulation, as with ``active_cache``.
+        - It is made from the values that the params hold when the method is
+          called outside a simulation. Inside a simulation it stays what it is,
+          whichever values that simulation was given (``params``,
+          ``static_params``, an override). For a result that follows the values
+          of the simulation use ``active_cache``.
+        - It does not follow changes to plain attributes or to the graph.
+
+        Two cases are reported with a ``StaticCacheWarning``. The first is when
+        the method read the value of a dynamic param, since the stored result
+        belongs to that one value. The second is when a stored result is used
+        in a simulation after a static or pointer param that it was made from
+        has been given a new value (or has been made dynamic). Nothing is said
+        while you change the values, only when a simulation uses a result that
+        is out of date, so several values may be changed before the method is
+        called again.
+
+        Notes
+        -----
+        Inside a simulation a method with no stored result raises an
+        ``ActiveStateError``, call it outside a simulation first. A method that
+        uses other methods with a stored result is called after them.
+
+        The call outside a simulation follows the rules of ``forward``, so with
+        batched values and no other argument the stored result is one for the
+        whole batch. ``reset_static_cache`` discards the stored results and
+        leaves the names in place.
+
+        An ``@forward`` method does not have to take a param, so any method may
+        be made one. Stack ``@active_cache`` on top of ``@forward`` for a method
+        that should run once in each simulation when its name is not in the set.
+
+        Examples
+        --------
+        ::
+
+            class Blurred(Module):
+                def __init__(self, source, sigma):
+                    super().__init__()
+                    self.source = source
+                    self.sigma = Param("sigma", sigma)  # static
+                    self.static_cache.add("kernel")
+
+                @forward
+                def kernel(self, sigma):
+                    print("Building kernel...")
+                    x = torch.arange(-10, 11)
+                    kernel = torch.exp(-0.5 * (x / sigma) ** 2)
+                    return kernel / kernel.sum()
+
+                @forward
+                def image(self):
+                    return convolve(self.source.image(), self.kernel())  # no print
+
+            sim = Blurred(source, sigma=1.5)
+            sim.kernel()  # prints, once
+            for params in chain:
+                sim.image(params)
+        """
+        return StaticCache(self)
+
+    @static_cache.setter
+    def static_cache(self, names: Union[str, Iterable[str]]):
+        names = {names} if isinstance(names, str) else set(names)
+        registry = StaticCache(self)
+        for name in names:  # nothing changes unless every name is accepted
+            registry._check(name)
+        for name in self._static_names - names:
+            registry.discard(name)
+        self._static_names.update(names)
+
     def reset_static_cache(self):
-        """Discard the results stored by ``@static_cache`` methods of this
-        module. Each has to be called outside a simulation again before it can
-        be used in one."""
-        self._static_cache.clear()
+        """Discard the results stored for the methods in ``static_cache``. Each
+        has to be called outside a simulation again before it can be used in
+        one. The names stay in the set."""
+        self._static_results.clear()
 
     def _forget_memo(self, note: MemoNote):
         super()._forget_memo(note)

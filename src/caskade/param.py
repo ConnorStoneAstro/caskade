@@ -81,7 +81,8 @@ _READS: Optional[set["Param"]] = None
 @contextmanager
 def _record_reads() -> Iterator[set["Param"]]:
     """Collect the params whose ``value`` is read while the block runs. This is
-    how a ``static_cache`` result knows which params it was made from."""
+    how a result kept in ``Module.static_cache`` knows which params it was
+    made from."""
     global _READS
     outer = _READS
     reads: set[Param] = set()
@@ -181,7 +182,7 @@ class Param(Node):
             self.to_dynamic()
         else:
             self.to_static()
-        if isinstance(value, (Param, Callable)):
+        if isinstance(value, Param) or callable(value):
             self.to_pointer(value, clear_links=False)
         else:
             self.value = value
@@ -424,7 +425,7 @@ class Param(Node):
             value = _ParamValue(value.name)
         elif value is not None and not callable(value):
             raise ParamTypeError(f"Pointer function must be a Param or callable ({self.name})")
-        elif hasattr(value, "params"):
+        elif callable(value) and hasattr(value, "params"):
             self.link(value.params)
 
         self.link(link)
