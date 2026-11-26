@@ -181,7 +181,10 @@ class Param(Node):
             self.to_dynamic()
         else:
             self.to_static()
-        self.value = value
+        if isinstance(value, (Param, Callable)):
+            self.to_pointer(value, clear_links=False)
+        else:
+            self.value = value
         self.group = group
         self.valid = valid
         self.units = units
