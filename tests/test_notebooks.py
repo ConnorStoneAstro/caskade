@@ -2,7 +2,8 @@ import glob
 import pytest
 import runpy
 import subprocess
-import os, sys
+import os
+import sys
 import numpy as np
 import caskade as ck
 import matplotlib

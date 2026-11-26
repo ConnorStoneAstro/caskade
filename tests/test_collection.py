@@ -1,13 +1,19 @@
 import os
+import pickle
+from collections.abc import MutableMapping, MutableSequence, Sequence
+
 import pytest
 
 from caskade import (
+    ActiveContext,
+    GraphError,
     NodeList,
     NodeTuple,
     NodeDict,
     Param,
     Module,
     backend,
+    forward,
     ValidContext,
     FillParamsArrayError,
     FillParamsSequenceError,
@@ -16,7 +22,7 @@ from caskade import (
 
 
 @pytest.mark.parametrize("node_type", [NodeTuple, NodeList])
-def test_node_collection_creation(node_type):
+def test_node_collection_creation(node_type, can_draw):
 
     # Minimal creation
     n1 = node_type()
@@ -67,10 +73,11 @@ def test_node_collection_creation(node_type):
     assert len(n4.pointer_params) == 0
 
     # Graphviz
-    graph = n4.graphviz(saveto="test_graph.pdf")
-    assert graph is not None, "should return a graphviz object"
-    assert os.path.exists("test_graph.pdf")
-    os.remove("test_graph.pdf")
+    if can_draw:
+        graph = n4.graphviz(saveto="test_graph.pdf")
+        assert graph is not None, "should return a graphviz object"
+        assert os.path.exists("test_graph.pdf")
+        os.remove("test_graph.pdf")
 
     # Check copy
     with pytest.raises(NotImplementedError):
@@ -318,7 +325,7 @@ def test_node_tuple_immutable():
         nt.link(Module("new_module"))
 
 
-def test_node_dict_creation():
+def test_node_dict_creation(can_draw):
 
     # Minimal creation
     n1 = NodeDict()
@@ -353,10 +360,11 @@ def test_node_dict_creation():
     assert len(n2.pointer_params) == 0
 
     # Graphviz
-    graph = n3.graphviz(saveto="test_graph_dict.pdf")
-    assert graph is not None, "should return a graphviz object"
-    assert os.path.exists("test_graph_dict.pdf")
-    os.remove("test_graph_dict.pdf")
+    if can_draw:
+        graph = n3.graphviz(saveto="test_graph_dict.pdf")
+        assert graph is not None, "should return a graphviz object"
+        assert os.path.exists("test_graph_dict.pdf")
+        os.remove("test_graph_dict.pdf")
 
     # Check copy
     with pytest.raises(NotImplementedError):
@@ -453,3 +461,235 @@ def test_node_dict_param_values():
     assert nd["p1"].value.item() == 1.0
     assert nd["p2"].value.item() == 2.0
     assert nd["p3"].value.item() == 3.0
+
+
+def _in_step(collection, top=None):
+    """The graph matches the contents of the collection exactly."""
+    nodes = list(collection.values() if isinstance(collection, NodeDict) else collection)
+    assert list(collection.children.values()) == list(dict.fromkeys(nodes))
+    for node in nodes:
+        assert collection in node.parents
+    if isinstance(collection, NodeDict):
+        assert all(getattr(collection, key) is node for key, node in collection.items())
+    else:
+        assert all(getattr(collection, node.name) is node for node in nodes)
+    if top is not None:  # the order of the params follows the order of the collection
+        assert list(top.static_params) == list(dict.fromkeys(nodes))
+
+
+def test_collections_are_abstract_containers():
+    assert isinstance(NodeTuple(), Sequence) and not isinstance(NodeTuple(), MutableSequence)
+    assert isinstance(NodeList(), MutableSequence)
+    assert isinstance(NodeDict(), MutableMapping)
+    assert not isinstance(NodeTuple(), tuple)
+    assert not isinstance(NodeList(), list)
+    assert not isinstance(NodeDict(), dict)
+
+
+def test_node_list_every_method_updates_graph():
+    a, b, c, d, e = (Param(name, i) for i, name in enumerate("abcde"))
+    nl = NodeList([a, b, c], name="nl")
+    top = Module("top")
+    top.items = nl
+    _in_step(nl, top)
+
+    nl.reverse()  # none of these were kept in step when NodeList was a ``list``
+    assert list(nl) == [c, b, a]
+    _in_step(nl, top)
+    nl += [d]
+    nl.insert(1, nl.pop())
+    assert list(nl) == [c, d, b, a]
+    _in_step(nl, top)
+    nl[0:2] = nl[0:2][::-1]
+    assert list(nl) == [d, c, b, a]
+    _in_step(nl, top)
+    del nl[::2]
+    assert list(nl) == [c, a]
+    _in_step(nl, top)
+    assert nl not in b.parents and nl not in d.parents and not hasattr(nl, "b")
+    nl[0] = e
+    assert list(nl) == [e, a] and nl not in c.parents
+    _in_step(nl, top)
+    nl.extend((b, c))
+    nl.remove(a)
+    assert list(nl) == [e, b, c] and nl.index(b) == 1 and nl.count(c) == 1 and a not in nl
+    _in_step(nl, top)
+    assert [n.name for n in reversed(nl)] == ["c", "b", "e"]
+    nl.clear()
+    assert len(nl) == 0 and not nl.children and not top.static_params
+
+    # adding makes a new list, from either side
+    nl.extend((a, b))
+    assert list(nl + [c]) == [a, b, c] and isinstance(nl + (c,), NodeList)
+    assert list([c] + nl) == [c, a, b] and isinstance([c] + nl, NodeList)
+    with pytest.raises(TypeError):
+        nl + 1
+
+
+def test_node_list_failed_change_changes_nothing():
+    a, b = Param("a", 1), Param("b", 2)
+    nl = NodeList([a, b], name="nl")
+    top = Module("top")
+    top.items = nl
+
+    changes = [
+        (TypeError, lambda: nl.append(3)),
+        (TypeError, lambda: nl.extend([Param("z"), 3])),  # nothing is added, not even z
+        (GraphError, lambda: nl.append(Param("a"))),  # another node with a name in use
+        (GraphError, lambda: nl.extend([Param("z"), top])),  # would make a cycle
+        (TypeError, lambda: nl.link(Param("q"))),
+        (TypeError, lambda: nl.unlink(a)),
+        (TypeError, lambda: setattr(nl, "q", Param("q"))),
+        (TypeError, lambda: setattr(nl, "a", 3)),
+        (TypeError, lambda: delattr(nl, "a")),
+        (TypeError, lambda: nl.__setitem__("a", Param("q"))),
+    ]
+    for error, change in changes:
+        with pytest.raises(error):
+            change()
+        assert list(nl) == [a, b]
+        _in_step(nl, top)
+
+    with ActiveContext(top):
+        with pytest.raises(GraphError):
+            nl.reverse()
+    assert list(nl) == [a, b]
+    _in_step(nl, top)
+
+
+def test_node_sequence_repeated_node():
+    a, b = Param("a", 1), Param("b", 2)
+    for node_type in (NodeTuple, NodeList):
+        ns = node_type([a, b, a])
+        assert len(ns) == 3 and ns.count(a) == 2
+        assert list(ns.children.values()) == [a, b]  # a single child
+    nl = NodeList([a, b, a])
+    nl.pop()
+    assert list(nl) == [a, b] and nl in a.parents
+    nl.pop(0)
+    assert list(nl) == [b] and nl not in a.parents
+
+
+def test_node_tuple_fixed():
+    a, b = Param("a", 1), Param("b", 2)
+    nt = NodeTuple([a, b], name="nt")
+    for change in (
+        lambda: nt.unlink(a),
+        lambda: setattr(nt, "c", Param("c")),
+        lambda: setattr(nt, "a", 3),
+        lambda: delattr(nt, "a"),
+    ):
+        with pytest.raises(TypeError):
+            change()
+        assert list(nt) == [a, b]
+        _in_step(nt)
+    assert not hasattr(nt, "reverse") and not hasattr(nt, "extend")
+    assert (nt + [a])[2] is a and isinstance(nt + nt, NodeTuple)
+
+
+def test_node_dict_every_method_updates_graph():
+    a, b, c, d = (Param(name, i) for i, name in enumerate("abcd"))
+    nd = NodeDict({"x": a, "y": b, "z": c}, name="nd")
+    top = Module("top")
+    top.items = nd
+    _in_step(nd, top)
+
+    nd["y"] = d  # replacing a node keeps its place, as for a dict
+    assert list(nd.items()) == [("x", a), ("y", d), ("z", c)]
+    assert nd not in b.parents
+    _in_step(nd, top)
+    assert nd.popitem() == ("z", c)  # the last one, as for a dict
+    assert nd.get("nope") is None and "x" in nd and "z" not in nd
+    assert list(nd.keys()) == ["x", "y"] and list(nd.values()) == [a, d]
+    _in_step(nd, top)
+
+    with pytest.raises(TypeError):
+        nd.update({"u": b, "v": 3})  # nothing is added, not even u
+    with pytest.raises(GraphError):
+        nd["w"] = d  # one node under two keys
+    for change in (
+        lambda: nd.link("q", Param("q")),
+        lambda: nd.unlink("x"),
+        lambda: setattr(nd, "q", Param("q")),
+        lambda: setattr(nd, "x", 3),
+        lambda: delattr(nd, "x"),
+    ):
+        with pytest.raises(TypeError):
+            change()
+    assert list(nd.items()) == [("x", a), ("y", d)]
+    _in_step(nd, top)
+
+    nd.update([("u", b)], v=c)
+    assert list(nd) == ["x", "y", "u", "v"]
+    _in_step(nd, top)
+    with pytest.raises(KeyError):
+        NodeDict().popitem()
+
+
+class PickleSim(Module):  # pickle needs the class to be defined at the top of a file
+    def __init__(self):
+        super().__init__("sim")
+        self.x = Param("x", 2.0)
+        self.y = Param("y", self.x)  # pointer to another param
+        self.l = [Param("l1", 1.0), Param("l2", 2.0)]
+        self.t = (Param("t1", 3.0),)
+        self.d = {"k": Param("k", 5.0)}
+
+    @forward
+    def total(self, x, y):
+        return x + y + sum(p.value for p in self.l) + self.t[0].value + self.d["k"].value
+
+
+def test_pickle_collections_and_pointers():
+    sim = PickleSim()
+    copy = pickle.loads(pickle.dumps(sim))
+    assert sim.total().item() == copy.total().item() == 15.0
+    assert isinstance(copy.l, NodeList) and isinstance(copy.t, NodeTuple)
+    assert isinstance(copy.d, NodeDict)
+    assert copy.y.pointer and copy.x is not sim.x
+    for collection in (copy.l, copy.t, copy.d):
+        _in_step(collection)
+
+    # the copy is a working graph of its own
+    copy.x = 10.0
+    copy.l.append(Param("l3", 100.0))
+    assert copy.total().item() == 131.0 and sim.total().item() == 15.0
+    assert [p.name for p in copy.static_params] == ["x", "l1", "l2", "l3", "t1", "k"]
+
+
+@pytest.mark.parametrize("library", ["copy", "cloudpickle", "dill"])
+def test_other_ways_to_copy_a_graph(library):
+    # These store a class that is defined in a script along with everything
+    # its methods can reach, so nothing in caskade may stand in their way
+    module = pytest.importorskip(library)
+    sim = PickleSim()
+    sim.z = Param("z", lambda p: 2 * p.x.value, link=sim.x)  # pickle itself refuses a lambda
+    if library == "copy":
+        copy = module.deepcopy(sim)
+    else:
+        copy = module.loads(module.dumps(sim))
+    copy.x = 10.0
+    assert copy.z.value.item() == 20.0 and sim.z.value.item() == 4.0
+    assert copy.total().item() == 31.0 and sim.total().item() == 15.0
+
+
+def test_collection_plain_attributes_and_operators():
+    from caskade.collection import NodeCollection
+
+    nodes = NodeList([Param("a", 1.0), Param("b", 2.0)], name="nodes")
+    # Only the nodes are closed to attribute changes, anything else is a plain attribute
+    nodes.note = "kept"
+    del nodes.note
+    assert not hasattr(nodes, "note")
+    with pytest.raises(AttributeError):
+        del nodes.note
+
+    # A collection can only be joined with another sequence
+    with pytest.raises(TypeError):
+        5 + nodes
+    with pytest.raises(TypeError):
+        nodes + 5
+
+    # The base class holds no nodes of its own
+    with pytest.raises(NotImplementedError):
+        len(NodeCollection(name="base"))

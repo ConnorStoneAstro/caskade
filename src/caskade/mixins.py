@@ -1,9 +1,10 @@
-from typing import Optional, Mapping, Sequence, Union, Callable
+from typing import TYPE_CHECKING, Any, Optional, Mapping, Sequence, Union, Callable
 from math import prod
 import numpy as np
 
 from .param import Param
 from .errors import (
+    FillParamsError,
     FillParamsArrayError,
     FillParamsMappingError,
     FillParamsSequenceError,
@@ -11,7 +12,58 @@ from .errors import (
     ParamConfigurationError,
 )
 from .backend import backend, ArrayLike
-from .base import Node, Memo
+from .base import Node
+
+if TYPE_CHECKING:
+    from .module import Module
+
+
+def _split_batch_shape(
+    viewer: Node, param: Param, batch_shape: Optional[tuple[int, ...]] = None
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Split the batch dimensions of ``param`` as they are seen from ``viewer``.
+
+    Returns ``(batch, links)``. ``links`` holds the trailing dimensions that
+    belong to the hierarchical links between ``viewer`` and the param, one per
+    link and nearest link first, these are part of a single simulation of
+    ``viewer``. ``batch`` holds the dimensions before them, which are a batch
+    of whole simulations of ``viewer``. A param with no batch dimensions has
+    one value that every copy shares, so both are empty. See
+    ``Node.hierarchical_link`` for the full rule. ``batch_shape`` may be given
+    when it is already known, otherwise it is asked of the param.
+
+    Raises
+    ------
+    ParamConfigurationError
+        If the param has batch dimensions, but fewer than there are links.
+        There is no telling which of the links those dimensions are for.
+    """
+    if batch_shape is None:
+        batch_shape = param.batch_shape
+    depth = viewer._hierarchy_depths().get(param, 0)
+    if depth == 0 or not batch_shape:
+        return batch_shape, ()
+    cut = len(batch_shape) - depth
+    if cut < 0:
+        raise ParamConfigurationError(
+            f"Param '{param.name}' is below {depth} hierarchical links from '{viewer.name}', "
+            f"so its batch shape needs at least {depth} dimensions (one for each link, "
+            f"after any batch dimensions of '{viewer.name}'), or none at all for a single "
+            f"value shared by every copy. Its batch shape is {batch_shape}."
+        )
+    return batch_shape[:cut], batch_shape[cut:]
+
+
+def _link_shape(viewer: Node, param: Param) -> tuple[int, ...]:
+    """The ``links`` part of ``_split_batch_shape`` on its own.
+
+    This runs for every param each time a simulation is given its values, and
+    most params have no hierarchical link above them. Their batch shape is not
+    needed to answer, so it is not worked out.
+    """
+    if viewer._hierarchy_depths().get(param, 0) == 0:
+        return ()
+    return _split_batch_shape(viewer, param)[1]
 
 
 class GetSetValues:
@@ -40,25 +92,57 @@ class GetSetValues:
             if isinstance(node, GetSetValues):
                 node._valid_context = value
 
+    # Groups
+    #################################################################
+    def _split_groups(
+        self, params, param_list: tuple[Param, ...], groups: tuple[int, ...]
+    ) -> list[tuple[Any, tuple[Param, ...]]]:
+        """Pair each entry of ``params`` with the params of its group.
+
+        Raises
+        ------
+        FillParamsError
+            If ``params`` is not a sequence with one entry for each group.
+        """
+        if isinstance(params, (backend.array_type, str)) or not isinstance(params, Sequence):
+            given = f"a {type(params).__name__}"
+        elif len(params) != len(groups):
+            given = f"{len(params)} entries"
+        else:
+            return [
+                (params_g, tuple(p for p in param_list if p.group == group))
+                for group, params_g in zip(groups, params)
+            ]
+        raise FillParamsError(
+            f"The params of '{self.name}' are in {len(groups)} groups {groups}, so their values "
+            "are given as a list with one entry for each group, the way `get_values` returns "
+            f"them. Got {given}."
+        )
+
     # Set Values
     #################################################################
-    def _set_values_dict(self, node, params, params_list, attribute="_value"):
+    def _set_values_dict(self, node, params, params_list, attribute="_active_value"):
         for key in params:
             if key in node.children and isinstance(params[key], dict):
                 self._set_values_dict(node[key], params[key], params_list, attribute=attribute)
             elif key in node.children and isinstance(node[key], Param):
                 setattr(node[key], attribute, params[key])
             elif key in node.children:
-                sublist = tuple(p for p in params_list if p in node[key].all_params)
-                node[key]._set_values(params[key], sublist, attribute=attribute)
+                # An array or list in the mapping holds the values of every param below
+                # this child. It is a piece of the array of ``self``, the module that
+                # was given the mapping, so ``self`` says which dimensions are link ones.
+                below = node[key]._hierarchy_depths()  # every node at or below the child
+                sublist = tuple(p for p in params_list if p in below)
+                node[key]._set_values(params[key], sublist, attribute=attribute, viewer=self)
             else:
                 raise FillParamsMappingError(self.name, self.children, missing_key=key)
 
     def _set_values(
         self,
         params: Union[ArrayLike, Sequence, Mapping],
-        param_list: tuple[Param],
-        attribute: str = "_value",
+        param_list: tuple[Param, ...],
+        attribute: str = "_active_value",
+        viewer: Optional[Node] = None,
     ):
         """
         Fill the dynamic parameters of the module with the input values from
@@ -79,32 +163,35 @@ class GetSetValues:
             to the names of the dynamic parameters. Note that the system does
             not check for missing keys in the dictionary, but you will get an
             error eventually if a value is missing.
+        viewer: (Optional[Node])
+            The module whose array ``params`` is (a piece of), this decides
+            which batch dimensions of a param are flattened into the array.
+            It is ``self`` unless ``params`` was found inside a Mapping that was
+            given to a module higher in the graph.
         """
 
         if isinstance(params, backend.array_type):
             if params.shape[-1] == 0:
                 return  # No parameters to fill
+            if viewer is None:
+                viewer = self
             # check for batch dimension
             batch = len(params.shape) > 1
             B = tuple(params.shape[:-1]) if batch else ()
+            shapes = tuple(_link_shape(viewer, param) + param.shape for param in param_list)
             pos = 0
-            for param in param_list:
-                if param.online:
-                    shape = param.shape
-                else:
-                    depth = max(memo.count("|") for memo in param.memos)
-                    shape = param.batch_shape[-depth:] + param.shape
+            for param, shape in zip(param_list, shapes):
                 # Handle scalar parameters
                 size = max(1, prod(shape))
                 try:
                     val = backend.view(params[..., pos : pos + size], B + shape)
                     setattr(param, attribute, val)
-                except (RuntimeError, IndexError, ValueError, TypeError):
-                    raise FillParamsArrayError(self.name, params, param_list)
+                except (RuntimeError, IndexError, ValueError, TypeError) as err:
+                    raise FillParamsArrayError(self.name, params, param_list, shapes) from err
 
                 pos += size
             if pos != params.shape[-1]:
-                raise FillParamsArrayError(self.name, params, param_list)
+                raise FillParamsArrayError(self.name, params, param_list, shapes)
         elif isinstance(params, Sequence):
             if len(params) == 0:
                 return
@@ -160,18 +247,17 @@ class GetSetValues:
             raise ActiveStateError(f"Cannot fill dynamic values when Module {self.name} is active")
 
         param_list = self.dynamic_params if dynamic else self.static_params
+        groups = self.dynamic_param_groups if dynamic else self.static_param_groups
 
-        with Memo(self, self.name + ":semi_set_active"):
-            if len(self.dynamic_param_groups) > 1:
-                for group, params_g in zip(self.dynamic_param_groups, params):
-                    param_list_g = tuple(p for p in param_list if p.group == group)
-                    if self.valid_context and respect_valid:
-                        params_g = self.from_valid(params_g, param_list_g, group=group)
-                    self._set_values(params_g, param_list_g, attribute=attribute)
-            else:
+        if len(groups) > 1:
+            for params_g, param_list_g in self._split_groups(params, param_list, groups):
                 if self.valid_context and respect_valid:
-                    params = self.from_valid(params, param_list)
-                self._set_values(params, param_list, attribute=attribute)
+                    params_g = self._transform_params(self, params_g, param_list_g, "from_valid")
+                self._set_values(params_g, param_list_g, attribute=attribute)
+        else:
+            if self.valid_context and respect_valid:
+                params = self._transform_params(self, params, param_list, "from_valid")
+            self._set_values(params, param_list, attribute=attribute)
 
     # Get Values
     #################################################################
@@ -248,9 +334,10 @@ class GetSetValues:
             multiple groups exist and *group* is ``None``, a list of
             per-group results is returned.
         """
-        if len(self.dynamic_param_groups) > 1 and group is None:
+        groups = self.dynamic_param_groups if dynamic else self.static_param_groups
+        if len(groups) > 1 and group is None:
             values = []
-            for g in self.dynamic_param_groups:
+            for g in groups:
                 values.append(
                     self.get_values(
                         scheme=scheme,
@@ -267,17 +354,16 @@ class GetSetValues:
         self._check_values(param_list, scheme)
         x = []
         if scheme.lower() in ["array", "tensor"]:
-            with Memo(self, self.name + ":semi_get_active"):
-                for param in param_list:
-                    if param.online:
-                        B = param.batch_shape
-                    else:
-                        depth = max(memo.count("|") for memo in param.memos)
-                        B = param.batch_shape[:-depth]
-                    x.append(self._getattr_or_callable(param, attribute).reshape(B + (-1,)))
+            for param in param_list:
+                B = _split_batch_shape(self, param)[0]
+                x.append(self._getattr_or_callable(param, attribute).reshape(B + (-1,)))
             if len(x) == 0:
                 return backend.make_array([])
-            x = backend.detach(backend.broadcast_cat(x, dim=-1))
+            x = backend.broadcast_cat(x, dim=-1)
+            if not self.active:
+                # Stored values are handed out cut off from their history. The
+                # values of a running simulation are part of its calculation.
+                x = backend.detach(x)
         elif scheme.lower() == "list":
             for param in param_list:
                 x.append(self._getattr_or_callable(param, attribute))
@@ -287,8 +373,49 @@ class GetSetValues:
                 self, unique_params=unique_params, param_list=param_list, attribute=attribute
             )
         if self.valid_context and respect_valid:
-            x = self.to_valid(x, group=group)
+            x = self._transform_params(self, x, param_list, "to_valid")
         return x
+
+    def get_dims(
+        self, scheme: str = "list", dynamic: bool = True, group: Optional[int] = None
+    ) -> Union[Optional[int], list[Optional[int]], dict[str, Union[dict, Optional[int]]]]:
+        """The dimension to ``vmap`` over for each value that ``get_values``
+        returns, to run one simulation for each entry of a batch.
+
+        The entry for a value is ``0`` when it has batch dimensions (they are
+        in front) and ``None`` when it has a single value that every simulation
+        shares. The result has the layout of ``get_values`` with the same
+        arguments, so the two go together::
+
+            values = module.get_values("list")
+            dims = module.get_dims()
+            results = vmap(module.method, in_dims=(None, dims))(x, values)
+
+        Parameters
+        ----------
+        scheme : str, optional
+            ``"list"`` (default) or ``"dict"`` for one entry per param. With
+            ``"array"`` the answer is a single entry, since the array holds
+            every param and has the batch dimensions when any param has them.
+        dynamic : bool, optional
+            If ``True`` (default), for the dynamic parameters; otherwise for
+            the static parameters.
+        group : int or None, optional
+            Restrict to a specific parameter group, as in ``get_values``.
+        """
+
+        def dim(param):
+            return 0 if _split_batch_shape(self, param)[0] else None
+
+        if scheme.lower() in ["array", "tensor"]:
+            dims = self.get_dims("list", dynamic=dynamic, group=group)
+            groups = self.dynamic_param_groups if dynamic else self.static_param_groups
+            if len(groups) > 1 and group is None:
+                return [0 if 0 in d else None for d in dims]
+            return 0 if 0 in dims else None
+        return self.get_values(
+            scheme, dynamic=dynamic, attribute=dim, group=group, respect_valid=False
+        )
 
     def _array_inspection(self, group: Optional[int] = None):
         param_list = self.dynamic_params
@@ -296,18 +423,13 @@ class GetSetValues:
         self._check_values(param_list, "array")
 
         x = []
-        with Memo(self, self.name + ":semi_findidx_active"):
-            for param in param_list:
-                if param.online:
-                    shape = param.shape
-                else:
-                    depth = max(memo.count("|") for memo in param.memos)
-                    shape = param.batch_shape[-depth:] + param.shape
-                if shape == ():
-                    x.append((param, ()))
-                else:
-                    for i in range(prod(shape)):
-                        x.append((param, tuple(itm.item() for itm in np.unravel_index(i, shape))))
+        for param in param_list:
+            shape = _link_shape(self, param) + param.shape
+            if shape == ():
+                x.append((param, ()))
+            else:
+                for i in range(prod(shape)):
+                    x.append((param, tuple(itm.item() for itm in np.unravel_index(i, shape))))
         return x
 
     # Finders
@@ -340,6 +462,12 @@ class GetSetValues:
         """
         if not isinstance(idx, int):
             return tuple(self.find_param(i, group, scheme) for i in idx)
+        if group is None and len(self.dynamic_param_groups) > 1:
+            raise ValueError(
+                f"The dynamic params of '{self.name}' are in the groups "
+                f"{self.dynamic_param_groups}, each with params of its own. Give the `group` "
+                "that the index is for."
+            )
 
         if scheme == "array":
             x = self._array_inspection(group)
@@ -355,7 +483,7 @@ class GetSetValues:
             raise ValueError(f"unrecognized scheme: {scheme}")
 
     def find_index(
-        self, param: Union[Param, tuple[Param], "Module"], scheme: str = "array"
+        self, param: Union[Param, tuple[Param, ...], "Module"], scheme: str = "array"
     ) -> Union[int, slice]:
         """
         Identify what index is associated with a param in the dynamic params
@@ -363,7 +491,7 @@ class GetSetValues:
 
         Parameters
         ----------
-        param: Union[Param, tuple[Param], Module]
+        param: Union[Param, tuple[Param, ...], Module]
             The param for which to find the associated index.
         scheme: str
             Whether to search the array (default) params or list version of
@@ -418,7 +546,7 @@ class GetSetValues:
         self,
         node: Node,
         init_params: Union[ArrayLike, Sequence, Mapping],
-        param_list: tuple[Param],
+        param_list: tuple[Param, ...],
         transform_attr: str,
     ):
         if isinstance(init_params, backend.array_type):
@@ -426,20 +554,16 @@ class GetSetValues:
             batch = len(init_params.shape) > 1
             B = tuple(init_params.shape[:-1]) if batch else ()
             pos = 0
-            with Memo(self, self.name + ":semi_trans_active"):
-                for param in param_list:
-                    if param.online:
-                        shape = param.shape
-                    else:
-                        depth = max(memo.count("|") for memo in param.memos)
-                        shape = param.batch_shape[-depth:] + param.shape
-                    size = max(1, prod(shape))  # Handle scalar parameters
-                    return_shape = (*B, size)
-                    val = getattr(param, transform_attr)(
-                        backend.view(init_params[..., pos : pos + size], B + shape)
-                    )
-                    trans_params.append(backend.view(val, return_shape))
-                    pos += size
+            for param in param_list:
+                # The array is (a piece of) the array of ``self``, as in ``_set_values``
+                shape = _link_shape(self, param) + param.shape
+                size = max(1, prod(shape))  # Handle scalar parameters
+                return_shape = (*B, size)
+                val = getattr(param, transform_attr)(
+                    backend.view(init_params[..., pos : pos + size], B + shape)
+                )
+                trans_params.append(backend.view(val, return_shape))
+                pos += size
             trans_params = backend.concatenate(trans_params, axis=-1)
         elif isinstance(init_params, Sequence):
             trans_params = []
@@ -454,7 +578,8 @@ class GetSetValues:
                 if key in node.children and isinstance(node[key], Param):
                     trans_params[key] = getattr(node[key], transform_attr)(init_params[key])
                 elif key in node.children:
-                    sublist = tuple(p for p in param_list if p in node[key].children.values())
+                    below = node[key]._hierarchy_depths()  # every node at or below this child
+                    sublist = tuple(p for p in param_list if p in below)
                     trans_params[key] = self._transform_params(
                         node[key], init_params[key], sublist, transform_attr
                     )
@@ -466,10 +591,26 @@ class GetSetValues:
             )
         return trans_params
 
+    def _transform_groups(self, params, param_list, group, transform_attr: str):
+        """``to_valid`` or ``from_valid`` of values in the layout of ``get_values``."""
+        if param_list is None:
+            param_list = self.dynamic_params
+            groups = self.dynamic_param_groups
+        else:
+            groups = tuple(sorted(set(p.group for p in param_list)))
+        if group is not None:
+            param_list = tuple(p for p in param_list if p.group == group)
+        elif len(groups) > 1:
+            return [
+                self._transform_params(self, params_g, param_list_g, transform_attr)
+                for params_g, param_list_g in self._split_groups(params, param_list, groups)
+            ]
+        return self._transform_params(self, params, param_list, transform_attr)
+
     def to_valid(
         self,
         params: Union[ArrayLike, Sequence, Mapping],
-        param_list: Optional[tuple[Param]] = None,
+        param_list: Optional[tuple[Param, ...]] = None,
         group: Optional[int] = None,
     ) -> Union[ArrayLike, Sequence, Mapping]:
         """Map parameter values from their natural range to an unconstrained space.
@@ -498,25 +639,12 @@ class GetSetValues:
         Union[ArrayLike, Sequence, Mapping]
             Transformed values in the same format as *params*.
         """
-        if param_list is None:
-            param_list = self.dynamic_params
-        if len(self.dynamic_param_groups) > 1:
-            if group is None:
-                valid_params = []
-                for g, params_g in zip(self.dynamic_param_groups, params):
-                    param_list_g = tuple(p for p in param_list if p.group == g)
-                    valid_params.append(
-                        self._transform_params(self, params_g, param_list_g, "to_valid")
-                    )
-                return valid_params
-            else:
-                param_list = tuple(p for p in param_list if p.group == group)
-        return self._transform_params(self, params, param_list, "to_valid")
+        return self._transform_groups(params, param_list, group, "to_valid")
 
     def from_valid(
         self,
         valid_params: Union[ArrayLike, Sequence, Mapping],
-        param_list: Optional[tuple[Param]] = None,
+        param_list: Optional[tuple[Param, ...]] = None,
         group: Optional[int] = None,
     ) -> Union[ArrayLike, Sequence, Mapping]:
         """Map parameter values from the unconstrained space back to their natural range.
@@ -543,17 +671,4 @@ class GetSetValues:
         Union[ArrayLike, Sequence, Mapping]
             Inverse-transformed values in the same format as *valid_params*.
         """
-        if param_list is None:
-            param_list = self.dynamic_params
-        if len(self.dynamic_param_groups) > 1:
-            if group is None:
-                params = []
-                for g, valid_params_g in zip(self.dynamic_param_groups, valid_params):
-                    param_list_g = tuple(p for p in param_list if p.group == g)
-                    params.append(
-                        self._transform_params(self, valid_params_g, param_list_g, "from_valid")
-                    )
-                return params
-            else:
-                param_list = tuple(p for p in param_list if p.group == group)
-        return self._transform_params(self, valid_params, param_list, "from_valid")
+        return self._transform_groups(valid_params, param_list, group, "from_valid")

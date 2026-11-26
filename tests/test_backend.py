@@ -63,3 +63,54 @@ def test_auto_set_backend_numpy(monkeypatch):
     backend.backend = None
 
     assert backend.backend == "numpy"
+
+
+def test_array_backends():
+    import numpy as np
+    from caskade.backend import ARRAY_BACKENDS, ArrayBackend, Backend
+
+    assert set(ARRAY_BACKENDS) == {"torch", "jax", "numpy"}
+    with pytest.raises(TypeError):
+        ArrayBackend()  # only the subclass for a library can be used
+
+    numpy_backend = Backend("numpy")
+    assert numpy_backend.backend == "numpy"
+    assert numpy_backend.module is np
+    with pytest.raises(AttributeError):
+        numpy_backend.jax
+
+    # A failed switch leaves the backend as it was
+    with pytest.raises(ValueError):
+        numpy_backend.backend = "invalid_backend"
+    assert numpy_backend.backend == "numpy"
+    assert numpy_backend.module is np
+
+    x = numpy_backend.make_array([1.0, 2.0])
+    assert isinstance(x, numpy_backend.array_type)
+    assert isinstance(numpy_backend.as_array([1.0, 2.0]), np.ndarray)
+    assert numpy_backend.tolist(x) == [1.0, 2.0]
+    assert numpy_backend.view(x, (2, 1)).shape == (2, 1)
+    assert numpy_backend.detach(x) is x
+    assert numpy_backend.to(x, dtype=np.float32).dtype == np.float32
+    assert numpy_backend.to_numpy(x) is x
+    assert numpy_backend.concatenate((x, x)).shape == (4,)
+    assert numpy_backend.broadcast_cat((x, np.ones((3, 2)))).shape == (3, 4)
+    assert numpy_backend.tolist(numpy_backend.ste_clip(x, 1.5, 1.8)) == [1.5, 1.8]
+    assert numpy_backend.any(x > 1.5) and not numpy_backend.all(x > 1.5)
+    assert np.allclose(numpy_backend.exp(numpy_backend.log(x)), x)
+    assert numpy_backend.sum(x) == 3.0
+
+
+def test_stack_keeps_the_structure_of_the_results():
+    # numpy has no vmap, repeated calls are stacked by hand
+    import numpy as np
+    from caskade.backend import _stack
+
+    results = [
+        {"y": np.ones(2) * i, "pair": (np.array(i), [np.zeros(1)]), "none": None} for i in range(3)
+    ]
+    stacked = _stack(results)
+    assert stacked["y"].shape == (3, 2)
+    assert stacked["pair"][0].tolist() == [0, 1, 2] and stacked["pair"][1][0].shape == (3, 1)
+    assert stacked["none"] is None
+    assert _stack([None, None]) is None

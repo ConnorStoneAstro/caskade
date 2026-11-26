@@ -1,4 +1,7 @@
-from caskade import Module, Param, forward, backend
+from .backend import backend
+from .decorators import forward
+from .module import Module
+from .param import Param
 
 __all__ = ("test",)
 
@@ -37,7 +40,8 @@ def _test_full_integration():
 
     b_value = backend.make_array(3.0)
     res = main1.testfun(1.0, params=[b_value])
-    assert res.item() == 13.0
+    if res.item() != 13.0:
+        raise RuntimeError(f"caskade integration test failed: expected 13.0, got {res.item()}")
 
 
 def test():

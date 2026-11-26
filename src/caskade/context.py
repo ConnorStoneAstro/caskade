@@ -1,27 +1,26 @@
+from .base import MemoKind
 from .module import Module
 from .param import Param
-from .errors import ActiveStateError
 
 
 class ActiveContext:
     """
-    Context manager to activate a module for a simulation.
+    Context manager to run a simulation from a module.
 
-    Only inside an ``ActiveContext`` is it possible to fill or clear the
-    dynamic and live parameters. On entry, the module is marked as active
-    (or its current parameter state is saved if already active). On exit,
-    the state is restored.
+    Only inside an ``ActiveContext`` is it possible to fill the params with the
+    values of a simulation. On exit the values are cleared again.
+
+    A simulation may be started while another one is running, from the same
+    module or from one above it. The values, the pointer values and the
+    ``@active_cache`` results of the outer simulation are then set aside for
+    as long as the inner one runs, and are put back when it has finished. Any
+    value that the inner simulation is not given is the one the outer
+    simulation holds.
 
     Parameters
     ----------
     module : Module
-        The module to activate for the duration of the context.
-
-    Raises
-    ------
-    ActiveStateError
-        If the module is already running a simulation (``module.online``
-        is ``True``).
+        The module to run the simulation from.
 
     Examples
     --------
@@ -36,23 +35,35 @@ class ActiveContext:
         self.module = module
 
     def __enter__(self):
-        if self.module.online:
-            raise ActiveStateError(f"Module '{self.module.name}' is already running a simulation")
-        if self.module.active:
-            self.state = list(p._value for p in self.module.all_params)
-        else:
-            self.state = None
-            self.module.add_memo("active")
-        self.module.add_memo(f"{self.module.name}_active")
+        module = self.module
+        # Below an online module every node is marked for the run already
+        self.send = not module.online
+        self.nested = module.active
+        if self.nested:
+            self.state = [p._active_value for p in module.all_params]
+            for p in module.pointer_params:
+                p._active_value = None  # worked out from the values of the outer simulation
+            self.caches = [(m, m._active_cache) for m in module._modules if m._active_cache]
+            for m, _ in self.caches:
+                m._active_cache = {}
+        if self.send:
+            module.add_memo(MemoKind.RUN)
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.module.clear_state()
-        self.module.remove_memo(f"{self.module.name}_active")
-        if self.state is not None:
-            for p, s in zip(self.module.all_params, self.state):
-                p._value = s
-        else:
-            self.module.remove_memo("active")
+        module = self.module
+        if not self.nested:
+            module.clear_state()
+            module.remove_memo(MemoKind.RUN)  # this also drops the cached results
+            return
+        for p, s in zip(module.all_params, self.state):
+            p._active_value = s
+        if self.send:
+            module.remove_memo(MemoKind.RUN)
+        for m in module._modules:
+            if m._active_cache:
+                m._active_cache = {}
+        for m, cache in self.caches:
+            m._active_cache = cache
 
 
 class ValidContext:
@@ -131,20 +142,20 @@ class OverrideParam:
     @staticmethod
     def _collect_old_values(param):
         # Recursively collect the old values for any pointer affected by the override
-        old_values = [(param, param._value)]
+        old_values = [(param, param._active_value)]
         for node in param.parents:
             if isinstance(node, Param) and node.pointer:
                 old_values += OverrideParam._collect_old_values(node)
-                node._value = None
+                node._active_value = None
         return old_values
 
     def __enter__(self):
         # Store the old value(s) of the parameter and any pointers that may need updating
         self.old_values = OverrideParam._collect_old_values(self.param)
         # Set the new value
-        self.param._value = self.value
+        self.param._active_value = self.value
 
     def __exit__(self, exc_type, exc_value, traceback):
         # Reset the param and pointer values as they were before the override
         for node, value in self.old_values:
-            node._value = value
+            node._active_value = value

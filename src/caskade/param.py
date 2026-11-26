@@ -1,13 +1,15 @@
-from typing import Optional, Union, Any, Iterable
+from contextlib import contextmanager
+from typing import Callable, Iterator, Optional, Union, Any, Iterable
 from warnings import warn
 from math import prod
+from numbers import Integral
 
 from numpy import ndarray
 import numpy as np
 
 from .backend import backend, ArrayLike
-from .base import Node
-from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError
+from .base import Node, NodeType, _create_rows
+from .errors import ParamConfigurationError, ParamTypeError, ActiveStateError, GraphError
 from .warnings import InvalidValueWarning
 
 
@@ -52,6 +54,45 @@ def valid_shape(batch_shape, shape, value_shape):
 
 
 NULL = object()
+
+
+class _ParamValue:
+    """The function of a pointer that takes the value of another ``Param``.
+
+    Called with the pointer ``Param``, it returns the value of the child linked
+    under ``key``. This is a class at the top level of the module, rather than a
+    function made inside ``Param.to_pointer``, so that a graph with pointers can
+    be pickled.
+    """
+
+    def __init__(self, key: str):
+        self.key = key
+
+    def __call__(self, p: "Param"):
+        target: Any = p[self.key]  # the ``Param`` being pointed to
+        return target.value
+
+
+#: The params whose ``value`` has been read, while someone is asking
+#: (``_record_reads``). ``None`` the rest of the time.
+_READS: Optional[set["Param"]] = None
+
+
+@contextmanager
+def _record_reads() -> Iterator[set["Param"]]:
+    """Collect the params whose ``value`` is read while the block runs. This is
+    how a result kept in ``Module.static_cache`` knows which params it was
+    made from."""
+    global _READS
+    outer = _READS
+    reads: set[Param] = set()
+    _READS = reads
+    try:
+        yield reads
+    finally:
+        _READS = outer
+        if outer is not None:  # what an inner block read, the outer one read as well
+            outer.update(reads)
 
 
 class Param(Node):
@@ -113,22 +154,24 @@ class Param(Node):
         value: Optional[Union[ArrayLike, float, int]] = None,
         shape: Optional[tuple[int, ...]] = None,
         cyclic: bool = False,
-        valid: Optional[tuple[Union[ArrayLike, float, int, None]]] = None,
+        valid: Optional[tuple[Union[ArrayLike, float, int, None], ...]] = None,
         units: Optional[str] = None,
         dynamic: Optional[bool] = None,
         group: int = 0,
-        batch_shape: Optional[tuple[int]] = None,
+        batch_shape: Optional[tuple[int, ...]] = None,
         dtype: Optional[Any] = None,
         device: Optional[Any] = None,
         **kwargs,
     ):
-        self._node_type = "node"
+        self._node_type = NodeType.NODE
         super().__init__(name=name, **kwargs)
-        self._shape = None
-        self._batch_shape = None
-        self._value = None
-        self.__value = None
-        self._valid = (None, None)
+        self._shape: Optional[tuple[Optional[int], ...]] = None
+        self._batch_shape: Optional[tuple[int, ...]] = None
+        # The value used while a simulation is running
+        self._active_value: Any = None
+        # The value held between simulations, or the function of a pointer
+        self._stored_value: Any = None
+        self._valid: tuple[Optional[ArrayLike], Optional[ArrayLike]] = (None, None)
         self._group = 0
         self._dtype = dtype
         self._device = device
@@ -139,7 +182,10 @@ class Param(Node):
             self.to_dynamic()
         else:
             self.to_static()
-        self.value = value
+        if isinstance(value, Param) or callable(value):
+            self.to_pointer(value, clear_links=False)
+        else:
+            self.value = value
         self.group = group
         self.valid = valid
         self.units = units
@@ -155,7 +201,7 @@ class Param(Node):
         bool
             ``True`` if the parameter's value is provided at runtime.
         """
-        return "dynamic" in self.node_type
+        return self._node_type is NodeType.DYNAMIC
 
     @property
     def pointer(self) -> bool:
@@ -167,7 +213,7 @@ class Param(Node):
             ``True`` if the parameter points to another ``Param`` or a
             callable that is evaluated at runtime.
         """
-        return "pointer" in self.node_type
+        return self._node_type is NodeType.POINTER
 
     @property
     def static(self) -> bool:
@@ -179,7 +225,7 @@ class Param(Node):
             ``True`` if the parameter holds a fixed value that does not
             change at runtime.
         """
-        return "static" in self.node_type
+        return self._node_type is NodeType.STATIC
 
     @property
     def graphviz_style(self):
@@ -198,7 +244,7 @@ class Param(Node):
                 "shape": "box",
             }
         else:
-            if self.__value is None:
+            if self._stored_value is None:
                 return {
                     "style": "filled",
                     "color": "black",
@@ -218,16 +264,19 @@ class Param(Node):
 
         Returns
         -------
-        str
-            One of ``"static"``, ``"dynamic"``, or ``"pointer"``.
+        NodeType
+            One of ``NodeType.STATIC``, ``NodeType.DYNAMIC``, or
+            ``NodeType.POINTER``. These are equal to the strings ``"static"``,
+            ``"dynamic"`` and ``"pointer"``.
         """
         return self._node_type
 
     @node_type.setter
     def node_type(self, value):
-        pre_type = self.node_type
+        value = NodeType(value)  # a string that is not one of the node types is an error
+        pre_type = self._node_type
         self._node_type = value
-        if pre_type != self.node_type:
+        if pre_type is not value:
             self.update_graph()
 
     def to_dynamic(self, value=NULL):
@@ -262,10 +311,10 @@ class Param(Node):
         if value is NULL:
             if self.pointer:
                 try:
-                    self.__value = self.__value(self)
-                except:
-                    self.__value = None
-            self.node_type = "dynamic"
+                    self._stored_value = self._stored_value(self)
+                except Exception:  # pointer cannot be evaluated yet, so no value to keep
+                    self._stored_value = None
+            self.node_type = NodeType.DYNAMIC
             return
 
         if value is not None:
@@ -278,8 +327,8 @@ class Param(Node):
                 raise ParamConfigurationError(
                     f"Value shape {value.shape} does not match param shape {shape}! Cannot update value. ({self.name})"
                 )
-        self.__value = value
-        self.node_type = "dynamic"
+        self._stored_value = value
+        self.node_type = NodeType.DYNAMIC
         self.is_valid()
 
     def to_static(self, value=NULL):
@@ -314,10 +363,10 @@ class Param(Node):
         if value is NULL:
             if self.pointer:
                 try:
-                    self.__value = self.__value(self)
-                except:
-                    self.__value = None
-            self.node_type = "static"
+                    self._stored_value = self._stored_value(self)
+                except Exception:  # pointer cannot be evaluated yet, so no value to keep
+                    self._stored_value = None
+            self.node_type = NodeType.STATIC
             return
 
         if value is not None:
@@ -331,11 +380,16 @@ class Param(Node):
                     f"Value shape {value.shape} does not match param shape {shape}! Cannot update value. ({self.name})"
                 )
 
-        self.__value = value
-        self.node_type = "static"
+        self._stored_value = value
+        self.node_type = NodeType.STATIC
         self.is_valid()
 
-    def to_pointer(self, value, link=()):
+    def to_pointer(
+        self,
+        value: "Param" | Callable | None,
+        link: Node | tuple[Node, ...] = (),
+        clear_links: bool = True,
+    ):
         """Change this parameter to a pointer parameter.
 
         The parameter's value will be computed at runtime by dereferencing
@@ -349,6 +403,9 @@ class Param(Node):
         link : Node or tuple of Node, optional
             Additional nodes to link into the graph when creating the
             pointer. Defaults to an empty tuple.
+        clear_links : bool, optional
+            Whether to clear existing links before setting the pointer.
+            Defaults to True.
 
         Raises
         ------
@@ -361,21 +418,23 @@ class Param(Node):
         if self.active:
             raise ActiveStateError(f"Cannot set parameter {self.name} to pointer while active")
 
+        if clear_links:
+            self.unlink()
         if isinstance(value, Param):
             self.link(value)
-            p_name = value.name
-            value = lambda p: p[p_name].value
+            value = _ParamValue(value.name)
         elif value is not None and not callable(value):
             raise ParamTypeError(f"Pointer function must be a Param or callable ({self.name})")
-        elif hasattr(value, "params"):
+        elif callable(value) and hasattr(value, "params"):
             self.link(value.params)
+
         self.link(link)
-        self.__value = value
+        self._stored_value = value
         self._shape = None
-        self.node_type = "pointer"
+        self.node_type = NodeType.POINTER
 
     @property
-    def shape(self) -> tuple[int, ...]:
+    def shape(self) -> tuple[Optional[int], ...]:
         """The event (non-batch) shape of the parameter value.
 
         Wildcard dimensions (``None``) in the declared shape are resolved
@@ -387,7 +446,7 @@ class Param(Node):
         tuple of int
             The resolved shape of the parameter.
         """
-        value = self.value
+        value = self._peek()
         # 1. Handle cases where no shape template is defined
         if self._shape is None:
             return tuple(value.shape) if value is not None else ()
@@ -410,13 +469,13 @@ class Param(Node):
         if shape is None:
             self._shape = None
             return
-        value = self.value
+        value = self._peek()
         try:
             shape = tuple(shape)
         except TypeError:
             raise ParamConfigurationError(
                 f"Param shape must be iterable of ints/None, not: {type(shape)}. ({self.name})"
-            )
+            ) from None
         if value is None or valid_shape(self._batch_shape, shape, tuple(value.shape)):
             self._shape = shape
             return
@@ -452,15 +511,15 @@ class Param(Node):
         if self._batch_shape is not None:
             return self._batch_shape
         try:
-            value = self.value
-        except:
+            value = self._peek()
+        except Exception:  # pointer cannot be evaluated yet
             value = None
         if value is None:
             return ()
         return tuple(value.shape[: len(value.shape) - len(self.shape)])
 
     @batch_shape.setter
-    def batch_shape(self, batch_shape: tuple[int]):
+    def batch_shape(self, batch_shape: tuple[int, ...]):
         if self.pointer:
             raise ParamTypeError(
                 f"Cannot set batch_shape of parameter {self.name} with node type 'pointer'"
@@ -474,7 +533,10 @@ class Param(Node):
         Parameters that share the same group index are collected together
         into a single ``params`` object when calling a simulator's
         ``@forward`` method, as well as when using ``get_values`` or
-        ``set_values``.
+        ``set_values``. The dynamic params are split by the groups that the
+        dynamic params are in, and the static params (``static_params``,
+        ``get_values(dynamic=False)``) by the groups that the static params
+        are in.
 
         Returns
         -------
@@ -485,14 +547,15 @@ class Param(Node):
 
     @group.setter
     def group(self, group: int):
-        assert isinstance(group, int), f"Group must be an integer ({self.name})"
+        if isinstance(group, bool) or not isinstance(group, Integral):
+            raise ParamConfigurationError(f"Group must be an integer ({self.name})")
         pregroup = self._group
-        self._group = group
+        self._group = int(group)  # a plain int, also from a numpy integer
         if pregroup != self._group:
             self.update_graph()
 
     @property
-    def dtype(self) -> Optional[str]:
+    def dtype(self) -> Optional[Any]:
         """The data type of the parameter value.
 
         If no explicit dtype was set, the dtype is inferred from the
@@ -505,13 +568,15 @@ class Param(Node):
         """
         if self._dtype is None:
             try:
-                return self.value.dtype
+                value = self._peek()
+                if value is not None:
+                    return value.dtype
             except AttributeError:
                 pass
         return self._dtype
 
     @property
-    def device(self) -> Optional[str]:
+    def device(self) -> Optional[Any]:
         """The device on which the parameter value resides.
 
         If no explicit device was set, the device is inferred from the
@@ -524,7 +589,9 @@ class Param(Node):
         """
         if self._device is None:
             try:
-                return self.value.device
+                value = self._peek()
+                if value is not None:
+                    return value.device
             except AttributeError:
                 pass
         return self._device
@@ -542,21 +609,23 @@ class Param(Node):
         ArrayLike or None
             The parameter value, or ``None`` if no value has been set.
         """
-        if self._value is not None:
-            return self._value
+        if _READS is not None:
+            _READS.add(self)
+        if self._active_value is not None:
+            return self._active_value
         if self.pointer:
-            value = self.__value(self)
+            value = self._stored_value(self)
             if self.active:
-                self._value = value
+                self._active_value = value
             return value
-        return self.__value
+        return self._stored_value
 
     @value.setter
     def value(self, value):
         # While active no value can be set
         if self.active:
-            if self.static and self.__value is None:  # static value set live in sim
-                self._value = value
+            if self.static and self._stored_value is None:  # static value set live in sim
+                self._active_value = value
                 return
             raise ActiveStateError(f"Cannot set value of parameter {self.name} while active")
 
@@ -566,6 +635,18 @@ class Param(Node):
             self.to_dynamic(value)
         else:
             self.to_static(value)
+
+    def _peek(self) -> Union[ArrayLike, None]:
+        """The current value, for ``caskade`` to look at its shape or type. It
+        does not count as a use of the value (see ``_record_reads``)."""
+        if self._active_value is not None:
+            return self._active_value
+        if self.pointer:
+            value = self._stored_value(self)
+            if self.active:
+                self._active_value = value
+            return value
+        return self._stored_value
 
     @property
     def npvalue(self) -> ndarray:
@@ -598,8 +679,8 @@ class Param(Node):
         else:
             dtype = self.dtype
         super().to(device=device, dtype=dtype)
-        if not self.pointer and self.__value is not None:
-            self.__value = backend.to(self.__value, device=device, dtype=dtype)
+        if not self.pointer and self._stored_value is not None:
+            self._stored_value = backend.to(self._stored_value, device=device, dtype=dtype)
         valid = self.valid
         if valid[0] is not None:
             valid = (backend.to(valid[0], device=device, dtype=dtype), valid[1])
@@ -628,94 +709,127 @@ class Param(Node):
         self._cyclic = cyclic
         self.valid = self.valid
 
-    def _save_state_hdf5(self, h5group, appendable: bool = False, _done_save: set = None):
-        super()._save_state_hdf5(h5group, appendable=appendable, _done_save=_done_save)
-        if "value" not in self._h5group:
-            try:
-                value = self.value
-            except:
-                value = None
+    # Saving and loading
+    #################################################################
+    _hdf5_own = ("value",)
 
-            if value is None:
-                value = "None"
-            elif appendable:
-                value = backend.to_numpy(value.reshape(1, *value.shape))
-            else:
-                value = backend.to_numpy(value)
-            if appendable:
-                self._h5group.create_dataset(
-                    "value",
-                    data=value,
-                    chunks=False if isinstance(value, str) else True,
-                    maxshape=None if isinstance(value, str) else (None,) + tuple(value.shape[1:]),
-                    compression=None if isinstance(value, str) else "gzip",
-                )
-            else:
-                self._h5group.create_dataset(
-                    "value",
-                    data=value,
-                )
-            self._h5group["value"].attrs["node_type"] = self.node_type
-            self._h5group["value"].attrs["appendable"] = appendable
-            self._h5group["value"].attrs["cyclic"] = self.cyclic
-            if self.valid[0] is not None:
-                self._h5group["value"].attrs["valid_left"] = backend.to_numpy(self.valid[0])
-            if self.valid[1] is not None:
-                self._h5group["value"].attrs["valid_right"] = backend.to_numpy(self.valid[1])
-            self._h5group["value"].attrs["units"] = self.units if self.units is not None else "None"
+    def _value_or_none(self):
+        try:
+            return self.value
+        except Exception:  # pointer cannot be evaluated yet
+            return None
 
-    def _check_append_state_hdf5(self, h5group):
-        super()._check_append_state_hdf5(h5group)
-        if not h5group["value"].attrs["appendable"]:
+    def _save_hdf5(self, h5group, appendable: bool):
+        super()._save_hdf5(h5group, appendable)
+        value = self._value_or_none()
+        if value is None:
+            dataset = h5group.create_dataset("value", data="None")
+        elif appendable:
+            dataset = _create_rows(h5group, "value", backend.to_numpy(value))
+        else:
+            dataset = h5group.create_dataset("value", data=backend.to_numpy(value))
+        attrs = dataset.attrs
+        # a plain string in the file, as before ``NodeType`` existed
+        attrs["node_type"] = self.node_type.value
+        attrs["appendable"] = appendable
+        attrs["cyclic"] = self.cyclic
+        if self.valid[0] is not None:
+            attrs["valid_left"] = backend.to_numpy(self.valid[0])
+        if self.valid[1] is not None:
+            attrs["valid_right"] = backend.to_numpy(self.valid[1])
+        attrs["units"] = self.units if self.units is not None else "None"
+
+    def _append_hdf5(self, h5group):
+        dataset = h5group["value"]
+        blank = dataset.dtype.kind in "SO"  # the text "None", no state so far has a value
+        if not (dataset.attrs["appendable"] if blank else dataset.maxshape[:1] == (None,)):
             raise IOError(
                 f"{self.name} is not appendable. Need to save the HDF5 file with `appendable=True`."
             )
+        value = self._value_or_none()
+        if value is None:
+            if blank:
+                return None
+        else:
+            value = backend.to_numpy(value)
+            if not blank and tuple(value.shape) != dataset.shape[1:]:
+                raise GraphError(
+                    f"The value of param '{self.name}' has shape {tuple(value.shape)}, the "
+                    f"file holds states of shape {dataset.shape[1:]} for it at '{h5group.name}'."
+                )
 
-    def _append_state_cleanup(self):
-        super()._append_state_cleanup()
-        del self.appended
+        def write(samples: Optional[int]):
+            if not blank:
+                # without a value the new row stays blank
+                dataset.resize(dataset.shape[0] + 1 if samples is None else samples, axis=0)
+                if value is not None:
+                    dataset[-1] = value
+                return
+            if samples is None:
+                raise IOError(
+                    f"Param '{self.name}' had no value when the file was saved by an older "
+                    "version of caskade, which kept no count of the states. Its value "
+                    "cannot be appended, save a new file."
+                )
+            # the first value of this param, the states before it are blank rows
+            attrs = dict(dataset.attrs)
+            del h5group["value"]
+            _create_rows(h5group, "value", value, samples).attrs.update(attrs)
 
-    def _append_state_hdf5(self, h5group):
-        super()._append_state_hdf5(h5group)
-        if not hasattr(self, "appended"):
-            self.appended = True
-            try:
-                value = self.value
-            except:
-                value = None
-            if value is not None:
-                h5group["value"].resize((h5group["value"].shape[0] + 1,) + h5group["value"].shape[1:])
-                h5group["value"][-1] = self.value
+        return write
 
-    def _load_state_hdf5(self, h5group, index: int = -1, _done_load: set = None):
-        super()._load_state_hdf5(h5group, index=index, _done_load=_done_load)
-        self.cyclic = False
-        self.valid = None
+    def _plan_value(self, node_type: str, value, where: str):
+        """Check that ``value`` (a numpy array or ``None``) read from ``where``
+        in a file fits this param, and return the function that takes it on
+        with the type (``"static"`` or ``"dynamic"``) it was saved with, or
+        ``None`` if it was saved as a pointer (so its value was worked out
+        from other params). Not to be called on a param that is now a pointer,
+        which keeps being one."""
+        if value is not None and not valid_shape(
+            self._batch_shape, self._shape, tuple(value.shape)
+        ):
+            raise GraphError(
+                f"The value saved for param '{self.name}' at '{where}' has shape "
+                f"{tuple(value.shape)}, which does not fit the shape {self._shape} of the param"
+                + (f" with batch shape {self._batch_shape}." if self._batch_shape else ".")
+            )
+        # Matched as text within the saved string: files written by old versions
+        # of caskade can hold names that are no longer node types ("dynamic value")
+        if "static" in node_type:
+            return lambda: self.to_static(value)
+        if "dynamic" in node_type:
+            return lambda: self.to_dynamic(value)
+        return None
+
+    def _read_hdf5(self, h5group, index: int):
+        node_state = super()._read_hdf5(h5group, index)
+        dataset = h5group["value"]
+        attrs = dict(dataset.attrs)
+        value_state = None
         if not self.pointer:
-            if isinstance(h5group["value"][()], bytes):
-                assert h5group["value"][()] == b"None"
+            if dataset.dtype.kind in "SO":  # the text "None"
+                if dataset.shape != () or dataset[()] != b"None":
+                    raise ValueError(f"Unrecognized value saved for param {self.name}")
                 value = None
-            elif h5group["value"].attrs["appendable"]:
-                value = h5group["value"][index]
+            elif attrs["appendable"]:
+                value = dataset[index]
             else:
-                value = h5group["value"][()]
+                value = dataset[()]
+            value_state = self._plan_value(attrs["node_type"], value, h5group.name)
 
-            if "static" in h5group["value"].attrs["node_type"]:
-                self.to_static(value)
-            elif "dynamic" in h5group["value"].attrs["node_type"]:
-                self.to_dynamic(value)
-        self.units = h5group["value"].attrs["units"]
-        if "valid_left" in h5group["value"].attrs:
-            self.valid = (
-                h5group["value"].attrs["valid_left"],
-                self.valid[1],
-            )
-        if "valid_right" in h5group["value"].attrs:
-            self.valid = (
-                self.valid[0],
-                h5group["value"].attrs["valid_right"],
-            )
-        self.cyclic = h5group["value"].attrs["cyclic"]
+        def take_on():
+            if node_state is not None:
+                node_state()
+            self.cyclic = False
+            self.valid = None
+            if value_state is not None:
+                value_state()
+            units = attrs["units"]
+            self.units = None if units == "None" else units  # no units are saved as "None"
+            self.valid = (attrs.get("valid_left"), attrs.get("valid_right"))
+            self.cyclic = attrs["cyclic"]
+
+        return take_on
 
     @property
     def valid(self) -> tuple[Optional[ArrayLike], Optional[ArrayLike]]:
@@ -730,7 +844,7 @@ class Param(Node):
         return self._valid
 
     @valid.setter
-    def valid(self, valid: tuple[Union[ArrayLike, float, int, None]]):
+    def valid(self, valid: Optional[tuple[Union[ArrayLike, float, int, None], ...]]):
         if valid is None:
             valid = (None, None)
 
@@ -741,34 +855,17 @@ class Param(Node):
         if self.cyclic and (valid[0] is None or valid[1] is None):
             raise ParamConfigurationError(f"valid must be set for cyclic parameter ({self.name})")
 
-        if valid[0] is None and valid[1] is None:
-            self.to_valid = self._to_valid_base
-            self.from_valid = self._from_valid_base
-        elif valid[0] is None:
-            self.to_valid = self._to_valid_rightvalid
-            self.from_valid = self._from_valid_rightvalid
-            valid = (None, backend.as_array(valid[1], dtype=self.dtype, device=self.device))
-        elif valid[1] is None:
-            self.to_valid = self._to_valid_leftvalid
-            self.from_valid = self._from_valid_leftvalid
-            valid = (backend.as_array(valid[0], dtype=self.dtype, device=self.device), None)
-        else:
-            if self.cyclic:
-                self.to_valid = self._to_valid_cyclic
-                self.from_valid = self._from_valid_cyclic
-            else:
-                self.to_valid = self._to_valid_fullvalid
-                self.from_valid = self._from_valid_fullvalid
-            valid = (
-                backend.as_array(valid[0], dtype=self.dtype, device=self.device),
-                backend.as_array(valid[1], dtype=self.dtype, device=self.device),
+        left, right = valid
+        if left is not None:
+            left = backend.as_array(left, dtype=self.dtype, device=self.device)
+        if right is not None:
+            right = backend.as_array(right, dtype=self.dtype, device=self.device)
+        if left is not None and right is not None and backend.any(left >= right):
+            raise ParamConfigurationError(
+                f"Valid range (valid[1] - valid[0]) must be strictly positive ({self.name})"
             )
-            if backend.any(valid[0] >= valid[1]):
-                raise ParamConfigurationError(
-                    f"Valid range (valid[1] - valid[0]) must be strictly positive ({self.name})"
-                )
 
-        self._valid = valid
+        self._valid = (left, right)
         self.is_valid()
 
     def is_valid(self, value=None) -> bool:
@@ -805,38 +902,61 @@ class Param(Node):
             return False
         return True
 
-    def _to_valid_base(self, value: ArrayLike) -> ArrayLike:
+    def to_valid(self, value: ArrayLike) -> ArrayLike:
+        """Map a value from the parameter's ``valid`` range to the unconstrained
+        range ``(-inf, inf)``.
+
+        A range bounded on one side is mapped with a logarithm. A cyclic
+        parameter is wrapped into its range. A range bounded on both sides is
+        left unchanged here and enforced by ``from_valid``.
+
+        Parameters
+        ----------
+        value : ArrayLike
+            A value in the valid range of the parameter.
+
+        Returns
+        -------
+        ArrayLike
+            The corresponding unconstrained value.
+        """
+        left, right = self._valid
+        if left is None and right is None:
+            return value
+        if left is None:
+            return backend.log(right - value)
+        if right is None:
+            return backend.log(value - left)
+        if self.cyclic:
+            return ((value - left) % (right - left)) + left
         return value
 
-    def _to_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        return value
+    def from_valid(self, value: ArrayLike) -> ArrayLike:
+        """Map an unconstrained value back into the parameter's ``valid`` range.
 
-    def _to_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
-        return ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]
+        This is the inverse of ``to_valid``. A value outside a range bounded on
+        both sides is clipped to it (preserving gradients).
 
-    def _to_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
-        return backend.log(value - self.valid[0])
+        Parameters
+        ----------
+        value : ArrayLike
+            An unconstrained value.
 
-    def _to_valid_rightvalid(self, value: ArrayLike) -> ArrayLike:
-        return backend.log(self.valid[1] - value)
-
-    def _from_valid_base(self, value: ArrayLike) -> ArrayLike:
-        return value
-
-    def _from_valid_fullvalid(self, value: ArrayLike) -> ArrayLike:
-        return backend.ste_clip(value, self.valid[0], self.valid[1])
-
-    def _from_valid_cyclic(self, value: ArrayLike) -> ArrayLike:
-        value = ((value - self.valid[0]) % (self.valid[1] - self.valid[0])) + self.valid[0]
-        return value
-
-    def _from_valid_leftvalid(self, value: ArrayLike) -> ArrayLike:
-        value = backend.exp(value) + self.valid[0]
-        return value
-
-    def _from_valid_rightvalid(self, value: ArrayLike) -> ArrayLike:
-        value = self.valid[1] - backend.exp(value)
-        return value
+        Returns
+        -------
+        ArrayLike
+            The corresponding value in the valid range of the parameter.
+        """
+        left, right = self._valid
+        if left is None and right is None:
+            return value
+        if left is None:
+            return right - backend.exp(value)
+        if right is None:
+            return backend.exp(value) + left
+        if self.cyclic:
+            return ((value - left) % (right - left)) + left
+        return backend.ste_clip(value, left, right)
 
     @property
     def node_str(self) -> str:
@@ -844,8 +964,8 @@ class Param(Node):
         Returns a string representation of the node for graph visualization.
         """
         try:
-            value = self.value
-        except:
+            value = self._peek()
+        except Exception:  # pointer cannot be evaluated yet
             value = None
         if value is not None:
             value = backend.to_numpy(value)

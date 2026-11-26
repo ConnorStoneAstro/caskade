@@ -1,18 +1,110 @@
 import os
-from typing import Optional, Union, Any
+import sys
+import enum
+import json
+from contextlib import contextmanager
+from math import prod
+from typing import TYPE_CHECKING, NamedTuple, Optional, Union, Any
 from warnings import warn
 from operator import attrgetter
+from threading import get_ident
+from types import FrameType
 import keyword
+import uuid
 
 try:
     import h5py
-except ImportError:
+except ImportError:  # h5py is an optional dependency
     h5py = None
 
-from .errors import GraphError, NodeConfigurationError, LinkToAttributeError
-from .warnings import SaveStateWarning
+if TYPE_CHECKING:
+    import graphviz
 
-__all__ = ("Node",)
+import numpy as np
+
+from .backend import backend
+from .errors import GraphError, NodeConfigurationError, LinkToAttributeError
+from .warnings import LinkToAttributeWarning, SaveStateWarning
+
+__all__ = ("Node", "NodeType", "Memo", "MemoKind", "MemoNote")
+
+
+#: The nodes that a call to ``Node.to`` in progress has reached already, so that
+#: a node which many paths lead to is moved once. Held for each thread that is
+#: making such a call (the way ``reprlib.recursive_repr`` keeps track).
+_MOVED: dict[int, set["Node"]] = {}
+
+
+_MISSING = object()
+
+
+def _user_stacklevel() -> int:
+    """The ``stacklevel`` for ``warn`` that points a warning at the line outside
+    ``caskade`` which led to it, however many calls inside ``caskade`` lie
+    between that line and the function that warns."""
+    level = 2  # the caller of the function that warns
+    frame: Optional[FrameType] = sys._getframe(2)
+    while frame is not None and frame.f_globals.get("__name__", "").split(".")[0] == "caskade":
+        frame = frame.f_back
+        level += 1
+    return level
+
+
+def _require_h5py():
+    """Raise a helpful error if the optional ``h5py`` dependency is missing."""
+    if h5py is None:
+        raise ImportError(
+            "Saving and loading the state of a caskade graph requires the optional "
+            "'h5py' package. Install it with `pip install h5py`."
+        )
+
+
+# Names that ``caskade`` keeps for itself among the attributes of the group of
+# the node that was saved
+_H5_FORMAT = "caskade_format"  # 2 since the count of samples is kept, files without it are 1
+_H5_LAYOUT = "caskade_layout"  # "graph" (a group for every node) or "fast" (two arrays)
+_H5_APPENDABLE = "caskade_appendable"
+_H5_SAMPLES = "caskade_samples"  # number of states an appendable file holds
+_H5_RESERVED = (_H5_FORMAT, _H5_LAYOUT, _H5_APPENDABLE, _H5_SAMPLES)
+# A file up to this size is read into memory in one go when it is loaded, a
+# larger one (a long chain) is read piece by piece
+_H5_CORE_DRIVER_LIMIT = 2**28
+
+
+@contextmanager
+def _open_hdf5(target, mode: str, action: str, **kwargs):
+    """The HDF5 file (or group) to work in. A path is opened here and closed
+    again afterwards, anything else is taken to be an open file or group and is
+    left open for its owner."""
+    if not isinstance(target, (str, os.PathLike)):
+        yield target
+        return
+    path = os.fspath(target)
+    if not path.endswith((".h5", ".hdf5")):
+        raise NotImplementedError(
+            f"Only HDF5 files ('.h5') are currently supported for {action} state"
+        )
+    _require_h5py()
+    with h5py.File(path, mode, **kwargs) as h5file:
+        yield h5file
+
+
+def _create_rows(h5group, name: str, value, samples: int = 1):
+    """Create the dataset for a value that more states will be appended to.
+    The first dimension counts the states, ``value`` becomes the last of
+    ``samples`` rows and any rows before it are left blank (NaN for floats)."""
+    shape = tuple(value.shape)
+    dataset = h5group.create_dataset(
+        name,
+        shape=(samples,) + shape,
+        dtype=value.dtype,
+        maxshape=(None,) + shape,
+        chunks=True,
+        compression="gzip",
+        fillvalue=float("nan") if value.dtype.kind in "fc" else None,
+    )
+    dataset[samples - 1] = value
+    return dataset
 
 
 def attrsetter(obj, attr, value):
@@ -59,6 +151,40 @@ def is_valid_name(name):
     return name.isidentifier() and not keyword.iskeyword(name)
 
 
+class NodeType(enum.StrEnum):
+    """The kind of a node, as shown in printouts of the graph and saved to file.
+
+    The members are strings, so comparing with or formatting as text works
+    as it would for the plain string: ``node.node_type == "module"`` is
+    ``True`` for a ``Module`` and ``f"{node.node_type}"`` gives ``"module"``.
+    """
+
+    NODE = "node"
+    MODULE = "module"
+    STATIC = "static"  #: a ``Param`` with a fixed value
+    DYNAMIC = "dynamic"  #: a ``Param`` whose value is given when the simulation is called
+    POINTER = "pointer"  #: a ``Param`` whose value is worked out from other nodes
+    NTUPLE = "ntuple"
+    NLIST = "nlist"
+    NDICT = "ndict"
+
+
+class MemoKind(enum.IntEnum):
+    """What a memo tells the nodes that hold it."""
+
+    RUN = 1  #: a simulation is running from the owner (an ``ActiveContext`` is open)
+    USER = 2  #: a message from user code, ``caskade`` never acts on these
+
+
+class MemoNote(NamedTuple):
+    """A memo as it is held by one of the nodes that received it."""
+
+    kind: MemoKind
+    owner: "Node"  #: the node the memo was sent from
+    depth: int = 0  #: fewest hierarchical links on any path from the owner to the holder
+    label: str = ""  #: the text of a ``USER`` memo
+
+
 class meta:
     """
     Container for meta information attached to a ``Node`` object.
@@ -99,7 +225,7 @@ class Node:
     def __init__(
         self,
         name: Optional[str] = None,
-        link: Optional[Union["Node", tuple["Node"]]] = None,
+        link: Optional[Union["Node", tuple["Node", ...]]] = None,
         description: str = "",
     ):
         """
@@ -126,14 +252,19 @@ class Node:
                 f"{self.__class__.__name__} name is invalid: '{name}'. Must be a valid Python identifier and not a reserved keyword."
             )
         self._name = name
-        self._children = {}
-        self._parents = set()
-        self._subgraphs = set()
-        self._memos = set()
-        self.node_type = "node"
+        self._unique_id = f"{name}_{uuid.uuid4().hex}"
+        self._children: dict[str, Node] = {}
+        self._parents: set[Node] = set()
+        self._subgraphs: set[Node] = set()
+        # Names that held a child until a plain value was assigned over it
+        self._freed: set[str] = set()
+        self._memos: dict[MemoNote, int] = {}  # each note held, and how many times
+        self._hierarchy_depths_cache: Optional[dict[Node, int]] = None
+        self._run_notes_cache: Optional[list[tuple[Node, MemoNote]]] = None
+        self.node_type: str = NodeType.NODE
         self.description = description
         self.meta = meta()
-        self.saveattrs = set()
+        self.saveattrs: set[str] = set()
         if link is not None:
             self.link(link)
 
@@ -141,6 +272,23 @@ class Node:
     def name(self) -> str:
         """str : The name of this node."""
         return self._name
+
+    @property
+    def unique_id(self) -> str:
+        """str : An id for this node that no other node has, its name followed
+        by a random string (``uuid4``).
+
+        The id is made when the node is created and cannot be changed. It goes
+        with the node when it is pickled or copied, so a copy of a node has the
+        id of the node it was copied from. ``caskade`` makes no use of it.
+
+        A graph that is built again in code has new ids, and ``load_state``
+        leaves them alone. To have the id written to an HDF5 file and taken
+        back on by ``load_state``, add it to the saved attributes of the node,
+        ``node.saveattrs.add("unique_id")`` (the fast layout stores values
+        only).
+        """
+        return self._unique_id
 
     @property
     def children(self) -> dict[str, "Node"]:
@@ -157,24 +305,41 @@ class Node:
         """set[Node] : Subset of children linked hierarchically."""
         return self._subgraphs
 
-    def _link(self, key: str, child: "Node"):
+    def _link(self, key: str, child: "Node", replace: bool = False):
+        """Register ``child`` in the graph under ``key``.
+
+        Nothing is changed unless every check passes. With ``replace=True`` a
+        different node already linked under ``key`` is unlinked first, otherwise
+        that is an error. A name that is in use for something that is not a
+        child is taken over with a ``LinkToAttributeWarning``, except for the
+        name of a property, which is an error. A name that held a child before
+        (and was given a plain value since) is taken back without a word.
+        """
         if self.active:
             raise GraphError("Cannot link/unlink nodes while the graph is active")
+        existing = self.children.get(key)
         # Avoid double linking to the same object
-        if key in self.children:
-            if self.children[key] is child:
-                return
+        if existing is child:
+            return
+        if existing is not None and not replace:
             raise GraphError(
-                f"Child key '{key}' already linked to parent {self.name}, but with different node {self.children[key].name}"
+                f"Child key '{key}' already linked to parent {self.name}, but with different node {existing.name}"
             )
         if child in self.children.values():
             raise GraphError(
                 f"Child {child.name} already linked to parent {self.name}, but not with key '{key}'"
             )
-        if hasattr(self, key):
-            raise LinkToAttributeError(
-                f"Child key '{key}' already an attribute of parent {self.name}, use a different name to avoid collisions"
-            )
+        # The name may be in use for something that is not a child
+        replaced = _MISSING
+        if existing is None and key not in self._freed:
+            on_class = getattr(type(self), key, _MISSING)
+            if hasattr(on_class, "__set__"):
+                # A property decides what its name gives, a child cannot take its place
+                raise LinkToAttributeError(
+                    f"Child key '{key}' is a property of {type(self).__name__} "
+                    f"('{self.name}'), use a different name for the child"
+                )
+            replaced = self.__dict__.get(key, on_class)
 
         # avoid cycles
         if self in child.topological_ordering():
@@ -182,14 +347,28 @@ class Node:
                 f"Linking {child.name} to {self.name} would create a cycle in the graph!"
             )
 
+        if replaced is not _MISSING:
+            # Allowed, as any assignment to an attribute is, but it may be a mistake
+            was = "None" if replaced is None else f"a {type(replaced).__name__}"
+            warn(
+                LinkToAttributeWarning(
+                    f"Linking node '{child.name}' as '{key}' replaces the attribute '{key}' "
+                    f"of '{self.name}' (it was {was}). If that is not what you meant, use a "
+                    "different name for the child."
+                ),
+                stacklevel=_user_stacklevel(),
+            )
+        if existing is not None:
+            self._unlink(key)
+        self._freed.discard(key)
         self.children[key] = child
         child.parents.add(self)
         self.update_graph()
 
     def link(
         self,
-        key: Union[str, tuple, "Node"],
-        child: Optional[Union["Node", tuple]] = None,
+        key: Union[str, tuple, list, "Node"],
+        child: Optional[Union["Node", tuple, list]] = None,
     ):
         """
         Link the current ``Node`` object to another ``Node`` object as a child.
@@ -233,16 +412,20 @@ class Node:
                     self.link(k, c)
             return
         if child is None:
+            if not isinstance(key, Node):
+                raise TypeError(f"child must be a Node object, not {type(key)}")
             child = key
             key = child.name
 
-        if not is_valid_name(key):
+        if not isinstance(key, str) or not is_valid_name(key):
             raise NodeConfigurationError(
                 f"key is invalid: '{key}'. Must be a valid Python identifier and not a reserved keyword."
             )
         if not isinstance(child, Node):
             raise TypeError(f"child must be a Node object, not {type(child)}")
-        self.__setattr__(key, child)
+        # An explicit link never replaces an existing child, only assignment does
+        self._link(key, child)
+        super().__setattr__(key, child)
 
     def hierarchical_link(self, key: str, child: "Node"):
         """
@@ -257,6 +440,31 @@ class Node:
         child : Node
             The child ``Node`` object to link to.
 
+        Notes
+        -----
+        A hierarchical link says that this node calls the child many times in
+        one simulation (usually with ``vmap``), so params below the link carry
+        a batch dimension for those calls. For a param whose shallowest path
+        from a module ``M`` crosses ``d`` hierarchical links, ``M`` reads the
+        param's ``batch_shape`` as::
+
+            (batch of M ..., link 1, ..., link d)
+
+        with the link nearest to ``M`` first. The last ``d`` dimensions are part
+        of one simulation of ``M``, so they are flattened into the array that
+        ``M.get_values()`` returns and that its ``@forward`` methods take. Any
+        dimensions before them are a batch of whole simulations of ``M``. The
+        split is always made from the module the array belongs to, so the same
+        param is read with one fewer link dimension by the module on the other
+        side of each link. An array inside a dictionary of params is a piece of
+        the array of the module the dictionary was given to.
+
+        A param below the link with no batch dimensions has one value that is
+        shared by every call. A param that does have batch dimensions needs at
+        least ``d`` of them, with fewer the modules along the path would not
+        agree on which link they are for and a ``ParamConfigurationError`` is
+        raised.
+
         Examples
         --------
         ::
@@ -266,8 +474,10 @@ class Node:
             parent.hierarchical_link("child", child)
         """
 
-        self._subgraphs.add(child)
         self.link(key, child)
+        # Only once the link has succeeded is the child recorded as a subgraph
+        self._subgraphs.add(child)
+        self.update_graph()
 
     def _unlink(self, key: str):
         if self.active:
@@ -313,7 +523,7 @@ class Node:
             raise KeyError(f"Child key '{key}' not found in parent {self.name}")
         self.__delattr__(key)
 
-    def topological_ordering(self) -> tuple["Node"]:
+    def topological_ordering(self) -> tuple["Node", ...]:
         """
         Return a topological ordering of the graph below the current node.
 
@@ -348,58 +558,133 @@ class Node:
         return tuple(reversed(stack))
 
     def update_graph(self):
-        """Triggers a call to all parents that the graph below them has been
-        updated. The base ``Node`` object does nothing with this information, but
-        other node types may use this to update internal state."""
-        for parent in self.parents:
-            parent.update_graph()
+        """Signal this node and every node above it that the graph below them
+        has been updated. Each node is notified exactly once, however many paths
+        lead to it. Node types that keep state derived from the graph (such as
+        ``Module``) refresh it by overriding ``_graph_updated``."""
+        seen = {id(self)}
+        upstream = [self]
+        for node in upstream:  # ``upstream`` grows while it is being iterated
+            for parent in node._parents:
+                if id(parent) not in seen:
+                    seen.add(id(parent))
+                    upstream.append(parent)
+        for node in upstream:
+            node._hierarchy_depths_cache = None
+            node._run_notes_cache = None
+            node._graph_updated()
+
+    def _graph_updated(self):
+        """Called once on a node whenever the graph at or below it has changed.
+        The base ``Node`` does nothing with this information."""
 
     @property
     def active(self) -> bool:
-        """bool : ``True`` if the node is currently in an active simulation run."""
-        return any(memo.startswith("active") for memo in self._memos)
+        """bool : ``True`` while a simulation is running from this node or from
+        any node above it."""
+        return any(note.kind is MemoKind.RUN for note in self._memos)
 
     @property
     def online(self) -> bool:
-        """bool : ``True`` if the node is online within a hierarchical sub-graph."""
-        return any(memo.endswith("_active") for memo in self._memos)
+        """bool : ``True`` while a simulation is running from this node, or from
+        a node above it that reaches this one without crossing a hierarchical
+        link. The values held below an online node are those of the simulation
+        that is running, so its ``@forward`` methods may be called directly."""
+        return any(note.kind is MemoKind.RUN and note.depth == 0 for note in self._memos)
 
     @property
-    def memos(self) -> set[str]:
-        """set[str] : Current set of memo strings held by this node."""
-        return self._memos
+    def memos(self) -> set[MemoNote]:
+        """set[MemoNote] : The memos currently held by this node."""
+        return set(self._memos)
 
-    def add_memo(self, memo):
+    def _hierarchy_depths(self) -> dict["Node", int]:
+        """Every node at or below this one, with its hierarchical depth: the
+        fewest hierarchical links crossed on any path from this node to it.
+
+        A node used at several levels of a hierarchy belongs to the shallowest
+        of them, since that is the outermost level at which its values are
+        needed. This is the one place where hierarchical structure is worked
+        out. Both the memos sent from this node and the handling of batch
+        dimensions (see ``hierarchical_link``) read it from here.
+
+        The depths are worked out the first time they are needed and then kept
+        until the graph below this node changes, so sending a memo while a
+        simulation runs is a single pass over them.
         """
-        Add a memo string and propagate it to all children.
+        depths = self._hierarchy_depths_cache
+        if depths is None:
+            depths = {self: 0}
+            stack = [self]
+            while stack:
+                node = stack.pop()
+                depth = depths[node]
+                subgraphs = node._subgraphs
+                for child in node._children.values():
+                    child_depth = depth + 1 if child in subgraphs else depth
+                    # a node is looked at again only when a shallower path to it is found
+                    if child_depth < depths.get(child, child_depth + 1):
+                        depths[child] = child_depth
+                        stack.append(child)
+            self._hierarchy_depths_cache = depths
+        return depths
+
+    def _notes(self, memo: Union[MemoKind, str]) -> list[tuple["Node", MemoNote]]:
+        """Every node that receives ``memo`` when it is sent from this node,
+        paired with the note that node holds for it."""
+        if memo is MemoKind.RUN:
+            # sent on every call of a simulation, so made once per change to the graph
+            notes = self._run_notes_cache
+            if notes is None:
+                notes = self._run_notes_cache = [
+                    (node, MemoNote(MemoKind.RUN, self, depth))
+                    for node, depth in self._hierarchy_depths().items()
+                ]
+            return notes
+        if not isinstance(memo, str):
+            raise TypeError(f"A memo must be a string or MemoKind.RUN, not {type(memo)}")
+        return [
+            (node, MemoNote(MemoKind.USER, self, depth, memo))
+            for node, depth in self._hierarchy_depths().items()
+        ]
+
+    def add_memo(self, memo: Union[MemoKind, str]):
+        """
+        Send a memo to this node and to every node below it.
 
         Parameters
         ----------
-        memo : str
-            The memo message to add.  Children in ``subgraphs`` receive
-            the memo with the child name appended (``memo|child_name``).
+        memo : str or MemoKind
+            A string is a message for user code, it is held by each node as a
+            ``MemoNote`` of kind ``MemoKind.USER`` with the string as its label
+            and ``caskade`` never acts on it. ``MemoKind.RUN`` marks the nodes
+            as taking part in a simulation run from this node, it is sent by
+            ``ActiveContext``.
         """
-        self._memos.add(memo)
+        for node, note in self._notes(memo):
+            memos = node._memos
+            memos[note] = memos.get(note, 0) + 1
 
-        # Propagate memo to children
-        for child in self.children.values():
-            child.add_memo(memo + (f"|{child.name}" if child in self.subgraphs else ""))
-
-    def remove_memo(self, memo):
+    def remove_memo(self, memo: Union[MemoKind, str]):
         """
-        Remove a memo string and propagate removal to all children.
+        Take back one memo that was sent with ``add_memo``.
 
         Parameters
         ----------
-        memo : str
-            The memo message to remove.  The same propagation rules as
-            ``add_memo`` apply.
+        memo : str or MemoKind
+            The same value that was given to ``add_memo``. A memo sent several
+            times is held until it has been removed as many times.
         """
-        self._memos.discard(memo)
+        for node, note in self._notes(memo):
+            node._forget_memo(note)
 
-        # Propagate removal to children
-        for child in self.children.values():
-            child.remove_memo(memo + (f"|{child.name}" if child in self.subgraphs else ""))
+    def _forget_memo(self, note: MemoNote):
+        """Drop a single memo from this node only. Node types that hold state
+        tied to a memo (such as ``Module``) clean it up by overriding this."""
+        held = self._memos.get(note, 0)
+        if held > 1:
+            self._memos[note] = held - 1
+        elif held:
+            del self._memos[note]
 
     def to(self, device=None, dtype=None):
         """
@@ -411,39 +696,266 @@ class Node:
             The device to move the values to. Defaults to None.
         dtype: (optional)
             The desired data type. Defaults to None.
+
+        Notes
+        -----
+        Every node below this one is moved once, however many paths lead to
+        it. A subclass that holds arrays of its own overrides this method,
+        calls ``super().to(device, dtype)`` and then moves its arrays. Such a
+        method is called once as well, with the arguments that the node above
+        it passed down.
         """
-
-        for child in self.children.values():
-            child.to(device=device, dtype=dtype)
-
+        thread = get_ident()
+        moved = _MOVED.get(thread)
+        first = moved is None  # this is the call that starts the move
+        if moved is None:
+            moved = _MOVED[thread] = {self}
+        try:
+            for child in self.children.values():
+                if child not in moved:
+                    moved.add(child)
+                    child.to(device=device, dtype=dtype)
+        finally:
+            if first:
+                del _MOVED[thread]
         return self
 
-    def _save_state_hdf5(self, h5group, appendable: bool = False, _done_save: set = None):
-        """Save the state of the node and its children to HDF5."""
-        if id(self) not in _done_save:
-            for attr in self.saveattrs:
-                value = attrgetter(attr)(self)
-                if value is None:
-                    value = "NONE"
-                try:
-                    h5group.attrs[attr] = value
-                except TypeError:
-                    warn(
-                        SaveStateWarning(
-                            f"attribute '{attr}' of type {type(value)} cannot be saved to HDF5"
-                        )
-                    )
-                except Exception as e:
-                    warn(SaveStateWarning(f"Unable to save attribute '{attr}' due to: {e}"))
-            _done_save.add(id(self))
-        for key, child in self.children.items():
-            if not hasattr(child, "_h5group"):
-                child._h5group = h5group.create_group(key)
-            elif key not in h5group:
-                h5group[key] = child._h5group
-            child._save_state_hdf5(h5group[key], appendable=appendable, _done_save=_done_save)
+    # Saving and loading
+    #################################################################
+    #: Names of what a node of this type writes into its own group of an HDF5
+    #: file, next to the groups of its children
+    _hdf5_own: tuple[str, ...] = ()
 
-    def save_state(self, saveto: Union[str, "File"], appendable: bool = False):
+    def _hdf5_top(self, container):
+        """The group in ``container`` that this node was saved to."""
+        try:
+            return container[self.name]
+        except KeyError:
+            raise GraphError(
+                f"No saved state for a node named '{self.name}' was found, the file holds "
+                f"{sorted(container.keys())}. The state is stored under the name of the node "
+                "that was saved, so it must be loaded from a node with the same name."
+            ) from None
+
+    def _hdf5_groups(self, top, create: bool = False) -> list[tuple["Node", Any]]:
+        """Pair every node at or below this one with its group in an HDF5 file.
+
+        The file has the structure of the graph, a group for each node under
+        the key that its parent holds it by. A node that is reached along
+        several paths has a single group, which the file shows at each of
+        those paths. Every node is visited once here, however many paths lead
+        to it.
+
+        Parameters
+        ----------
+        top
+            The group of this node.
+        create : bool
+            If ``True`` the groups are made. Otherwise they are looked up, and
+            the file is checked against the graph.
+
+        Raises
+        ------
+        GraphError
+            If ``create`` is ``False`` and the file has no group for a child.
+        """
+        groups = {self: top}
+        pending = [self]
+        extra: list[str] = []
+        for node in pending:  # ``pending`` grows while it is being iterated
+            group = groups[node]
+            children = node.children
+            for key, child in children.items():
+                known = groups.get(child)
+                if create:
+                    if known is None:
+                        groups[child] = group.create_group(key)
+                        pending.append(child)
+                    else:
+                        group[key] = known  # the same group, shown at this path as well
+                    continue
+                if known is None:
+                    found = group.get(key)
+                    if found is not None:
+                        groups[child] = found
+                        pending.append(child)
+                        continue
+                elif key in group:
+                    continue
+                raise GraphError(
+                    f"Child '{child.name}' (identified by key '{key}') not found in HDF5 "
+                    f"group '{group.name}'. Structure of graph changed from last save."
+                )
+            if not create and len(group) != len(children) + len(node._hdf5_own):
+                names = set(group.keys()).difference(children, node._hdf5_own)
+                extra.extend(f"{group.name}/{name}" for name in sorted(names))
+        if extra:
+            warn(
+                SaveStateWarning(
+                    f"The file holds {len(extra)} entries that the graph of '{self.name}' "
+                    f"does not have, they are ignored: {', '.join(extra[:5])}"
+                    + (", ..." if len(extra) > 5 else "")
+                )
+            )
+        return list(groups.items())
+
+    def _save_hdf5(self, h5group, appendable: bool):
+        """Write this node (not its children) into its group."""
+        for attr in self.saveattrs:
+            value = attrgetter(attr)(self)
+            if value is None:
+                value = "NONE"
+            try:
+                h5group.attrs[attr] = value
+            except TypeError:
+                warn(
+                    SaveStateWarning(
+                        f"attribute '{attr}' of type {type(value)} cannot be saved to HDF5"
+                    )
+                )
+            except Exception as e:
+                warn(SaveStateWarning(f"Unable to save attribute '{attr}' due to: {e}"))
+
+    def _append_hdf5(self, h5group):
+        """Get ready to append the current state of this node (not its children)
+        to its group. Everything that could fail is done here, before any node
+        has written. Returns the function that does the writing, it is given the
+        number of states the file will then hold (``None`` for a file that does
+        not keep count). Returns ``None`` if there is nothing to write."""
+        return None
+
+    def _read_hdf5(self, h5group, index: int):
+        """Read the state of this node (not its children) from its group and
+        check that it fits. Returns the function that takes the state on, or
+        ``None``. Nothing about the node is changed before that is called, so a
+        file that does not fit the graph leaves the whole graph as it was."""
+        if not self.saveattrs:
+            return None
+        stored = h5group.attrs
+        values = {attr: stored[attr] for attr in self.saveattrs if attr in stored}
+
+        def take_on():
+            for attr, value in values.items():
+                if attr == "unique_id":  # read only, apart from here
+                    attr = "_unique_id"
+                attrsetter(self, attr, value)
+
+        return take_on
+
+    def _fast_params(self) -> dict[str, Any]:
+        """Every dynamic and static param at or below this node by its path in
+        the graph, the first path if there are several. (They are ``Param``
+        objects, a class that is defined on top of this one.)"""
+        paths = {self: self.name}
+        params: dict[str, Any] = {}
+        for node in self.topological_ordering():  # parents come before their children
+            path = paths[node]
+            if node.node_type is NodeType.DYNAMIC or node.node_type is NodeType.STATIC:
+                params[path] = node
+            for key, child in node.children.items():
+                paths.setdefault(child, f"{path}/{key}")
+        return params
+
+    def _fast_state(self) -> tuple[dict[str, list], dict[str, np.ndarray]]:
+        """The state for the fast layout. For each of ``"dynamic"`` and
+        ``"static"`` a 1D array with the values of those params one after the
+        other, and an index with ``[path, shape, dtype]`` for each of the
+        params so that the array can be taken apart again. A param with no
+        value has ``None`` for its shape and takes no room in the array."""
+        index: dict[str, list] = {"dynamic": [], "static": []}
+        parts: dict[str, list] = {"dynamic": [], "static": []}
+        for path, param in self._fast_params().items():
+            kind = param.node_type.value
+            value = param.value
+            if value is None:
+                index[kind].append([path, None, None])
+                continue
+            value = backend.to_numpy(value)
+            index[kind].append([path, list(value.shape), value.dtype.str])
+            parts[kind].append(value.reshape(-1))
+        arrays = {kind: np.concatenate(p) if p else np.zeros(0) for kind, p in parts.items()}
+        return index, arrays
+
+    def _save_fast(self, top, appendable: bool):
+        index, arrays = self._fast_state()
+        top.create_dataset("index", data=json.dumps(index))
+        for kind, array in arrays.items():
+            if array.size == 0:
+                continue
+            if appendable:
+                _create_rows(top, kind, array)
+            else:
+                top.create_dataset(kind, data=array)
+
+    def _append_fast(self, top):
+        if not top.attrs[_H5_APPENDABLE]:
+            raise IOError(
+                f"{self.name} is not appendable. Need to save the HDF5 file with `appendable=True`."
+            )
+        index, arrays = self._fast_state()
+        if index != json.loads(top["index"][()]):
+            raise GraphError(
+                f"The params of '{self.name}' are not the ones the file was saved with (a "
+                "param was added, removed, changed type or shape, or gained or lost its "
+                "value). A file with the fast layout only takes states of the same layout."
+            )
+        samples = int(top.attrs[_H5_SAMPLES]) + 1
+        for kind, array in arrays.items():
+            if array.size:
+                top[kind].resize(samples, axis=0)
+                top[kind][samples - 1] = array
+        top.attrs[_H5_SAMPLES] = samples
+
+    def _read_fast(self, top, index: int) -> list:
+        stored = json.loads(top["index"][()])
+        appendable = bool(top.attrs[_H5_APPENDABLE])
+        params = self._fast_params()
+        missing = set(params)
+        plan = []
+        for kind in ("dynamic", "static"):
+            array = None
+            pos = 0
+            for path, shape, dtype in stored[kind]:
+                param = params.get(path)
+                if param is None:
+                    pointer = self._fast_pointer(path)
+                    if pointer:  # now worked out from other params, as in the graph layout
+                        if shape is not None:
+                            pos += prod(shape)
+                        continue
+                    raise GraphError(
+                        f"The file holds a value for '{path}', which is not a param of "
+                        f"'{self.name}'. Structure of graph changed from last save."
+                    )
+                missing.discard(path)
+                value = None
+                if shape is not None:
+                    if array is None:
+                        array = top[kind][index] if appendable else top[kind][()]
+                    size = prod(shape)
+                    value = array[pos : pos + size].reshape(shape).astype(dtype, copy=False)
+                    pos += size
+                plan.append(param._plan_value(kind, value, path))
+        if missing:
+            raise GraphError(
+                f"The file holds no value for {sorted(missing)[:5]}"
+                + (f" and {len(missing) - 5} more params" if len(missing) > 5 else "")
+                + f" of '{self.name}'. Structure of graph changed from last save."
+            )
+        return plan
+
+    def _fast_pointer(self, path: str) -> bool:
+        """Whether ``path`` leads to a pointer param in the graph of this node."""
+        node: Optional[Node] = self
+        for key in path.split("/")[1:]:  # the first is the name of this node
+            if node is None:
+                return False
+            node = node.children.get(key)
+        return node is not None and node.node_type is NodeType.POINTER
+
+    def save_state(
+        self, saveto: Union[str, "h5py.File"], appendable: bool = False, fast: bool = False
+    ):
         """
         Save the state of the node and its children, currently only works for
         HDF5 file types (.h5 and .hdf5).
@@ -471,6 +983,26 @@ class Node:
         dimension. If appendable was false then the value will simply equal the
         param value.
 
+        **The fast layout.** A file with the structure of the graph has a group
+        and a dataset for every param, and HDF5 takes about a millisecond and
+        a few kilobytes for each of those however small the values are. For a
+        graph with many params, or a chain with many samples, ``fast=True``
+        writes the values of all dynamic params into one array and those of
+        all static params into another, each param flattened and placed one
+        after the other in the order of the graph:
+
+        .. code-block:: python
+            with h5py.File("myfile.h5", "r") as h5file:
+                chain = h5file["N1/dynamic"][()]  # (samples, number of values) if appendable
+                index = json.loads(h5file["N1/index"][()])  # path, shape and dtype of each param
+
+        For a graph with no batch dimensions a row of ``dynamic`` is what
+        ``get_values()`` returns. This layout holds the values and whether each
+        param is dynamic or static, and nothing else: pointer params are worked
+        out from the others so they are left out, and ``saveattrs``, ``units``
+        and ``valid`` ranges are not stored. ``load_state`` and
+        ``append_state`` recognise the layout by themselves.
+
         Note
         ----
         You need the optional `h5py` package installed to use this method.
@@ -485,55 +1017,35 @@ class Node:
             Whether to save the state in an appendable format. If True, the
             values will have an extra dimension for the number of samples.
             Defaults to False.
+        fast: (bool, optional)
+            Whether to use the fast layout described above in place of the
+            structure of the graph. Defaults to False.
 
         """
-        if isinstance(saveto, str):
-            if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
-                with h5py.File(saveto, "w") as h5file:
-                    self._h5group = h5file.create_group(self.name)
-                    self._save_state_hdf5(
-                        h5file[self.name], appendable=appendable, _done_save=set()
-                    )
+        with _open_hdf5(saveto, "w", "saving") as h5file:
+            top = h5file.create_group(self.name)
+            top.attrs[_H5_FORMAT] = 2
+            top.attrs[_H5_LAYOUT] = "fast" if fast else "graph"
+            top.attrs[_H5_APPENDABLE] = appendable
+            top.attrs[_H5_SAMPLES] = 1
+            if fast:
+                self._save_fast(top, appendable)
+                return
+            for node, group in self._hdf5_groups(top, create=True):
+                node._save_hdf5(group, appendable)
 
-                for node in self.topological_ordering():
-                    del node._h5group
-            else:
-                raise NotImplementedError(
-                    "Only HDF5 files ('.h5') are currently supported for saving state"
-                )
-        else:  # assume saveto is an HDF5 File object
-            self._h5group = saveto.create_group(self.name)
-            self._save_state_hdf5(saveto[self.name], appendable=appendable, _done_save=set())
-
-            for node in self.topological_ordering():
-                del node._h5group
-
-    def _check_append_state_hdf5(self, h5group):
-        """Check the state and HDF5 file have the same structure."""
-        for key, child in self.children.items():
-            if key in h5group:
-                child._check_append_state_hdf5(h5group[key])
-            else:
-                raise GraphError(
-                    f"Child '{child.name}' (identified by key '{key}') not found in HDF5 group '{h5group.name}'. Structure of graph changed from last save."
-                )
-
-    def _append_state_cleanup(self):
-        """Cleanup the state of the node and its children after appending to HDF5."""
-        pass
-
-    def _append_state_hdf5(self, h5group):
-        """Append the state of the node and its children to an existing HDF5 file."""
-        for key, child in self.children.items():
-            child._append_state_hdf5(h5group[key])
-
-    def append_state(self, saveto: Union[str, "File"]):
+    def append_state(self, saveto: Union[str, "h5py.File"]):
         """
         Append the current state to an existing HDF5 file.
 
         The file must have been previously created by ``save_state`` with
-        ``appendable=True``.  The graph structure in the file is verified
-        before appending.
+        ``appendable=True``.  The graph structure in the file is verified, and
+        every value is collected, before anything is written.
+
+        A param with no value is given a blank row (NaN), so that the same
+        index is the same state for every param. A param that had no value
+        when the file was saved has blank rows for the states before it got
+        one.
 
         Parameters
         ----------
@@ -548,48 +1060,37 @@ class Node:
         NotImplementedError
             If the file path does not end with a supported extension.
         """
-        if isinstance(saveto, str):
-            if saveto.endswith(".h5") or saveto.endswith(".hdf5"):
-                with h5py.File(saveto, "a") as h5file:
-                    self._check_append_state_hdf5(h5file[self.name])
-                    self._append_state_hdf5(h5file[self.name])
+        with _open_hdf5(saveto, "a", "saving") as h5file:
+            top = self._hdf5_top(h5file)
+            if top.attrs.get(_H5_LAYOUT) == "fast":
+                self._append_fast(top)
+                return
+            writers = []
+            for node, group in self._hdf5_groups(top):
+                write = node._append_hdf5(group)
+                if write is not None:
+                    writers.append(write)
+            samples = top.attrs.get(_H5_SAMPLES)  # not kept by older versions of caskade
+            if samples is not None:
+                samples = int(samples) + 1
+            for write in writers:
+                write(samples)
+            if samples is not None:
+                # Written last. If the appending was cut short, the next one
+                # brings every param back to the same number of states.
+                top.attrs[_H5_SAMPLES] = samples
 
-                for node in self.topological_ordering():
-                    node._append_state_cleanup()
-            else:
-                raise NotImplementedError(
-                    "Only HDF5 files ('.h5') are currently supported for saving state"
-                )
-        else:  # assume saveto is an HDF5 File object
-            self._check_append_state_hdf5(saveto[self.name])
-            self._append_state_hdf5(saveto[self.name])
-
-            for node in self.topological_ordering():
-                node._append_state_cleanup()
-
-    def _check_load_state_hdf5(self, h5group):
-        """Check the state and HDF5 file have the same structure."""
-        for key, child in self.children.items():
-            if key in h5group:
-                child._check_load_state_hdf5(h5group[key])
-            else:
-                raise GraphError(
-                    f"Child '{child.name}' (identified by key '{key}') not found in HDF5 group '{h5group.name}'. Structure of graph changed from last save."
-                )
-
-    def _load_state_hdf5(self, h5group, index: int = -1, _done_load: set = None):
-        """Load the state of the node and its children from HDF5."""
-
-        if id(self) not in _done_load:
-            for attr in h5group.attrs:
-                attrsetter(self, attr, h5group.attrs[attr])
-            _done_load.add(id(self))
-        for key, child in self.children.items():
-            child._load_state_hdf5(h5group[key], index=index, _done_load=_done_load)
-
-    def load_state(self, loadfrom: Union[str, "File"], index: int = -1, **kwargs):
+    def load_state(self, loadfrom: Union[str, "h5py.File"], index: int = -1, **kwargs):
         """
         Load node state (and children) from an HDF5 file.
+
+        The whole state is read and checked against the graph first. Only if
+        all of it fits is any of it taken on, so a file that does not match
+        leaves the graph as it was.
+
+        An attribute stored with a node is only loaded if the node lists it in
+        its ``saveattrs``, the file does not get to choose which attributes
+        are set.
 
         Parameters
         ----------
@@ -601,7 +1102,9 @@ class Node:
             mode.  Defaults to ``-1`` (last sample).
         **kwargs
             Additional keyword arguments forwarded to ``h5py.File``
-            (e.g. ``driver``).
+            (e.g. ``driver``). By default a file of up to 256 MB is read into
+            memory in one go (``driver="core"``), which is the quickest on a
+            network file system, and a larger file is read piece by piece.
 
         Raises
         ------
@@ -610,18 +1113,22 @@ class Node:
         NotImplementedError
             If the file path does not end with a supported extension.
         """
-        if isinstance(loadfrom, str):
-            if loadfrom.endswith(".h5") or loadfrom.endswith(".hdf5"):
-                with h5py.File(loadfrom, "r", **{"driver": "core", **kwargs}) as h5file:
-                    self._check_load_state_hdf5(h5file[self.name])
-                    self._load_state_hdf5(h5file[self.name], index=index, _done_load=set())
+        if (
+            "driver" not in kwargs
+            and isinstance(loadfrom, (str, os.PathLike))
+            and os.path.isfile(loadfrom)
+            and os.path.getsize(loadfrom) <= _H5_CORE_DRIVER_LIMIT
+        ):
+            kwargs["driver"] = "core"
+        with _open_hdf5(loadfrom, "r", "loading", **kwargs) as h5file:
+            top = self._hdf5_top(h5file)
+            if top.attrs.get(_H5_LAYOUT) == "fast":
+                plan = self._read_fast(top, index)
             else:
-                raise NotImplementedError(
-                    "Only HDF5 files ('.h5') are currently supported for loading state"
-                )
-        else:  # assume loadfrom is an HDF5 File object
-            self._check_load_state_hdf5(loadfrom[self.name])
-            self._load_state_hdf5(loadfrom[self.name], index=index, _done_load=set())
+                plan = [node._read_hdf5(group, index) for node, group in self._hdf5_groups(top)]
+        for take_on in plan:
+            if take_on is not None:
+                take_on()
 
     @property
     def graphviz_style(self):
@@ -646,9 +1153,13 @@ class Node:
         import graphviz  # noqa
 
         components = set()
+        depths = self._hierarchy_depths()
 
-        def add_node(node: Node, dot):
-            if node in components or node.online:
+        def add_node(node: Node, dot, level: int):
+            # ``level`` counts the boxes being drawn inside of. A node used at
+            # several levels is drawn at the shallowest, so it is skipped here
+            # when this is not that level
+            if node in components or depths[node] < level:
                 return
             dot.attr("node", **node.graphviz_style)
             dot.node(str(id(node)), repr(node))
@@ -656,20 +1167,16 @@ class Node:
 
             for child in node.children.values():
                 if child in node.subgraphs:
-                    with Memo(self, "semi_active"):
-                        with dot.subgraph(name=f"cluster_{id(child)}") as subdot:
-                            add_node(child, subdot)
+                    with dot.subgraph(name=f"cluster_{id(child)}") as subdot:
+                        add_node(child, subdot, level + 1)
                 else:
-                    add_node(child, dot)
-
-        def add_edges(node: Node, dot):
-            for child in node.children.values():
-                dot.edge(str(id(node)), str(id(child)))
-                add_edges(child, dot)
+                    add_node(child, dot, level)
 
         dot = graphviz.Digraph(strict=True)
-        add_node(self, dot)
-        add_edges(self, dot)
+        add_node(self, dot, 0)
+        for node in self.topological_ordering():  # every node once, whatever the number of paths
+            for child in node.children.values():
+                dot.edge(str(id(node)), str(id(child)))
         if saveto is not None:
             filename, ext = os.path.splitext(saveto)
             dot.render(graphviz.escape(filename), format=ext.lstrip("."), cleanup=True)
@@ -692,7 +1199,7 @@ class Node:
             Nested dictionary mirroring the DAG hierarchy.
         """
         rep = self.node_str
-        graph = {
+        graph: dict[str, dict] = {
             rep: {},
         }
         for node in self.children.values():
@@ -740,18 +1247,33 @@ class Node:
     def __setitem__(self, key: str, value: "Node"):
         self.link(key, value)
 
-    def __eq__(self, other: "Node") -> bool:
-        return self is other
-
-    def __hash__(self) -> int:
-        return id(self)
-
     def __setattr__(self, key: str, value: Any):
-        """Intercept attribute setting to update parameters and graph links."""
+        """Intercept attribute setting so the graph always matches the attributes.
+
+        Assigning a ``Node`` links it as a child (replacing any child already
+        held under that name), and assigning anything else over a child unlinks
+        that child. The name stays that of a child, so a node may be assigned
+        to it again later (``node.child = None`` and then ``node.child = other``).
+        """
+        # Values are written to nodes while a simulation runs, so the common
+        # case of a value that is not a node is kept as short as possible
         if isinstance(value, Node):
+            if "_children" not in self.__dict__:  # ``Node.__init__`` has not run yet
+                raise NodeConfigurationError(
+                    f"Cannot assign node '{value.name}' to attribute '{key}' before "
+                    f"`super().__init__()` has been called in `{type(self).__name__}.__init__`"
+                )
             # check for trying setting an attr with its own setter, allow the setter to handle throwing errors (e.g. value)
             if not hasattr(getattr(type(self), key, None), "fset"):
-                self._link(key, value)
+                self._link(key, value, replace=True)
+        else:
+            try:
+                is_child = key in self._children
+            except AttributeError:  # ``Node.__init__`` has not run yet
+                is_child = False
+            if is_child:
+                self._unlink(key)
+                self._freed.add(key)  # a node may be assigned to this name again
 
         super().__setattr__(key, value)
 
@@ -759,32 +1281,38 @@ class Node:
         """Intercept attribute deletion to remove links."""
         if key in self.children:
             self._unlink(key)
+        self._freed.discard(key)
         super().__delattr__(key)
 
 
 class Memo:
     """
-    Sends a "memo" (a small message) to all nodes below the current one in the
-    graph. This can be used to communicate state changes in the graph with all
-    lower nodes. By default, the message will skip any subgraphs (hierarchical
-    graphs) but this can be changed to ensure all nodes hear the message.
+    Context manager that sends a "memo" (a small message) to a node and to
+    every node below it in the graph, and takes it back on exit.
 
-    Note that memos are stored as a python set, so duplicates will be merged.
-    Depending on your use case, it may be wise to ensure that your memo is
-    unique.
+    Each node holds the memo as a ``MemoNote`` in ``node.memos``, which records
+    the text (``label``), the node it was sent from (``owner``) and how many
+    hierarchical links lie between the two (``depth``). ``caskade`` never acts
+    on a memo sent this way, whatever its text, so any string is safe to use.
+    The same memo may be sent again while it is already held, each node keeps
+    it until every one of them has been taken back.
 
     Parameters
     ----------
-    module: Module
-        The caskade Module object that will propogate the memo
+    module: Node
+        The node that sends the memo
     memo: str
         The message to send down the graph
-    skip_subgraphs: bool
-        If True (default) any subgraphs, otherwise known as hierarchical graphs,
-        will not get the memo.
+
+    Examples
+    --------
+    ::
+
+        with Memo(sim, "plotting"):
+            assert any(note.label == "plotting" for note in sim.x.memos)
     """
 
-    def __init__(self, module: Node, memo: str):
+    def __init__(self, module: Node, memo: Union[MemoKind, str]):
         self.module = module
         self.memo = memo
 

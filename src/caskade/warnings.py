@@ -46,3 +46,27 @@ class SaveStateWarning(CaskadeWarning):
     Issued when the state serialization completes but with potential data
     loss or format issues that the user should be aware of.
     """
+
+
+class LinkToAttributeWarning(CaskadeWarning):
+    """
+    Warning issued when a child node takes the place of another attribute.
+
+    Linking a node under a name that the parent already uses for something
+    that is not a child (a plain value, a placeholder such as ``None``, a
+    method) replaces that attribute, as any assignment would. This may be what
+    was meant, or it may be a child that was given the name of something the
+    parent needs. A name that held a child before does not give this warning,
+    so ``node.child = None`` followed by ``node.child = other`` is silent.
+    """
+
+
+class StaticCacheWarning(CaskadeWarning):
+    """
+    Warning issued when a result kept in ``Module.static_cache`` may not be
+    the right one.
+
+    Issued when the stored result was made from a dynamic param, whose values
+    in a simulation it will not follow, and when a stored result is used after
+    a param that it was made from has been changed.
+    """

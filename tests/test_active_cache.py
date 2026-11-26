@@ -1,4 +1,7 @@
-from caskade import Module, active_cache, forward, Param
+import numpy as np
+import pytest
+
+from caskade import Module, active_cache, backend, forward, Param
 
 
 def test_active_cache():
@@ -45,20 +48,7 @@ def test_active_cache():
     assert m.base_calculation(3) == 44  # 6, 16, 6, 16
     assert m.counter == 2, "Should only call computations twice due to caching"
 
-    assert not hasattr(
-        m, "_active_cache_expensive_computation"
-    ), "Cache should be cleared after forward call"
-    assert not hasattr(
-        m, "_active_cache_another_computation"
-    ), "Cache should be cleared after forward call"
-
-    assert (
-        "_active_cache_expensive_computation" in m._cache_attrs
-    ), "module should track cache attributes"
-    assert (
-        "_active_cache_another_computation" in m._cache_attrs
-    ), "module should track cache attributes"
-    assert len(m._cache_attrs) == 2, "module should track all cache attributes"
+    assert not m._active_cache, "Cache should be cleared after forward call"
 
     class InheritTestModule(TestModule):
         # Check overriding works and cache is separate for each method
@@ -100,13 +90,152 @@ def test_active_cache():
         == "This is the docstring for the overridden expensive_computation method."
     )
 
-    assert (
-        "_active_cache_expensive_computation" in m2._cache_attrs
-    ), "module should track cache attributes"
-    assert (
-        "_active_cache_another_computation" in m2._cache_attrs
-    ), "module should track cache attributes"
-    assert (
-        "_active_cache_evenmore_computation" in m2._cache_attrs
-    ), "module should track cache attributes"
-    assert len(m2._cache_attrs) == 3, "module should track all cache attributes"
+    assert not m2._active_cache, "Cache should be cleared after forward call"
+
+
+def test_active_cache_any_position():
+    class TestModule(Module):
+        def __init__(self):
+            super().__init__()
+            self.counter = 0
+            self.p = Param("p", 2.0)
+
+        @forward
+        @active_cache  # below another decorator
+        def inner(self, x, p=None):
+            self.counter += 1
+            return x * p
+
+        @forward
+        def outer(self, x):
+            return self.inner(x) + self.inner(x)
+
+    m = TestModule()
+    assert m.outer(3.0) == 12
+    assert m.counter == 1, "Should only compute once"
+    assert not m._active_cache, "Cache should be cleared after forward call"
+
+
+def test_active_cache_override_is_separate():
+    class Base(Module):
+        @active_cache
+        def compute(self):
+            return 1
+
+        @forward
+        def run(self):
+            return self.compute() + self.compute()
+
+    class Child(Base):
+        @active_cache
+        def compute(self):
+            # The parent method has its own cached result
+            return 10 + super().compute() + super().compute()
+
+    assert Base().run() == 2
+    assert Child().run() == 24
+
+
+def test_active_cache_reset():
+    class TestModule(Module):
+        def __init__(self):
+            super().__init__()
+            self.counter = 0
+
+        @active_cache
+        def compute(self):
+            self.counter += 1
+            return self.counter
+
+        @forward
+        def run(self):
+            first = self.compute()
+            self.reset_active_cache()
+            return first + self.compute()
+
+    assert TestModule().run() == 3
+
+
+def test_active_cache_cleared_in_subgraph():
+    class Child(Module):
+        def __init__(self):
+            super().__init__("child")
+            self.counter = 0
+
+        @active_cache
+        def compute(self):
+            self.counter += 1
+            return self.counter
+
+    class Parent(Module):
+        def __init__(self, child):
+            super().__init__("parent")
+            self.hierarchical_link("child", child)
+
+        @forward
+        def run(self):
+            return self.child.compute() + self.child.compute()
+
+    child = Child()
+    parent = Parent(child)
+    assert parent.run() == 2
+    assert not child._active_cache, "Cache should be cleared after forward call"
+    assert parent.run() == 4, "Should compute again in the next simulation"
+
+
+def test_active_cache_in_a_compiled_function():
+    """Under ``jax.jit`` a cached method is worked out once in each call of the
+    compiled function, from the values of that call. Nothing is kept from the
+    call in which the function was compiled."""
+    if backend.backend != "jax":
+        pytest.skip("needs jit")
+    import jax
+    import jax.numpy as jnp
+
+    class Sim(Module):
+        def __init__(self):
+            super().__init__("sim")
+            self.a = Param("a", shape=(), dynamic=True)
+            self.s = Param("s", 10.0, shape=())
+            self.calls = 0
+
+        @active_cache
+        @forward
+        def heavy(self, a, s):
+            self.calls += 1
+            return jnp.sin(a) + s
+
+        @forward
+        def run(self, a):
+            return self.heavy() + self.heavy() * a + self.heavy()
+
+    def expected(a, s=10.0):
+        return (np.sin(a) + s) * (2 + a)
+
+    sim = Sim()
+    run = jax.jit(sim.run)
+    first = jnp.array([0.5])
+    assert np.allclose(run(first), expected(0.5))
+    assert sim.calls == 1  # the three uses share one result
+    # the result made while compiling is gone, it belongs to that call
+    assert not sim._active_cache and not sim.active
+
+    # A new value goes through the cached method, with no python call
+    assert np.allclose(run(jnp.array([1.5])), expected(1.5))
+    assert sim.calls == 1 and not sim._active_cache
+
+    # The compiled function works the cached method out once
+    assert str(jax.make_jaxpr(sim.run)(first)).count("sin") == 1
+    assert not sim._active_cache
+
+    # Other transforms go through it as well
+    grad = jax.grad(run)(first)
+    assert np.allclose(grad, np.cos(0.5) * 2.5 + np.sin(0.5) + 10.0)
+    batch = jax.vmap(run)(jnp.array([[0.5], [1.5]]))
+    assert np.allclose(batch, [expected(0.5), expected(1.5)])
+
+    # A static value is given at call time to be followed, as for any compiled method
+    run_with = jax.jit(lambda p, s: sim.run(p, static_params=s))
+    assert np.allclose(run_with(first, jnp.array([10.0])), expected(0.5))
+    assert np.allclose(run_with(first, jnp.array([20.0])), expected(0.5, 20.0))
+    assert not sim._active_cache and not sim.active
